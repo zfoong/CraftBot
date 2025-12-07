@@ -35,6 +35,10 @@ class TaskManager:
     def attach_state_manager(self, state_manager: "StateManager") -> None:
         self.state_manager = state_manager
 
+    def reset(self) -> None:
+        """Clear all active tasks and detach any session-linked state."""
+        self.active.clear()
+
     # ─────────────────────── Creation ─────────────────────────────────
     async def create_task(self, task_name: str, task_instruction: str) -> str:
         task_id = f"{task_name}_{uuid.uuid4().hex[:6]}"
