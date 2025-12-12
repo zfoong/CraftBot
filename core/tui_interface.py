@@ -265,8 +265,6 @@ class _CraftApp(App):
     }
     """
 
-    capture_mouse = False
-
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
         ("ctrl+c", "copy_chat", "Copy chat"),
@@ -884,7 +882,7 @@ class TUIInterface:
         self._app = _CraftApp(self, self._default_provider, self._default_api_key)
 
         try:
-            await self._app.run_async()
+            await self._app.run_async(mouse=False)
         finally:
             self._running = False
             self._agent.is_running = False
