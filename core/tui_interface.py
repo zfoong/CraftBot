@@ -7,12 +7,13 @@ from asyncio import Queue, QueueEmpty
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Tuple
 
+import pyperclip
 from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import var
 
-from rich.console import RenderableType
+from rich.console import Console, RenderableType
 from rich.table import Table
 from rich.text import Text
 from textual.widgets import Input, Static
@@ -266,6 +267,9 @@ class _CraftApp(App):
 
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
+        ("ctrl+shift+c", "copy_chat", "Copy chat"),
+        ("ctrl+shift+i", "copy_input", "Copy input"),
+        ("ctrl+shift+v", "paste_input", "Paste"),
     ]
 
     status_text = var("Status: Idle")
@@ -511,6 +515,55 @@ class _CraftApp(App):
                 menu.index = 0
             menu.focus()
             self._refresh_menu_prefixes()
+
+    # ────────────────────────────── clipboard helpers ─────────────────────────────
+
+    def _copy_chat_history_to_clipboard(self) -> None:
+        chat_log = self.query_one("#chat-log", _ConversationLog)
+        if not chat_log._history:
+            return
+
+        try:
+            console = Console(record=True, width=max(self.size.width or 0, 80))
+            for renderable in chat_log._history:
+                console.print(renderable)
+            rendered_text = console.export_text(clear=False).rstrip()
+            pyperclip.copy(rendered_text)
+        except Exception as error:  # pragma: no cover - clipboard errors are platform dependent
+            logger.error("Failed to copy chat history: %s", error)
+
+    def _copy_input_to_clipboard(self) -> None:
+        chat_input = self.query_one("#chat-input", Input)
+        try:
+            pyperclip.copy(chat_input.value or "")
+        except Exception as error:  # pragma: no cover - clipboard errors are platform dependent
+            logger.error("Failed to copy chat input: %s", error)
+
+    def _paste_into_input(self) -> None:
+        chat_input = self.query_one("#chat-input", Input)
+        try:
+            pasted = pyperclip.paste()
+        except Exception as error:  # pragma: no cover - clipboard errors are platform dependent
+            logger.error("Failed to paste into chat input: %s", error)
+            return
+
+        cursor = getattr(chat_input, "cursor_position", len(chat_input.value))
+        cursor = min(max(cursor, 0), len(chat_input.value))
+        chat_input.value = (
+            chat_input.value[:cursor] + pasted + chat_input.value[cursor:]
+        )
+        if hasattr(chat_input, "cursor_position"):
+            chat_input.cursor_position = cursor + len(pasted)
+        chat_input.focus()
+
+    def action_copy_chat(self) -> None:
+        self._copy_chat_history_to_clipboard()
+
+    def action_copy_input(self) -> None:
+        self._copy_input_to_clipboard()
+
+    def action_paste_input(self) -> None:
+        self._paste_into_input()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         message = event.value.strip()
