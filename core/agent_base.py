@@ -82,7 +82,7 @@ class AgentBase:
 
         # LLM + prompt plumbing
         self.llm = LLMInterface(provider=llm_provider, db_interface=self.db_interface)
-        self.vlm = VLMInterface()
+        self.vlm = VLMInterface(provider=llm_provider)
         self.context_engine = ContextEngine()
         self.context_engine.set_role_info_hook(self._generate_role_info_prompt)
 
@@ -120,9 +120,9 @@ class AgentBase:
             self.triggers,
             db_interface=self.db_interface,
             event_stream_manager=self.event_stream_manager,
+            state_manager=self.state_manager,
         )
 
-        self.task_manager.attach_state_manager(self.state_manager)
         InternalActionInterface.initialize(
             self.llm,
             self.task_manager,
