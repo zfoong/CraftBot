@@ -288,17 +288,6 @@ class TaskManager:
 
         # 4) ensure action row and enqueue trigger
         await self._ensure_and_log_current_step(wf)
-        await self.triggers.put(
-            Trigger(
-                fire_at=time.time(),
-                priority=5,
-                next_action_description=new_current.description,
-                session_id=wf.id,
-                payload={
-                    "parent_action_id": new_current.action_id,
-                },
-            )
-        )
         self.db_interface.log_task(wf)
         self._sync_state_manager(wf)
         return {"status": "queued", "step": new_current.step_name}

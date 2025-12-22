@@ -8,6 +8,17 @@
 <div align="center">
   <img src="https://img.shields.io/badge/OS-Windows-blue?logo=windows&logoColor=white" alt="Windows">
   <img src="https://img.shields.io/badge/OS-Linux-yellow?logo=linux&logoColor=black" alt="Linux">
+  
+  <a href="https://github.com/zfoong/WhiteCollarAgent">
+    <img src="https://img.shields.io/github/stars/zfoong/WhiteCollarAgent?style=social" alt="GitHub Repo stars">
+  </a>
+
+  <img src="https://img.shields.io/github/license/zfoong/WhiteCollarAgent" alt="License">
+
+  <a href="https://discord.gg/MRmjubap">
+    <img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Discord">
+  </a>
+  
 </div>
 
 
