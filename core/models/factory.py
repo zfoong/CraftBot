@@ -78,7 +78,7 @@ class ModelFactory:
                 "model": model,
                 "client": None,
                 "gemini_client": None,
-                "ollama_url": f"{base_url.rstrip('/')}/api/generate",
+                "ollama_url": base_url,
                 "byteplus": None,
             }
 
