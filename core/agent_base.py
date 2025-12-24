@@ -230,26 +230,7 @@ class AgentBase:
                 AgentBase.get_state_manager().bump_event_stream(session_id)
 
             # ===================================
-            # 3. Check current step index against MAX_ACTIONS_PER_TASK
-            # ===================================
-            current_step = AgentBase.get_state_manager().get_current_step(session_id)
-            # if current_step and "step_index" in current_step:
-            #     current_step_index = current_step["step_index"]
-            #     current_index_ratio = (current_step_index + 1) / MAX_ACTIONS_PER_TASK
-            #     logger.debug(f"[REACT] Current step index: {current_step_index}, Ratio: {current_index_ratio:.2f}")
-            #     if current_step_index is not None and current_index_ratio >= 0.8:
-            #         logger.debug(f"[REACT WARNING] Current step index {current_step_index} is over 80% of MAX_ACTIONS_PER_TASK {MAX_ACTIONS_PER_TASK}")
-            #         if self.event_stream_manager:
-            #             self.event_stream_manager.log(
-            #                 session_id,
-            #                 "warning",
-            #                 f"[WARNING] Current step index {current_step_index} is over 80% of MAX_ACTIONS_PER_TASK {MAX_ACTIONS_PER_TASK}. Time to wrap up the task soon by adjusting but do not force and cancel steps.",
-            #                 display_message=None,
-            #             )
-            #             AgentBase.get_state_manager().bump_event_stream(session_id)
-
-            # ===================================
-            # 4. Select Action
+            # 3. Select Action
             # ===================================
             logger.debug("[REACT] selecting action")
             is_running_task: bool = AgentBase.get_state_manager().is_running_task()
@@ -274,7 +255,7 @@ class AgentBase:
                 raise ValueError("Action router returned no decision.")
 
             # ===================================
-            # 5. Get Action
+            # 4. Get Action
             # ===================================
             action_name = action_decision.get("action_name")
             action_params = action_decision.get("parameters", {})
@@ -292,13 +273,14 @@ class AgentBase:
             
             # Determine parent action
             if not parent_id and is_running_task:
+                current_step = AgentBase.get_state_manager().get_current_step(session_id)
                 if current_step and current_step.get("action_id"):
                     parent_id = current_step["action_id"]
 
             parent_id = parent_id or None  # enforce None at root
 
             # ===================================
-            # 6. Execute Action
+            # 5. Execute Action
             # ===================================
             try:
                 action_output = await self.action_manager.execute_action(
@@ -315,7 +297,7 @@ class AgentBase:
                 raise
 
             # ===================================
-            # 7. Post-Action Handling
+            # 6. Post-Action Handling
             # ===================================
             new_session_id = action_output.get("task_id") or session_id
 

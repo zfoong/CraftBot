@@ -396,6 +396,9 @@ class TaskManager:
             f"Task ended with status '{status}'. {note or ''}",
             display_message=f"Task {wf.name} → {status}",
         )
+        self.state_manager.set_agent_property("current_task_id", "")
+        self.state_manager.set_agent_property("action_count", 0)
+        self.state_manager.set_agent_property("token_count", 0)
         # purge any queued triggers for the session
         try:
             await self.triggers.remove_sessions([wf.id])
