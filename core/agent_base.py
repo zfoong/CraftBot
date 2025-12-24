@@ -230,14 +230,21 @@ class AgentBase:
                 AgentBase.get_state_manager().bump_event_stream(session_id)
 
             # ===================================
-            # 3. Select Action
+            # 3. Check Limits
+            # ===================================
+            should_continue:bool = await self._check_agent_limits(session_id=session_id)
+            if not should_continue:
+                return
+
+            # ===================================
+            # 4. Select Action
             # ===================================
             logger.debug("[REACT] selecting action")
             is_running_task: bool = AgentBase.get_state_manager().is_running_task()
 
             if is_running_task:
                 # Perform reasoning to guide action selection within the task
-                reasoning_result: ReasoningResult = await self.perform_reasoning(query=query)
+                reasoning_result: ReasoningResult = await self._perform_reasoning(query=query)
                 reasoning: str = reasoning_result.reasoning
                 action_query: str = reasoning_result.action_query
 
@@ -255,7 +262,7 @@ class AgentBase:
                 raise ValueError("Action router returned no decision.")
 
             # ===================================
-            # 4. Get Action
+            # 5. Get Action
             # ===================================
             action_name = action_decision.get("action_name")
             action_params = action_decision.get("parameters", {})
@@ -280,7 +287,7 @@ class AgentBase:
             parent_id = parent_id or None  # enforce None at root
 
             # ===================================
-            # 5. Execute Action
+            # 6. Execute Action
             # ===================================
             try:
                 action_output = await self.action_manager.execute_action(
@@ -297,14 +304,14 @@ class AgentBase:
                 raise
 
             # ===================================
-            # 6. Post-Action Handling
+            # 7. Post-Action Handling
             # ===================================
             new_session_id = action_output.get("task_id") or session_id
 
             AgentBase.get_state_manager().bump_event_stream(new_session_id)
 
             # Schedule next trigger if continuing a task
-            await self.create_new_trigger(new_session_id, action_output, state_session)
+            await self._create_new_trigger(new_session_id, action_output, state_session)
 
         except Exception as e:
             # log error without raising again
@@ -332,7 +339,7 @@ class AgentBase:
 
                     # Schedule fallback follow-up only if action_output exists
                     logger.debug("[AGENT BASE] Failed action so create new trigger")
-                    await self.create_new_trigger(session_to_use, action_output, state_session)
+                    await self._create_new_trigger(session_to_use, action_output, state_session)
 
             except Exception:
                 logger.error("[REACT ERROR] Failed to log to event stream or create trigger", exc_info=True)
@@ -347,7 +354,69 @@ class AgentBase:
 
     # ───────────────────── helpers used by handlers/commands ──────────────
 
-    async def perform_reasoning(self, query: str, retries: int = 2) -> ReasoningResult:
+    async def _check_agent_limits(self, session_id) -> bool:
+        agent_properties = AgentBase.get_state_manager().get_agent_properties()
+        action_count: int = agent_properties.get("action_count", 0)
+        max_actions: int = agent_properties.get("max_actions_per_task", 0)
+        token_count: int = agent_properties.get("token_count", 0)
+        max_tokens: int = agent_properties.get("max_tokens_per_task", 0)
+
+        # Check action limits
+        if (action_count / max_actions) >= 1.0:
+            response = await InternalActionInterface.mark_task_cancel(reason=f"Task reached the maximum actions allowed limit: {max_actions}")
+            task_cancelled: bool = True if response.get('status') == "ok" else Fakse
+            if self.event_stream_manager and task_cancelled:
+                self.event_stream_manager.log(
+                    session_id,
+                    "warning",
+                    f"[Warning] Action limit reached: 100% of the maximum ({max_actions} actions) has been used. Aborting task.",
+                    display_message=f"Action limit reached: 100% of the maximum ({max_actions} actions) has been used. Aborting task.",
+                )
+                AgentBase.get_state_manager().bump_event_stream(session_id)
+            return not task_cancelled
+        elif (action_count / max_actions) >= 0.8:
+            if self.event_stream_manager:
+                self.event_stream_manager.log(
+                    session_id,
+                    "warning",
+                    f"[Warning] Action limit nearing: 80% of the maximum ({max_actions} actions) has been used. "
+                    "Consider wrapping up the task or informing the user that the task may be too complex. "
+                    "If necessary, mark the task as aborted to prevent premature termination.",
+                    display_message=None,
+                )
+                AgentBase.get_state_manager().bump_event_stream(session_id)
+                return True
+
+        # Check token limits
+        if (token_count / max_tokens) >= 1.0:
+            response = await InternalActionInterface.mark_task_cancel(reason=f"Task reached the maximum tokens allowed limit: {max_tokens}")
+            task_cancelled: bool = True if response.get('status') == "ok" else Fakse
+            if self.event_stream_manager and task_cancelled:
+                self.event_stream_manager.log(
+                    session_id,
+                    "warning",
+                    f"[Warning] Token limit reached: 100% of the maximum ({max_tokens} tokens) has been used. Aborting task.",
+                    display_message=f"Action limit reached: 100% of the maximum ({max_tokens} tokens) has been used. Aborting task.",
+                )
+                AgentBase.get_state_manager().bump_event_stream(session_id)
+            return not task_cancelled
+        elif (token_count / max_tokens) >= 0.8:
+            if self.event_stream_manager:
+                self.event_stream_manager.log(
+                    session_id,
+                    "warning",
+                    f"[Warning] Token limit nearing: 80% of the maximum ({max_tokens} tokens) has been used. "
+                    "Consider wrapping up the task or informing the user that the task may be too complex. "
+                    "If necessary, mark the task as aborted to prevent premature termination.",
+                    display_message=None,
+                )
+                AgentBase.get_state_manager().bump_event_stream(session_id)
+                return True
+        
+        # No limits close or reached
+        return True
+
+    async def _perform_reasoning(self, query: str, retries: int = 2) -> ReasoningResult:
         """
         Perform LLM-based reasoning on a user query to guide action selection.
 
@@ -398,7 +467,7 @@ class AgentBase:
         # All retries exhausted — fail fast with a clear error
         raise RuntimeError("Failed to obtain valid reasoning from LLM") from last_error
 
-    async def create_new_trigger(self, new_session_id, action_output, state_session):
+    async def _create_new_trigger(self, new_session_id, action_output, state_session):
         """
         Schedule the next trigger if a task is running.
         Fully wrapped in try/except so errors do not break the main REACT loop.
