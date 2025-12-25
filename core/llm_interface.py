@@ -20,6 +20,7 @@ from openai import OpenAI
 from core.models.factory import ModelFactory
 from core.models.types import InterfaceType
 from core.google_gemini_client import GeminiAPIError, GeminiClient
+from core.state.agent_state import STATE
 from decorators import profiler, profile, log_events
 
 # Logging setup — fall back to a basic logger if the project‑level logger
@@ -51,7 +52,7 @@ class LLMInterface:
         model: Optional[str] = None,
         db_interface: Optional[Any] = None,
         temperature: float = 0.0,
-        max_tokens: int = 8000,
+        max_tokens: int = 8000
     ) -> None:
         self.db_interface = db_interface
         self.temperature = temperature
@@ -92,17 +93,19 @@ class LLMInterface:
         logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
         if self.provider == "openai":
-            content = self._generate_openai(system_prompt, user_prompt)
+            response = self._generate_openai(system_prompt, user_prompt)
         elif self.provider == "remote":
-            content = self._generate_ollama(system_prompt, user_prompt)
+            response = self._generate_ollama(system_prompt, user_prompt)
         elif self.provider == "gemini":
-            content = self._generate_gemini(system_prompt, user_prompt)
+            response = self._generate_gemini(system_prompt, user_prompt)
         elif self.provider == "byteplus":
-            content = self._generate_byteplus(system_prompt, user_prompt)
+            response = self._generate_byteplus(system_prompt, user_prompt)
         else:  # pragma: no cover
             raise RuntimeError(f"Unknown provider {self.provider!r}")
 
-        cleaned = re.sub(self._CODE_BLOCK_RE, "", (content or "").strip())
+        cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
+
+        STATE.set_agent_property("token_count", STATE.get_agent_property("token_count", 0) + response.get("tokens_used", 0))
         logger.info(f"[LLM RECV] {cleaned}")
         return cleaned
 
@@ -157,6 +160,8 @@ class LLMInterface:
             exc_obj = exc
             logger.error(f"Error calling OpenAI API: {exc}")
 
+        total_tokens = token_count_input + token_count_output
+
         self._log_to_db(
             system_prompt,
             user_prompt,
@@ -165,7 +170,10 @@ class LLMInterface:
             token_count_input,
             token_count_output,
         )
-        return content or ""
+        return {
+            "tokens_used": total_tokens or 0,
+            "content": content or ""
+        }
 
     @log_events(name="_generate_ollama")
     @profile("llm_ollama_call")
@@ -191,6 +199,7 @@ class LLMInterface:
             result = response.json()
 
             content = result.get("response", "").strip()
+            total_tokens = result.get("usage", {}).get("total_tokens", 0)
             token_count_input = result.get("prompt_eval_count", 0)
             token_count_output = result.get("eval_count", 0)
             status = "success"
@@ -206,7 +215,10 @@ class LLMInterface:
             token_count_input,
             token_count_output,
         )
-        return content or ""
+        return {
+            "tokens_used": total_tokens or 0,
+            "content": content or ""
+        }
 
     @log_events(name="_generate_gemini")
     @profile("llm_gemini_call")
@@ -243,7 +255,10 @@ class LLMInterface:
             token_count_input,
             token_count_output,
         )
-        return content or ""
+        return content or {
+            "tokens_used": 0,
+            "content": ""
+        }
 
     @log_events(name="_generate_byteplus")
     @profile("llm_byteplus_call")
@@ -278,6 +293,8 @@ class LLMInterface:
             response.raise_for_status()
             result = response.json()
 
+            logger.info(f"BUTTPLUG RESPONSE: {result}")
+
             # Non-streaming content location (OpenAI-compatible)
             choices = result.get("choices", [])
             if choices:
@@ -287,6 +304,8 @@ class LLMInterface:
                     or choices[0].get("delta", {}).get("content", "")
                     or ""
                 ).strip()
+
+            total_tokens = result.get("usage", {}).get("total_tokens", 0)
 
             # Token usage (prompt/completion/total)
             usage = result.get("usage") or {}
@@ -306,7 +325,10 @@ class LLMInterface:
             token_count_input,
             token_count_output,
         )
-        return content or ""
+        return {
+            "tokens_used": total_tokens or 0,
+            "content": content or ""
+        }
 
     # ─────────────────── Internal utilities ───────────────────
     @log_events(name="_log_to_db")

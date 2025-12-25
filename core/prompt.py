@@ -273,7 +273,6 @@ ALL information that is operationally important for downstream decisions.
 </objective>
 
 <context>
-Session ID: {session_id}
 Time window of events to roll up: {window}
 
 You are given:

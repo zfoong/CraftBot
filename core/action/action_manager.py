@@ -27,6 +27,7 @@ from core.prompt import RESOLVE_ACTION_INPUT_PROMPT
 from core.event_stream.event_stream_manager import EventStreamManager
 from core.context_engine import ContextEngine
 from core.state.state_manager import StateManager
+from core.state.agent_state import STATE
 
 nest_asyncio.apply()
 
@@ -154,7 +155,6 @@ class ActionManager:
         
         if is_running_task and self.event_stream_manager:
             self.event_stream_manager.log(
-                session_id,
                 "action",
                 f"Running action {action.name} with input: {input_data}.",
                 display_message=f"Running {action.name}",
@@ -236,7 +236,6 @@ class ActionManager:
         if is_running_task and self.event_stream_manager:
             display_status = "failed" if status == "error" else "completed"
             self.event_stream_manager.log(
-                session_id,
                 "action",
                 f"Action {action.name} completed with output: {outputs}.",
                 display_message=f"{action.name} → {display_status}",
@@ -244,10 +243,9 @@ class ActionManager:
             )
 
 
-            current_step = self.state_manager.get_current_step(session_id)
+            current_step = self.state_manager.get_current_step()
             if current_step:
                 self.event_stream_manager.log(
-                    session_id, 
                     "task", 
                     f"Running task step: '{current_step.get('step_name')}' – {current_step.get('description')}",
                     display_message=f"Running task step: '{current_step.get('step_name')}' – {current_step.get('description')}"
@@ -258,7 +256,7 @@ class ActionManager:
             logger.warning(f"Action {action.name} completed with status: {status}. But no event stream manager to log to.")
         
         logger.debug(f"Persisting final state for action {action.name}...")
-        self.state_manager.set_agent_property("action_count", self.state_manager.get_agent_property("action_count") + 1)
+        STATE.set_agent_property("action_count", STATE.get_agent_property("action_count") + 1)
 
         self._log_action_history(
             run_id=run_id,

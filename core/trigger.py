@@ -14,7 +14,7 @@ from collections import defaultdict, OrderedDict
 from typing import Dict, List, Optional, Any
 from core.logger import logger
 from core.llm_interface import LLMInterface
-from core.state.state_session import StateSession
+from core.state.agent_state import STATE
 
 from core.prompt import CHECK_TRIGGERS_STATE_PROMPT
 
@@ -75,12 +75,7 @@ class TriggerQueue:
 
     def create_conversation_history_state(self):
         """Return formatted conversation history for trigger comparison."""
-
-        state_session = StateSession.get_or_none()
-        if state_session is None:
-            return ""
-
-        conversation_state = state_session.conversation_state
+        conversation_state = STATE.conversation_state
         if conversation_state:
             return (
                 "This is the conversation history (from oldest to newest messages):"
@@ -90,12 +85,7 @@ class TriggerQueue:
 
     def create_event_stream_state(self):
         """Return formatted event stream content for trigger comparison."""
-
-        state_session = StateSession.get_or_none()
-        if state_session is None:
-            return ""
-
-        event_stream = state_session.event_stream
+        event_stream = STATE.event_stream
         if event_stream:
             return (
                 "Use the event stream to understand the current situation, past agent actions to craft the input parameters:\nEvent stream (oldest to newest):"
@@ -105,12 +95,7 @@ class TriggerQueue:
 
     def create_task_state(self):
         """Return formatted task/plan context for trigger comparison."""
-
-        state_session = StateSession.get_or_none()
-        if state_session is None:
-            return ""
-
-        current_task = state_session.current_task
+        current_task = STATE.current_task
         if current_task:
             return "The plan of the current on-going task:" + f"\n{current_task}"
         return ""

@@ -1003,34 +1003,40 @@ class TUIInterface:
         """Refresh the conversation timeline with agent actions."""
         try:
             while self._running and self._agent.is_running:
-                for session_id in list(self._tracked_sessions):
-                    stream = self._agent.event_stream_manager.get_stream(session_id)
-                    if not stream:
+                stream = self._agent.event_stream_manager.get_stream()
+                if not stream:
+                    await asyncio.sleep(0.05)
+                    continue
+
+                for event in stream.as_list():
+                    key = (event.iso_ts, event.kind, event.message)
+                    if key in self._seen_events:
                         continue
-                    for event in stream.as_list():
-                        key = (session_id, event.iso_ts, event.kind, event.message)
-                        if key in self._seen_events:
-                            continue
-                        self._seen_events.add(key)
+                    self._seen_events.add(key)
 
-                        if event.kind == "screen":
-                            continue
+                    if event.kind == "screen":
+                        continue
 
-                        style = self._style_for_event(event.kind, event.severity)
-                        label = self._label_for_style(style, event.kind)
-                        display_text = event.display_text()
+                    style = self._style_for_event(event.kind, event.severity)
+                    label = self._label_for_style(style, event.kind)
+                    display_text = event.display_text()
 
-                        if style in {"action", "task"}:
-                            await self._handle_action_event(event.kind, display_text, style=style)
-                            continue
+                    if style in {"action", "task"}:
+                        await self._handle_action_event(
+                            event.kind,
+                            display_text,
+                            style=style,
+                        )
+                        continue
 
-                        if style not in {"agent", "system", "user", "error", "info"}:
-                            continue
+                    if style not in {"agent", "system", "user", "error", "info"}:
+                        continue
 
-                        if display_text is not None:
-                            await self.chat_updates.put((label, display_text, style))
+                    if display_text is not None:
+                        await self.chat_updates.put((label, display_text, style))
 
                 await asyncio.sleep(0.05)
+
         except asyncio.CancelledError:  # pragma: no cover
             raise
 
