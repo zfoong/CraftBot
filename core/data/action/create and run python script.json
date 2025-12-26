@@ -11,7 +11,7 @@
     "code": {
       "type": "string",
       "example": "import subprocess\nsubprocess.check_call(['pip', 'install', 'requests'])\nimport requests\nprint(requests.get('https://example.com').text)",
-      "description": "The Python code snippet to execute. It must be self-contained and handle all package installations needed at runtime. The input code MUST NOT have any malicious code, the code MUST BE SANDBOXED. The code must be production code with the highest level of quality. DO NOT give any placeholder code. You MUST NOT create any placeholder code or fabricated data."
+      "description": "The Python code snippet to execute. It must be self-contained and handle all package installations needed at runtime. The input code MUST NOT have any malicious code, the code MUST BE SANDBOXED. The code must be production code with the highest level of quality. DO NOT give any placeholder code or fabricated data. You MUST NOT handle exception with system exit."
     }
   },
   "output_schema": {
