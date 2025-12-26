@@ -39,32 +39,12 @@ class EventStream:
     def __init__(
         self,
         *,
-        session_id: str,
         llm: LLMInterface,
         summarize_at: int = 30,
         tail_keep_after_summarize: int = 15,
         max_events: int = 60,
         temp_dir: Path | None = None,
     ) -> None:
-        """
-        Initialize an event stream for a single session or task.
-
-        The stream stores recent events verbatim while rolling older entries
-        into a head summary. Thresholds control when summarization occurs and
-        how many items are preserved after each roll-up. A temporary directory
-        can be provided to externalize very large messages to disk to avoid
-        bloating prompt context.
-
-        Args:
-            session_id: Identifier for the session that owns this stream.
-            llm: Language model interface used when generating summaries.
-            summarize_at: Number of tail events that triggers summarization.
-            tail_keep_after_summarize: Count of most-recent events to retain
-                in full after summarization.
-            max_events: Maximum number of events to emit in prompt snapshots.
-            temp_dir: Optional directory for writing oversized event payloads.
-        """
-        self.session_id = session_id
         self.head_summary: Optional[str] = None
         self.llm = llm
         self.tail_events: List[EventRecord] = []
@@ -258,7 +238,7 @@ class EventStream:
         previous_summary = self.head_summary or "(none)"
 
         # Build a focused prompt for durable, operation-oriented summarization
-        prompt = EVENT_STREAM_SUMMARIZATION_PROMPT(self.session_id, window, previous_summary, compact_lines)
+        prompt = EVENT_STREAM_SUMMARIZATION_PROMPT(window, previous_summary, compact_lines)
 
         # Ask the LLM to synthesize the new head summary
         try:

@@ -9,7 +9,8 @@ from typing import Dict, Any, Optional
 from core.llm_interface import LLMInterface
 from core.vlm_interface import VLMInterface
 from core.task.task_manager import TaskManager
-from core.state_manager import StateManager, StateSession
+from core.state.state_manager import StateManager
+from core.state.agent_state import STATE
 from datetime import datetime
 from core.logger import logger
 from pathlib import Path
@@ -153,19 +154,13 @@ class InternalActionInterface:
 
         InternalActionInterface.state_manager.record_agent_message(message)
 
-        state_session = StateSession.get_or_none()
-        if state_session and state_session.session_id:
-            session_id = state_session.session_id
-            event_stream_manager = InternalActionInterface.state_manager.event_stream_manager
-            if event_stream_manager.get_stream(session_id) is None:
-                event_stream_manager.create_stream(session_id)
-            event_stream_manager.log(
-                session_id,
-                "agent",
-                message,
-                display_message=message
-            )
-            InternalActionInterface.state_manager.bump_event_stream(session_id)
+        event_stream_manager = InternalActionInterface.state_manager.event_stream_manager
+        event_stream_manager.log(
+            "agent",
+            message,
+            display_message=message
+        )
+        InternalActionInterface.state_manager.bump_event_stream()
 
     @staticmethod
     def do_ignore():
@@ -191,42 +186,22 @@ class InternalActionInterface:
 
         InternalActionInterface.state_manager.record_agent_message(question)
 
-        state_session = StateSession.get_or_none()
-        if state_session and state_session.session_id:
-            session_id = state_session.session_id
-            event_stream_manager = InternalActionInterface.state_manager.event_stream_manager
-            if event_stream_manager.get_stream(session_id) is None:
-                event_stream_manager.create_stream(session_id)
-            event_stream_manager.log(
-                session_id,
-                "agent_question",
-                question,
-                display_message=question
-            )
-            InternalActionInterface.state_manager.bump_event_stream(session_id)
+        event_stream_manager = InternalActionInterface.state_manager.event_stream_manager
+        event_stream_manager.log(
+            "agent_question",
+            question,
+            display_message=question
+        )
+        InternalActionInterface.state_manager.bump_event_stream()
 
     # ───────────────── CLI and GUI mode ─────────────────
     @staticmethod
     def switch_to_CLI_mode():
-        """
-        Switch the active session to CLI mode.
-
-        Sets the session flag so downstream components know to operate without a
-        graphical interface.
-        """
-        state_session = StateSession.get()
-        state_session.update_gui_mode(False)
+        STATE.update_gui_mode(False)
     
     @staticmethod
     def switch_to_GUI_mode():
-        """
-        Switch the active session to GUI mode.
-
-        Sets the session flag so downstream components know to operate with the
-        graphical interface enabled.
-        """
-        state_session = StateSession.get()
-        state_session.update_gui_mode(True)
+        STATE.update_gui_mode(True)
 
     # ───────────────── Task Management ─────────────────
     @classmethod
@@ -252,9 +227,9 @@ class InternalActionInterface:
             
         task_id = await cls.task_manager.create_task(task_name, task_description)
 
-        await cls.task_manager.start_task(task_id)
-        wf_dict = cls.task_manager.get_task(task_id)
-        cls.state_manager.add_to_active_task(task_id, wf_dict)
+        await cls.task_manager.start_task()
+        wf_dict = cls.task_manager.get_task()
+        cls.state_manager.add_to_active_task(wf_dict)
         return task_id
 
     @classmethod
@@ -271,13 +246,9 @@ class InternalActionInterface:
             A status dictionary indicating success or failure and the relevant
             task id.
         """
-        state_session = StateSession.get()
-        session_id = state_session.session_id
-        if not session_id:
-            return {"status": "error", "error": "no_active_task"}
         try:
-            ok = await cls.task_manager.mark_task_completed(session_id, message=message)
-            return {"status": "ok" if ok else "error", "task_id": session_id}
+            ok = await cls.task_manager.mark_task_completed(message=message)
+            return {"status": "ok" if ok else "error"}
         except Exception as e:
             logger.error(f"[InternalActions] mark_task_completed failed: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
@@ -296,13 +267,9 @@ class InternalActionInterface:
             A status dictionary indicating success or failure and the relevant
             task id.
         """
-        state_session = StateSession.get()
-        session_id = state_session.session_id
-        if not session_id:
-            return {"status": "error", "error": "no_active_task"}
         try:
-            ok = await cls.task_manager.mark_task_cancel(session_id, reason=reason)
-            return {"status": "ok" if ok else "error", "task_id": session_id}
+            ok = await cls.task_manager.mark_task_cancel(reason=reason)
+            return {"status": "ok" if ok else "error"}
         except Exception as e:
             logger.error(f"[InternalActions] mark_task_cancel failed: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
@@ -321,13 +288,9 @@ class InternalActionInterface:
             A status dictionary indicating success or failure and the relevant
             task id.
         """
-        state_session = StateSession.get()
-        session_id = state_session.session_id
-        if not session_id:
-            return {"status": "error", "error": "no_active_task"}
         try:
-            ok = await cls.task_manager.mark_task_error(session_id, message=message)
-            return {"status": "ok" if ok else "error", "task_id": session_id}
+            ok = await cls.task_manager.mark_task_error(message=message)
+            return {"status": "ok" if ok else "error"}
         except Exception as e:
             logger.error(f"[InternalActions] mark_task_error failed: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
@@ -352,16 +315,11 @@ class InternalActionInterface:
             A status dictionary indicating success and the planner result, or an
             error payload when no task is active.
         """
-        state_session = StateSession.get()
-        session_id = state_session.session_id
-        if not session_id:
-            return {"status": "error", "error": "no_active_task"}
         try:
             result = await cls.task_manager.start_next_step(
-                task_id=session_id,
                 replan=update_plan,
             )
-            return {"status": "ok", "result": result, "task_id": session_id}
+            return {"status": "ok", "result": result}
         except Exception as e:
             logger.error(f"[InternalActions] start_next_step failed: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
@@ -369,13 +327,10 @@ class InternalActionInterface:
     # ─────────────────────── Self-initiative goals ───────────────────────
     @classmethod
     def _get_goal_store(cls) -> Dict[str, Dict[str, Any]]:
-        if cls.state_manager is None:
-            raise RuntimeError("InternalActionInterface not initialized with StateManager.")
-
-        goals = cls.state_manager.get_agent_property("self_initiative_goals") or {}
+        goals = STATE.get_agent_property("self_initiative_goals") or {}
         if not isinstance(goals, dict):
             goals = {}
-        cls.state_manager.set_agent_property("self_initiative_goals", goals)
+        STATE.set_agent_property("self_initiative_goals", goals)
         return goals
 
     @classmethod
@@ -406,7 +361,7 @@ class InternalActionInterface:
                 return {"status": "error", "error": "goal_not_found"}
             goal["deleted_at"] = now
             goal["updated_at"] = now
-            cls.state_manager.set_agent_property("self_initiative_goals", goals)
+            STATE.set_agent_property("self_initiative_goals", goals)
             return {"status": "ok", "goal": goal}
 
         if normalized_op in {"create", "upsert"} and goal_id:
@@ -449,7 +404,7 @@ class InternalActionInterface:
             goal.setdefault("created_at", now)
             goal.setdefault("deleted_at", None)
 
-        cls.state_manager.set_agent_property("self_initiative_goals", goals)
+        STATE.set_agent_property("self_initiative_goals", goals)
         return {"status": "ok", "goal": goal}
 
     @classmethod
@@ -477,5 +432,5 @@ class InternalActionInterface:
         goal.setdefault("created_at", now)
         goal.setdefault("deleted_at", None)
 
-        cls.state_manager.set_agent_property("self_initiative_goals", goals)
+        STATE.set_agent_property("self_initiative_goals", goals)
         return {"status": "ok", "goal": goal}

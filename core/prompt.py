@@ -273,7 +273,6 @@ ALL information that is operationally important for downstream decisions.
 </objective>
 
 <context>
-Session ID: {session_id}
 Time window of events to roll up: {window}
 
 You are given:
@@ -428,6 +427,16 @@ POLICY_PROMPT = """
     - Never take irreversible actions (e.g., send emails, delete data) without explicit user confirmation.
     - Never take harmful actions (e.g., corrupting system environment, hacking) even with explicit user request.
 </agent_policy>
+"""
+
+AGENT_STATE_PROMPT = """
+<agent_state>
+- Active Task ID: {current_task_id}
+- Current Task action count: {action_count}
+- Max Actions per Task: {max_actions_per_task}
+- Current Task token count: {token_count}
+- Max Tokens per Task: {max_tokens_per_task}
+</agent_state>
 """
 
 ENVIRONMENTAL_CONTEXT_PROMPT = """
@@ -1108,6 +1117,7 @@ Follow these instructions carefully:
    The query should describe the action in natural language so that a vector database can retrieve relevant tools/actions.
 8. Do NOT plan or act on any steps that are not the current step.
 9. Base your reasoning and decisions ONLY on the current step and any relevant context from the task.
+10. If there are any warnings in the event stream about the current step, consider them in your reasoning and adjust your plan accordingly.
 </reasoning_protocol>
 
 <quality_control>

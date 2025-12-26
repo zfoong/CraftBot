@@ -6,10 +6,12 @@ from core.config import AGENT_WORKSPACE_ROOT
 from core.logger import logger
 from core.prompt import (
     AGENT_INFO_PROMPT,
+    AGENT_STATE_PROMPT,
     ENVIRONMENTAL_CONTEXT_PROMPT,
     POLICY_PROMPT,
 )
-from core.state_manager import StateSession
+from core.state.state_manager import StateManager
+from core.state.agent_state import STATE
 
 """
 core.context_engine
@@ -27,8 +29,9 @@ class ContextEngine:
     the information originates (conversation history, event stream, etc.).
     """
 
-    def __init__(self, agent_identity="General AI Assistant"):
-        """Initialize the context engine.
+    def __init__(self, state_manager: StateManager, agent_identity="General AI Assistant"):
+        """
+        Initializes the ContextEngine with optional defaults for each prompt component.
 
         agent_identity:
             Default identity/persona string to include in the system prompt when
@@ -38,6 +41,7 @@ class ContextEngine:
         self.system_messages = []
         self.user_messages = []
         self._role_info_func = None  # injected by AgentBase or subclass
+        self.state_manager = state_manager
         
     # ─────────────── SYSTEM MESSAGE COMPONENTS ───────────────
 
@@ -65,11 +69,28 @@ class ContextEngine:
             return self._role_info_func()
         return ""  # No-op by default
 
+    def create_system_agent_state(self):
+        """Return formatted agent properties for the current session."""
+        agent_properties = STATE.get_agent_properties()
+
+        if agent_properties:
+            prompt = AGENT_STATE_PROMPT.format(
+                current_task_id=agent_properties.get("current_task_id"),
+                action_count=agent_properties.get("action_count", 0),
+                max_actions_per_task=agent_properties.get("max_actions_per_task"),
+                token_count=agent_properties.get("token_count", 0),
+                max_tokens_per_task=agent_properties.get("max_tokens_per_task"),
+            )
+            return (
+                "\nThe current agent state is as follows:"
+                f"\n{prompt}"
+            )
+        return ""
+
     def create_system_conversation_history(self):
         """Return formatted conversation history for the current session."""
 
-        state_session = StateSession.get()
-        conversation_state = state_session.conversation_state
+        conversation_state = STATE.conversation_state
 
         if conversation_state:
             return (
@@ -81,8 +102,7 @@ class ContextEngine:
     def create_system_event_stream_state(self):
         """Return formatted event stream context for the current session."""
 
-        state_session = StateSession.get()
-        event_stream = state_session.event_stream
+        event_stream = STATE.event_stream
 
         if event_stream:
             return (
@@ -94,8 +114,7 @@ class ContextEngine:
     def create_system_task_state(self):
         """Return formatted task/plan state for the current session."""
 
-        state_session = StateSession.get()
-        current_task = state_session.current_task
+        current_task = STATE.current_task
 
         if current_task:
             return "\nThe plan of the current on-going task:" + f"\n{current_task}"
@@ -169,6 +188,7 @@ class ContextEngine:
         system_default_flags = {
             "agent_info": True,
             "role_info": True,
+            "agent_state": self.state_manager.is_running_task(),
             "conversation_history": True,
             "event_stream": True,
             "task_state": True,
@@ -187,6 +207,7 @@ class ContextEngine:
         system_sections = [
             ("agent_info", self.create_system_agent_info),
             ("role_info", self.create_system_role_info),
+            ("agent_state", self.create_system_agent_state),
             ("conversation_history", self.create_system_conversation_history),
             ("event_stream", self.create_system_event_stream_state),
             ("task_state", self.create_system_task_state),
