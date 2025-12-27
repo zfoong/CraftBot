@@ -3,7 +3,7 @@
   "name": "shell exec",
   "description": "Executes a shell command using the appropriate OS shell, capturing stdout, stderr, and exit code. Stdin is closed (EOF) by default and no input can be provided by the agent when prompted by shell.",
   "type": "atomic",
-  "execution_mode": "sandboxed",
+  "execution_mode": "internal",
   "platforms": ["windows", "linux", "darwin"],
   "input_schema": {
     "command": {

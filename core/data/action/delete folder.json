@@ -5,7 +5,7 @@
   "name": "delete folder",
   "description": "Deletes a folder/directory and all its contents.",
   "type": "atomic",
-  "execution_mode": "sandboxed",
+  "execution_mode": "internal",
   "mode": "CLI",
   "input_schema": {
     "path": {
