@@ -5,7 +5,7 @@
   "name": "window focus",
   "description": "Brings an existing application window to the foreground (switches focus) by matching its title.",
   "type": "atomic",
-  "execution_mode": "sandboxed",
+  "execution_mode": "internal",
   "mode": "GUI",
   "input_schema": {
     "title": {

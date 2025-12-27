@@ -5,7 +5,7 @@
   "name": "create folder",
   "description": "This action creates a new folder in the operating system at a given path.",
   "type": "atomic",
-  "execution_mode": "sandboxed",
+  "execution_mode": "internal",
   "mode": "CLI",
   "input_schema": {
     "path": {
