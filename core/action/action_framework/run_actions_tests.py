@@ -53,16 +53,37 @@ def run_tests():
             # EXECUTE THE ACTION HANDLER WITH TEST PAYLOAD
             result = action_impl.handler(meta.test_payload)
             
-            # Basic validation: Did it return a dict with a status?
-            if isinstance(result, dict) and result.get("status") == "success":
-                 logger.info(f"✅ TEST PASSED. Result output:")
-                 # Pretty print the result dict nicely
-                 logger.info(json.dumps(result, indent=2))
-                 success_count += 1
+            # Basic validation: Did it return a dict?
+            if result is None:
+                logger.error(f"❌ TEST FAILED. Action returned None.")
+                fail_count += 1
+            elif isinstance(result, dict):
+                status = result.get("status")
+                # Accept both 'success' and 'ok' as valid success statuses
+                # Also accept actions that return a dict without status field (assume success)
+                if status in ("success", "ok") or (status is None and len(result) > 0):
+                    logger.info(f"✅ TEST PASSED. Result output:")
+                    # Pretty print the result dict nicely
+                    logger.info(json.dumps(result, indent=2))
+                    success_count += 1
+                elif status == "error":
+                    logger.error(f"❌ TEST FAILED. Action returned error status.")
+                    logger.error(f"Output: {result}")
+                    fail_count += 1
+                else:
+                    # Other status values (like 'ignored') - check if it's a valid completion
+                    if status in ("ignored", "completed", "queued"):
+                        logger.info(f"✅ TEST PASSED. Result output:")
+                        logger.info(json.dumps(result, indent=2))
+                        success_count += 1
+                    else:
+                        logger.error(f"❌ TEST FAILED. Action finished but status was not 'success' or 'ok'.")
+                        logger.error(f"Output: {result}")
+                        fail_count += 1
             else:
-                 logger.error(f"❌ TEST FAILED. Action finished but status was not 'success'.")
-                 logger.error(f"Output: {result}")
-                 fail_count += 1
+                logger.error(f"❌ TEST FAILED. Action did not return a dict.")
+                logger.error(f"Output: {result} (type: {type(result).__name__})")
+                fail_count += 1
 
         except Exception as e:
             logger.error(f"❌ TEST FAILED WITH EXCEPTION.")

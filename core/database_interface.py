@@ -366,17 +366,12 @@ class DatabaseInterface:
         Returns:
             List of action dictionaries stored on disk that satisfy the filter.
         """
+        actions = registry_instance.list_all_actions_as_json()
 
-        actions = self._load_actions_from_disk()
-        filtered: List[Dict[str, Any]] = []
+        if default is not None:
+            actions = [action for action in actions if action.get("default") == default]
 
-        for action in actions:
-            if default is not None and bool(action.get("default")) != default:
-                continue
-
-            filtered.append(action)
-
-        return filtered
+        return actions
 
     def get_action(self, name: str) -> Optional[Dict[str, Any]]:
         """
@@ -391,10 +386,10 @@ class DatabaseInterface:
         needle = name.lower()
         action = registry_instance.find_action_by_name(action_name=name)
         
-        if action is None:
-            for action in self._load_actions_from_disk():
-                if action.get("name", "").lower() == needle:
-                    return action
+        # if action is None:
+        #     for action in self._load_actions_from_disk():
+        #         if action.get("name", "").lower() == needle:
+        #             return action
         return action
 
     def delete_action(self, name: str) -> None:
@@ -440,10 +435,7 @@ class DatabaseInterface:
         """        
         load_actions_from_directories()
 
-        custom_actions: List[Dict[str, Any]] = registry_instance.list_all_actions_as_json()
-        disk_actions: List[Dict[str, Any]] = self._load_actions_from_disk()
-
-        actions: List[Dict[str, Any]] = disk_actions + custom_actions
+        actions: List[Dict[str, Any]] = registry_instance.list_all_actions_as_json()
 
         try:
             existing = self.chroma_actions.get()
