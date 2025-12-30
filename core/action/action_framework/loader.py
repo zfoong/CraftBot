@@ -11,7 +11,7 @@ logger = logging.getLogger("ActionLoader")
 DEFAULT_ACTION_PATHS = [
     os.path.join('core', 'data', 'action'),
     # Looks for actions in any custom agent folder
-    os.path.join('agents'), 
+    # os.path.join('agents'), 
 ]
 
 def load_actions_from_directories(base_dir: str = None, paths_to_scan: List[str] = None):

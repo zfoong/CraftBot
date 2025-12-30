@@ -222,7 +222,7 @@ class ActionRouter:
         for attempt in range(max_retries):
             system_prompt, _ = self.context_engine.make_prompt(
                 user_flags={"query": False, "expected_output": False},
-                system_flags={"agent_info": False, "role_info": False, "conversation_history": False, "event_stream": False, "task_state": False, "policy": False},
+                system_flags={"agent_info": False, "conversation_history": False, "event_stream": False, "task_state": False, "policy": False},
             )
             raw_response = await self.llm_interface.generate_response_async(system_prompt, current_prompt)
             decision, parse_error = self._parse_action_decision(raw_response)

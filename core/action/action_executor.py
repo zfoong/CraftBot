@@ -53,10 +53,40 @@ def _atomic_action_venv_process(
             action_file.write_text(
                 f"""
 import json
+import sys
+
 input_data = json.loads({json.dumps(json.dumps(input_data))})
 
 # ─── USER CODE ───
 {action_code}
+
+# ─── Find and call the function ───
+func = None
+local_vars = dict(locals())
+for name, obj in local_vars.items():
+    if callable(obj) and not name.startswith('_') and name not in ('input_data', 'json', 'sys'):
+        func = obj
+        break
+
+if func is None:
+    # Fallback: check if output variable was set (legacy behavior)
+    if 'output' in local_vars:
+        print(local_vars['output'])
+        sys.exit(0)
+    else:
+        sys.exit(1)
+
+# Call the function and print result as JSON
+try:
+    result = func(input_data)
+    if isinstance(result, dict):
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print(str(result))
+except Exception as e:
+    import traceback
+    print("Execution failed: " + str(e) + "\\n" + traceback.format_exc(), file=sys.stderr)
+    sys.exit(1)
 """,
                 encoding="utf-8",
             )
