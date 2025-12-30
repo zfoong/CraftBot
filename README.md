@@ -24,6 +24,9 @@
 
 
 ---
+<p align="center">
+  <a href="README.ja.md">🇯🇵 日本語版はこちら</a>
+</p>
 
 ## 🚀 Overview
 
