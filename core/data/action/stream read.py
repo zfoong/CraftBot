@@ -8,8 +8,8 @@ from core.action.action_framework.registry import action
     input_schema={
         "input_file": {
             "type": "string",
-            "example": "/path/to/file.txt",
-            "description": "Absolute or relative path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported)."
+            "example": "full_path/to/file.txt",
+            "description": "Absolute path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported)."
         },
         "start_line": {
             "type": "integer",
@@ -238,8 +238,8 @@ def stream_read_linux(input_data: dict) -> dict:
     input_schema={
         "input_file": {
             "type": "string",
-            "example": "/path/to/file.txt",
-            "description": "Absolute or relative path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported)."
+            "example": "full_path/to/file.txt",
+            "description": "Absolute path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported)."
         },
         "start_line": {
             "type": "integer",
@@ -456,8 +456,8 @@ def stream_read_windows(input_data: dict) -> dict:
     input_schema={
         "input_file": {
             "type": "string",
-            "example": "/path/to/file.txt",
-            "description": "Absolute or relative path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported)."
+            "example": "full_path/to/file.txt",
+            "description": "Absolute path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported)."
         },
         "start_line": {
             "type": "integer",

@@ -1,7 +1,7 @@
 from core.action.action_framework.registry import action
 
 @action(
-    name="open browser",
+    name="open browser google chrome",
     description="Opens a web browser (Chrome, Edge, Firefox, Safari, or system default) across platforms. Optionally opens a specified URL.",
     mode="GUI",
     input_schema={
@@ -66,7 +66,7 @@ def open_browser(input_data: dict) -> dict:
         }
 
 @action(
-    name="open browser",
+    name="open browser google chrome",
     description="Opens a web browser (Chrome, Edge, Firefox, Safari, or system default) across platforms. Optionally opens a specified URL.",
     platforms=["windows"],
     input_schema={
@@ -150,7 +150,7 @@ def open_browser_windows(input_data: dict) -> dict:
         }
 
 @action(
-    name="open browser",
+    name="open browser google chrome",
     description="Opens a web browser (Chrome, Edge, Firefox, Safari, or system default) across platforms. Optionally opens a specified URL.",
     platforms=["darwin"],
     input_schema={
@@ -231,7 +231,7 @@ def open_browser_darwin(input_data: dict) -> dict:
         }
 
 @action(
-    name="open browser",
+    name="open browser google chrome",
     description="Opens a web browser (Chrome, Edge, Firefox, Safari, or system default) across platforms. Optionally opens a specified URL.",
     platforms=["linux"],
     input_schema={

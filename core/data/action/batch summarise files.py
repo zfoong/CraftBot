@@ -1,7 +1,7 @@
 from core.action.action_framework.registry import action
 
 @action(
-    name="batch_summarize_files",
+    name="batch summarize files",
     description="Summarizes all .txt, .md, and .docx files inside a directory using improved summarization logic with chunking and centroid-based clustering.",
     mode="CLI",
     platforms=["linux", "darwin"],
@@ -183,7 +183,7 @@ def batch_summarize_files_linux(input_data: dict) -> dict:
     return asyncio.run(main())
 
 @action(
-    name="batch_summarize_files",
+    name="batch summarize files",
     description="Summarizes all .txt, .md, and .docx files inside a directory using improved summarization logic with chunking and centroid-based clustering.",
     mode="CLI",
     platforms=["windows"],

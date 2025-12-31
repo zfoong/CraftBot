@@ -3,6 +3,7 @@ import shutil
 from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from dataclasses import asdict
 from pathlib import Path
+import re
 
 from core.task.task_planner import TaskPlanner
 from core.task.task import Task, Step
@@ -73,6 +74,7 @@ class TaskManager:
             The unique identifier assigned to the created task.
         """
         task_id = f"{task_name}_{uuid.uuid4().hex[:6]}"
+        task_id = self._sanitize_task_id(task_id)
         plan_json = await self.task_planner.plan_task(task_name, task_instruction)
         temp_dir = self._prepare_task_temp_dir(task_id)
         
@@ -410,3 +412,10 @@ class TaskManager:
             logger.debug("[TaskManager] Cleaned up temp dir for task %s", wf.id)
         except Exception:
             logger.warning("[TaskManager] Failed to clean temp dir for %s", wf.id, exc_info=True)
+
+    # ─────────────────────── helper function ───────────────────────────────────
+    def _sanitize_task_id(self, s: str) -> str:
+        s = s.strip()
+        s = re.sub(r"[^A-Za-z0-9._-]+", "_", s)  # replace invalid chars with _
+        s = re.sub(r"_+", "_", s)               # collapse repeats
+        return s.strip("._-") or "task"

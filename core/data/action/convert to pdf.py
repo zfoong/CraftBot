@@ -1,7 +1,7 @@
 from core.action.action_framework.registry import action
 
 @action(
-    name="convert_to_pdf",
+    name="convert to pdf",
     description="Converts a .txt, .md, or .docx file into a PDF using Pandoc (xelatex backend) and saves it at the specified location. Validates dependencies first.",
     platforms=["linux"],
     input_schema={

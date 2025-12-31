@@ -8,8 +8,8 @@ from core.action.action_framework.registry import action
     input_schema={
         "input_file": {
             "type": "string",
-            "example": "/path/to/file.txt",
-            "description": "Absolute or relative path to the input text file to inspect and virtually edit. The file must already exist on disk and be readable as UTF-8 text. This action does NOT modify the file on disk; it only returns what the edited text would look like in the specified region."
+            "example": "full_path/to/file.txt",
+            "description": "Absolute path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported). This action does NOT modify the file on disk; it only returns what the edited text would look like in the specified region."
         },
         "start_line": {
             "type": "integer",
@@ -286,8 +286,8 @@ def stream_edit_linux(input_data: dict) -> dict:
     input_schema={
         "input_file": {
             "type": "string",
-            "example": "/path/to/file.txt",
-            "description": "Absolute or relative path to the input text file to inspect and virtually edit. The file must already exist on disk and be readable as UTF-8 text. This action does NOT modify the file on disk; it only returns what the edited text would look like in the specified region."
+            "example": "full_path/to/file.txt",
+            "description": "Absolute path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported). This action does NOT modify the file on disk; it only returns what the edited text would look like in the specified region."
         },
         "start_line": {
             "type": "integer",
@@ -551,8 +551,8 @@ def stream_edit_windows(input_data: dict) -> dict:
     input_schema={
         "input_file": {
             "type": "string",
-            "example": "/path/to/file.txt",
-            "description": "Absolute or relative path to the input text file to inspect and virtually edit. The file must already exist on disk and be readable as UTF-8 text. This action does NOT modify the file on disk; it only returns what the edited text would look like in the specified region."
+            "example": "full_path/to/file.txt",
+            "description": "Absolute path to the input text file to read. The file must already exist on disk and be readable as UTF-8 text (binary files are not supported). This action does NOT modify the file on disk; it only returns what the edited text would look like in the specified region."
         },
         "start_line": {
             "type": "integer",

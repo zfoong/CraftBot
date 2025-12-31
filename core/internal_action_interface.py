@@ -188,7 +188,7 @@ class InternalActionInterface:
 
         event_stream_manager = InternalActionInterface.state_manager.event_stream_manager
         event_stream_manager.log(
-            "agent_question",
+            "agent question",
             question,
             display_message=question
         )

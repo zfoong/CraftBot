@@ -1,7 +1,7 @@
 from core.action.action_framework.registry import action
 
 @action(
-    name="clean_to_md",
+    name="convert to md",
     description="Cleans scraped text from .txt, .md, or .docx and converts it into clean, well-structured Markdown suitable for PDF conversion.",
     input_schema={
         "input_file": {

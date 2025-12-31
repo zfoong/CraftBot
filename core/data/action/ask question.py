@@ -4,7 +4,6 @@ from core.action.action_framework.registry import action
         name="ask question",
         description="Use this action to ask a clarifying question to the user when more information is needed.",
         execution_mode="internal",
-        default=True,
         input_schema={
                 "question": {
                         "type": "string",

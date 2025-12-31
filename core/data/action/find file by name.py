@@ -15,6 +15,11 @@ from core.action.action_framework.registry import action
             "type": "boolean",
             "example": True,
             "description": "Whether to search directories recursively. Default is true."
+        },
+        "base_directory": {
+            "type": "string",
+            "example": "~/Documents",
+            "description": "The base directory to start searching from. If not provided, defaults to the agent's workspace directory."
         }
     },
     output_schema={
@@ -40,46 +45,67 @@ from core.action.action_framework.registry import action
     test_payload={
         "pattern": "*.pdf",
         "recursive": True,
+        "base_directory": "~/Documents",
         "simulated_mode": True
     }
 )
 def find_file_by_name(input_data: dict) -> dict:
-    import json, os, fnmatch
+    import os
+    import fnmatch
 
-    pattern = input_data.get('pattern', '').strip()
-    recursive = bool(input_data.get('recursive', True))
+    pattern = (input_data.get("pattern") or "").strip()
+    recursive = bool(input_data.get("recursive", True))
+    base_directory = (input_data.get("base_directory") or "").strip()
 
     if not pattern:
-        return {'status': 'error', 'matches': [], 'message': 'Pattern is required.'}
-        exit()
+        return {"status": "error", "matches": [], "message": "Pattern is required."}
 
+    # Default to user's home directory if not provided
+    if not base_directory:
+        base_directory = os.path.expanduser("~")
+
+    # Expand ~ and normalize base directory
+    base_directory = os.path.expanduser(base_directory)
+    base_directory = os.path.normpath(base_directory)
+
+    if not os.path.exists(base_directory):
+        return {
+            "status": "error",
+            "matches": [],
+            "message": f"Base directory does not exist: {base_directory}"
+        }
+
+    if not os.path.isdir(base_directory):
+        return {
+            "status": "error",
+            "matches": [],
+            "message": f"Base directory is not a directory: {base_directory}"
+        }
+
+    # Normalize the pattern (if user passes a path, only use its basename as the match pattern)
     pattern = os.path.expanduser(pattern)
     pattern = os.path.normpath(pattern)
-
-    # Determine base directory and file pattern
-    if os.path.isabs(pattern) or os.sep in pattern:
-        base_dir = os.path.dirname(pattern) or os.path.expanduser('~')
-        file_pattern = os.path.basename(pattern)
-    else:
-        base_dir = os.path.expanduser('~')
-        file_pattern = pattern
+    file_pattern = os.path.basename(pattern) if (os.path.isabs(pattern) or os.sep in pattern) else pattern
 
     matches = []
-    for root, dirs, files in os.walk(base_dir):
+    for root, dirs, files in os.walk(base_directory):
         try:
             for name in files:
                 if fnmatch.fnmatch(name, file_pattern):
                     matches.append(os.path.abspath(os.path.join(root, name)))
         except PermissionError:
+            # Skip directories we don't have access to
             continue
+
         if not recursive:
             break
 
     return {
-        'status': 'success',
-        'matches': matches,
-        'message': '' if matches else f"No files matching '{file_pattern}' were found."
+        "status": "success",
+        "matches": matches,
+        "message": "" if matches else f"No files matching '{file_pattern}' were found in '{base_directory}'."
     }
+
 
 @action(
     name="find file by name",
@@ -96,6 +122,11 @@ def find_file_by_name(input_data: dict) -> dict:
             "type": "boolean",
             "example": True,
             "description": "Whether to search directories recursively. Default is true."
+        },
+        "base_directory": {
+            "type": "string",
+            "example": r"~\\Documents",
+            "description": "The base directory to start searching from. If not provided, defaults to the agent's workspace directory."
         }
     },
     output_schema={
@@ -109,8 +140,8 @@ def find_file_by_name(input_data: dict) -> dict:
                 "type": "string"
             },
             "example": [
-                "~/Documents/file1.pdf",
-                "~/Documents/reports/file2.pdf"
+                "C:\\Users\\me\\Documents\\file1.pdf",
+                "C:\\Users\\me\\Documents\\reports\\file2.pdf"
             ]
         },
         "message": {
@@ -121,43 +152,65 @@ def find_file_by_name(input_data: dict) -> dict:
     test_payload={
         "pattern": "*.pdf",
         "recursive": True,
+        "base_directory": r"~\\Documents",
         "simulated_mode": True
     }
 )
 def find_file_by_name_windows(input_data: dict) -> dict:
-    import json, os, fnmatch
+    import os
+    import fnmatch
 
-    pattern = input_data.get('pattern', '').strip()
-    recursive = bool(input_data.get('recursive', True))
+    pattern = (input_data.get("pattern") or "").strip()
+    recursive = bool(input_data.get("recursive", True))
+    base_directory = (input_data.get("base_directory") or "").strip()
 
     if not pattern:
-        return {'status': 'error', 'matches': [], 'message': 'Pattern is required.'}
-        exit()
+        return {"status": "error", "matches": [], "message": "Pattern is required."}
 
-    pattern = pattern.replace('/', '\\')
+    # Default to user's home directory if not provided
+    if not base_directory:
+        base_directory = os.path.expanduser("~")
+
+    # Windows-friendly normalization
+    base_directory = base_directory.replace("/", "\\")
+    base_directory = os.path.expanduser(base_directory)
+    base_directory = os.path.normpath(base_directory)
+
+    if not os.path.exists(base_directory):
+        return {
+            "status": "error",
+            "matches": [],
+            "message": f"Base directory does not exist: {base_directory}"
+        }
+
+    if not os.path.isdir(base_directory):
+        return {
+            "status": "error",
+            "matches": [],
+            "message": f"Base directory is not a directory: {base_directory}"
+        }
+
+    pattern = pattern.replace("/", "\\")
     pattern = os.path.expanduser(pattern)
     pattern = os.path.normpath(pattern)
 
-    if os.path.isabs(pattern) or '\\' in pattern:
-        base_dir = os.path.dirname(pattern) or os.path.expanduser('~')
-        file_pattern = os.path.basename(pattern)
-    else:
-        base_dir = os.path.expanduser('~')
-        file_pattern = pattern
+    # If user passes a path, only match on the basename
+    file_pattern = os.path.basename(pattern) if (os.path.isabs(pattern) or ("\\" in pattern)) else pattern
 
     matches = []
-    for root, dirs, files in os.walk(base_dir):
+    for root, dirs, files in os.walk(base_directory):
         try:
             for name in files:
                 if fnmatch.fnmatch(name, file_pattern):
                     matches.append(os.path.abspath(os.path.join(root, name)))
         except PermissionError:
             continue
+
         if not recursive:
             break
 
     return {
-        'status': 'success',
-        'matches': matches,
-        'message': '' if matches else f"No files matching '{file_pattern}' were found."
+        "status": "success",
+        "matches": matches,
+        "message": "" if matches else f"No files matching '{file_pattern}' were found in '{base_directory}'."
     }
