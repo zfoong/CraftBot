@@ -330,6 +330,7 @@ class TaskManager:
         await self._ensure_and_log_current_step(wf)
         self.db_interface.log_task(wf)
         self._sync_state_manager(wf)
+        STATE.set_agent_property("current_step_index", new_current.step_index)
         return {"status": "queued", "step": new_current.step_name}
 
     # ─────────────────────── Internal helpers ─────────────────────────────────
@@ -386,16 +387,13 @@ class TaskManager:
         if status == "completed":
             self._cleanup_task_temp_dir(wf)
 
-    def get_task(self) -> Optional[dict]:
-        wf = self.active
-        if not wf:
-            return None
-        return asdict(wf)
+    def get_task(self) -> Optional[Task]:
+        return self.active
 
-    def _sync_state_manager(self, wf: Task) -> None:
+    def _sync_state_manager(self, wf: Optional[Task]) -> None:
         if not self.state_manager:
             return
-        self.state_manager.set_active_task(asdict(wf))
+        self.state_manager.add_to_active_task(task=wf)
 
     def _prepare_task_temp_dir(self, task_id: str) -> Path:
         temp_root = self.workspace_root / "tmp"

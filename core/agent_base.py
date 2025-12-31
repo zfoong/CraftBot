@@ -505,7 +505,7 @@ class AgentBase:
             try:
                 current_step = self.state_manager.get_current_step()
                 if current_step:
-                    parent_action_id = current_step.get("action_id")
+                    parent_action_id = current_step.action_id
             except Exception as e:
                 logger.error(f"[TRIGGER] Failed to get current step for session {new_session_id}: {e}", exc_info=True)
 

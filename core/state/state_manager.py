@@ -4,7 +4,7 @@ from typing import Dict, List, Literal, Optional
 from core.state.types import AgentProperties, ConversationMessage
 from core.state.agent_state import STATE
 from core.event_stream.event_stream_manager import EventStreamManager
-from core.task.task import Task
+from core.task.task import Task, Step
 from core.logger import logger
 
 
@@ -26,7 +26,7 @@ class StateManager:
 
         conversation_state = await self.get_conversation_state()
         event_stream = self.get_event_stream_snapshot()
-        current_task = self.get_current_task_state()
+        current_task: Optional[Task] = self.get_current_task_state()
 
         logger.debug(f"[CURRENT TASK]: this is the current_task: {current_task}")
 
@@ -52,7 +52,7 @@ class StateManager:
     def reset(self) -> None:
         """Fully reset runtime state, including tasks and session context."""
         self.task = None
-        STATE.agent_properties: AgentProperties = AgentProperties(current_task_id="", action_count=0, token_count=0)
+        STATE.agent_properties: AgentProperties = AgentProperties(current_task_id="", action_count=0, current_step_index=0)
         self.clear_conversation_history()
         if self.event_stream_manager:
             self.event_stream_manager.clear_all()
@@ -94,55 +94,51 @@ class StateManager:
         self._append_conversation_message("agent", content)
         self._update_session_conversation_state()
     
-    def get_current_step(self) -> Optional[dict]:
-        wf = self.task
+    def get_current_step(self) -> Optional[Step]:
+        wf: Optional[Task] = self.task
         if not wf:
             return None
-        for st in wf["steps"]:
-            if st["status"] == "current":
-                return st
-        for st in wf["steps"]:
-            if st["status"] == "pending":
-                return st
-        return None
+        return wf.get_current_step()
     
     def get_event_stream_snapshot(self, *, max_events: int = 60) -> str:
         return self.event_stream_manager.snapshot(max_events=max_events)
         
-    def get_current_task_state(self) -> Optional[str]:
-        wf = self.task
+    def get_current_task_state(self) -> Optional[Task]:
+        task: Optional[Task] = self.task
 
-        logger.debug(f"[TASK] wf in StateManager: {wf}")
+        logger.debug(f"[TASK] task in StateManager: {task}")
 
-        if wf is None:
+        if not task:
             logger.debug("[TASK] task not found in StateManager")
             return None
 
         # Build minimal per-step representation
-        steps_summary: List[Dict[str, str]] = []
-        for step in wf['steps']:
+        steps_list: List[Step] = []
+        for step in task.steps:
+            item: Dict[str, Any] = {}
             item = {
-                "step_index": step['step_index'],
-                "step_name": step['step_name'],
-                "description": step['description'],
-                "action_instruction": step['action_instruction'],
-                "validation_instruction": step['validation_instruction'],
-                "status": step['status'],
+                "step_index": step.step_index,
+                "step_name": step.step_name,
+                "description": step.description,
+                "action_instruction": step.action_instruction,
+                "validation_instruction": step.validation_instruction,
+                "status": step.status,
             }
-            if step['failure_message']:
-                item["failure_message"] = step['failure_message']
-            steps_summary.append(item)
+            if step.failure_message:
+                item["failure_message"] = step.failure_message
+            steps_list.append(Step(**item, action_id=step.action_id))
 
-        payload = {
-            "instruction": wf['instruction'],
-            "goal": wf['goal'],
-            "inputs_params": wf['inputs_params'],
-            "context": wf['context'],
-            "steps": steps_summary
-        }
+        task: Task = Task(
+            id=task.id,
+            name=task.name,
+            instruction=task.instruction,
+            goal=task.goal,
+            inputs_params=task.inputs_params,
+            context=task.context,
+            steps=steps_list
+        )
 
-        # Return prettified JSON string
-        return json.dumps(payload, indent=2)
+        return task
 
     def bump_task_state(self) -> None:
         STATE.update_current_task(
@@ -158,13 +154,13 @@ class StateManager:
         else:
             return False
     
-    def add_to_active_task(self, task: dict):
-        self.set_active_task(task)
-
-    # TODO remove duplicate
-    def set_active_task(self, task: dict):
-        self.task = task
-        self.bump_task_state()
+    def add_to_active_task(self, task: Optional[Task]) -> None:
+        if task is None:
+            self.task = None
+            STATE.update_current_task(None)
+        else:
+            self.task = task
+            self.bump_task_state()
 
     def remove_active_task(self) -> None:
         self.task = None

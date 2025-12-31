@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from tzlocal import get_localzone
+import json
 
 from core.config import AGENT_WORKSPACE_ROOT
 from core.logger import logger
@@ -12,6 +13,7 @@ from core.prompt import (
 )
 from core.state.state_manager import StateManager
 from core.state.agent_state import STATE
+from typing import Optional, Dict, Any
 
 """
 core.context_engine
@@ -114,10 +116,11 @@ class ContextEngine:
     def create_system_task_state(self):
         """Return formatted task/plan state for the current session."""
 
-        current_task = STATE.current_task
+        current_task: Optional[Task] = STATE.current_task
 
         if current_task:
-            return "\nThe plan of the current on-going task:" + f"\n{current_task}"
+            current_task_dict: Dict[str, Any] = current_task.to_dict(fold=True, current_step_index=STATE.agent_properties.get_property("current_step_index"))
+            return "\nThe plan of the current on-going task:" + f"\n{json.dumps(current_task_dict, indent=4)}"
         return ""
 
     def create_system_policy(self):
