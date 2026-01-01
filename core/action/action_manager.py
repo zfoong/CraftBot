@@ -29,6 +29,7 @@ from core.event_stream.event_stream_manager import EventStreamManager
 from core.context_engine import ContextEngine
 from core.state.state_manager import StateManager
 from core.state.agent_state import STATE
+from core.task.task import Step
 
 nest_asyncio.apply()
 
@@ -245,14 +246,14 @@ class ActionManager:
             )
 
 
-            current_step = self.state_manager.get_current_step()
+            current_step: Optional[Step] = self.state_manager.get_current_step()
             if current_step:
                 self.event_stream_manager.log(
                     "task", 
-                    f"Running task step: '{current_step.get('step_name')}' – {current_step.get('description')}",
-                    display_message=f"Running task step: '{current_step.get('step_name')}' – {current_step.get('description')}"
+                    f"Running task step: '{current_step.step_name}' – {current_step.description}",
+                    display_message=f"Running task step: '{current_step.step_name}' – {current_step.description}"
                 )
-                logger.debug(f"[ActionManager] Step {current_step.get('step_name')} queued ({session_id})")
+                logger.debug(f"[ActionManager] Step {current_step.step_name} queued ({session_id})")
 
         else:
             logger.warning(f"Action {action.name} completed with status: {status}. But no event stream manager to log to.")

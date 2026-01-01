@@ -91,7 +91,7 @@ def convert_to_pdf_linux(input_data: dict) -> dict:
         return {"status": "error", "message": str(e)}
 
 @action(
-    name="convert_to_pdf",
+    name="convert to pdf",
     description="Converts a .txt, .md, or .docx file into a PDF using Pandoc (xelatex backend) and saves it at the specified location. Validates dependencies first.",
     platforms=["windows"],
     input_schema={
@@ -175,7 +175,7 @@ def convert_to_pdf_windows(input_data: dict) -> dict:
         return {"status": "error", "message": str(e)}
 
 @action(
-    name="convert_to_pdf",
+    name="convert to pdf",
     description="Converts a .txt, .md, or .docx file into a PDF using Pandoc (xelatex backend) and saves it at the specified location. Validates dependencies first.",
     platforms=["darwin"],
     input_schema={
