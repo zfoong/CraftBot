@@ -429,7 +429,7 @@ class AgentBase:
         # No limits close or reached
         return True
 
-    async def _perform_reasoning(self, query: str, retries: int = 2) -> ReasoningResult:
+    async def _perform_reasoning(self, query: str, retries: int = 2, log_reasoning_event = True) -> ReasoningResult:
         """
         Perform LLM-based reasoning on a user query to guide action selection.
 
@@ -466,12 +466,20 @@ class AgentBase:
                 user_prompt=prompt,
             )
 
-            # Log raw LLM output for debugging and observability
-            print(f"[REASONING attempt={attempt}] {response}")
-
             try:
                 # Parse and validate the structured JSON response
-                return self._parse_reasoning_response(response)
+                reasoning_result = self._parse_reasoning_response(response)
+
+                if self.event_stream_manager and log_reasoning_event:
+                    self.event_stream_manager.log(
+                        "agent reasoning",
+                        reasoning_result.reasoning,
+                        severity="DEBUG",
+                        display_message=None,
+                    )
+                    self.state_manager.bump_event_stream()
+
+                return reasoning_result
 
             except ValueError as e:
                 # Capture the error and retry if attempts remain
