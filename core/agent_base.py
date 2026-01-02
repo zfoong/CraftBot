@@ -106,7 +106,6 @@ class AgentBase:
         
         # action & task layers
         self.action_library = ActionLibrary(self.llm, db_interface=self.db_interface)
-        self.action_library.sync_databases()  # base tools
         
         self.task_docs_path = "core/data/task_document"
         if self.task_docs_path:
@@ -592,7 +591,7 @@ class AgentBase:
         Subclasses override this to return role-specific system instructions
         (responsibilities, behaviour constraints, expected domain tasks, etc).
         """
-        return ""
+        return "You are an AI agent, named 'white collar agent', developed by CraftOS, a general computer-use AI agent that can switch between CLI/GUI mode."
 
     def _build_db_interface(self, *, data_dir: str, chroma_path: str):
         """A tiny wrapper so a subclass can point to another DB/collection."""
