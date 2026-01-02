@@ -591,7 +591,7 @@ class AgentBase:
         Subclasses override this to return role-specific system instructions
         (responsibilities, behaviour constraints, expected domain tasks, etc).
         """
-        return ""
+        return "You are an AI agent, named 'white collar agent', developed by CraftOS, a general computer-use AI agent that can switch between CLI/GUI mode."
 
     def _build_db_interface(self, *, data_dir: str, chroma_path: str):
         """A tiny wrapper so a subclass can point to another DB/collection."""

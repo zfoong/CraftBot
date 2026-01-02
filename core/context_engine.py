@@ -71,7 +71,7 @@ class ContextEngine:
         if self._role_info_func:
             role = self._role_info_func()
             return AGENT_ROLE_PROMPT.format(role=role)
-        return AGENT_ROLE_PROMPT.format(role="You are an AI agent, named 'white collar agent', developed by CraftOS, a general computer-use AI agent that can switch between CLI/GUI mode.")
+        return ""
 
     def create_system_agent_state(self):
         """Return formatted agent properties for the current session."""
