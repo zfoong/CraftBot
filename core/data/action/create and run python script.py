@@ -50,6 +50,23 @@ def create_and_run_python_script(input_data: dict) -> dict:
     import importlib
 
     code_snippet = input_data.get("code", "")
+    
+    def _ensure_utf8_stdio() -> None:
+        """Force stdout/stderr to UTF-8 so Unicode output doesn't break on Windows consoles."""
+        for stream_name in ("stdout", "stderr"):
+            stream = getattr(sys, stream_name, None)
+            if hasattr(stream, "reconfigure"):
+                try:
+                    stream.reconfigure(encoding="utf-8", errors="replace")
+                except Exception:
+                    return {
+                        "status": "error",
+                        "stdout": "",
+                        "stderr": "",
+                        "message": "The 'utf-8' not supported."
+                    }
+
+    _ensure_utf8_stdio()    
 
     if not code_snippet.strip():
         return {
