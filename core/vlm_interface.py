@@ -177,10 +177,13 @@ class VLMInterface:
     def _format_elements_readable(
         self,
         screen_size: Dict[str, int],
-        elems: List[Dict[str, Any]]
+        elems: List[Dict[str, Any]],
+        reasoning: str = ""
     ) -> str:
         lines = []
         lines.append(f"# UI Elements ({len(elems)})")
+        if reasoning:
+            lines.append(f"# Reasoning: {reasoning}")
         for i, e in enumerate(elems, 1):
             b = e.get("bbox", {}) or {}
             x, y, w, h = int(b.get("x", 0)), int(b.get("y", 0)), int(b.get("w", 0)), int(b.get("h", 0))
@@ -221,6 +224,10 @@ class VLMInterface:
         parsed = self._safe_json(raw)
         screen = parsed.get("screen_size", {}) if isinstance(parsed, dict) else {}
         elems = parsed.get("elements", []) if isinstance(parsed, dict) else []
+        reasoning = parsed.get("reasoning", "") if isinstance(parsed, dict) else ""
+        if reasoning:
+            logger.info(f"[VLMInterface] Reasoning: {reasoning}")
+
         elems = elems if isinstance(elems, list) else []
     
         # 2) Basic cleanup + center computation; clamp + truncate
@@ -278,4 +285,4 @@ class VLMInterface:
                 pass
     
         # 4) Format and return
-        return self._format_elements_readable(screen, cleaned)
+        return self._format_elements_readable(screen, cleaned, reasoning)

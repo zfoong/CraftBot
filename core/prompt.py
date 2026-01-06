@@ -231,12 +231,15 @@ Here are some general rules when selecting actions:
 - DO NOT use 'create and run python script' to chat/send message/report to the user. Use 'send message' action instead.
 - DO NOT exploit and use 'create and run python script', it is only meant to perform a small piece of atomic action, DO NOT use it to handle the entire step or task in one go.
 - Sometimes when an event is too long, its content will be externalized and save in a tmp folder. To read the event result, agent MUST use the 'grep' action to extract the context with keywords or use 'stream read' to read the content line by line in file. Perform this step until you understand the content of the file enough to utilize the content."
+- Select an action to perform as atomic an action as possible. If part of the goal can be achieved with an existing action, you should select the existing action instead of creating a new one.
 
 Important instructions you must follow:
 - The selected action MUST be inside the candidate list below. If none are suitable, set the action name to "" (empty string) so a new action can be created.
 - DO NOT SPAM the user. DO NOT repeat an action again and again after RETRYING. If the user does not respond to your question after a maximum of 2 tries, JUST SKIP IT.
 - DO NOT execute an action with the EXACT same input and output repeated. You NEED to recognize that you are stuck in a loop. When this happen, you MUST select other actions.
 - DO NOT assume the task is completed and use 'send message' to report that you have completed the task. This happens frequently as LLM received a task and use 'send message' action to reply that the task is completed, despite not doing anything.
+- DO NOT use the screen shot action to analyze the screen. Use the event stream to analyze the screen.
+- DO NOT perform more than one UI interaction at a time. For example, if you have to type in a search bar, you should only perform the typing action, not typing and selecting from the drop down and clicking on the button at the same time.
 - You must provide concrete parameter values that satisfy the selected action's input_schema. Use an empty object {{}} only when the schema requires no parameters.
 - Sometimes when an event is too long, its content will be externalized and save in a tmp folder. To read the event result, agent MUST use the 'grep' action to extract the context with keywords or use 'stream read' to read the content line by line in file. Perform this step until you understand the content of the file enough to utilize the content."
 - If the last step is complete and the agent is in GUI mode, you MUST switch to CLI mode. This is important to ensure the agent is in the correct mode before the task is completed.
@@ -592,9 +595,17 @@ Extract all visible, actionable UI elements from the screenshot and return STRIC
 7) Return the JSON object. If nothing actionable is present, return an empty elements array.
 </methods>
 
+<reasoning>
+- The reasoning should be a natural-language chain-of-thought about the current state of the screen and the elements on the screen.
+- Critically, analyze the state of any open or active controls (like dropdowns, menus, or dialogs). If a control is open and displays specific feedback, results, or messages (e.g., "No matches found", "Loading...", error messages), explicitly state this in the reasoning.
+- Analyze the data on screen to understand if it's sufficient to complete the task.
+- Extract relevant data from the screen and store it in the reasoning field.
+</reasoning>
+
 <output_format>
 {{
   "screen_size": {{"w": <int>, "h": <int>}},
+  "reasoning": "<natural-language chain-of-thought about the current state of the screen and the elements on the screen and the data on screen and the relevant data extracted from the screen>",
   "elements": [
     {{
       "id": "<short-stable-id>",
@@ -613,6 +624,7 @@ Few-shot examples (illustrative only; DO NOT copy into output)
 Example A: Projects page with toolbar and table (page title “Projects”; table “Projects”; filter chip “active”)
 {{
   "screen_size": {{"w": 1280, "h": 800}},
+  "reasoning": "The screen shows a projects page with a toolbar and a table. The toolbar has a search bar and a new project button. Based on the current state of the task I can see some good results. I do not need to scroll. I should click the new project button to create a new project.",
   "elements": [
     {{
       "id": "tb-search-projects",
@@ -660,6 +672,7 @@ Example A: Projects page with toolbar and table (page title “Projects”; tabl
 Example B: Deployments dashboard (breadcrumb shows service “payments-api”; toolbar dropdown shows current value)
 {{
   "screen_size": {{"w": 1440, "h": 900}},
+  "reasoning": "The screen shows a deployments dashboard with a toolbar and a table. The toolbar has a dropdown and a run deployment button. Based on the current state of the task I can not see any good results. I need to scroll to see the results or something else to be done. I see some product prices - the kettle costs $150.",
   "elements": [
     {{
       "id": "dd-env",
@@ -1139,6 +1152,8 @@ Follow these instructions carefully:
 11. If the event stream shows repeated patterns, figure out the root cause and adjust your plan accordingly.
 12. Focus on the current and VM operating system when reasoning about the current step.
 13. When task is complete, if GUI mode is active, you should switch to CLI mode.
+14. If performing a GUI action, DO NOT perform more than one action at a time. For example, if you have to type in a search bar, you should only perform the typing action, not typing and selecting from the drop down and clicking on the button at the same time.
+15. Play close attention to the state of the screen and the elements on the screen and the data on screen and the relevant data extracted from the screen.
 </reasoning_protocol>
 
 <quality_control>
@@ -1162,6 +1177,12 @@ Examples:
 {{
   "reasoning": "Step 0 requires acknowledging the task and prompting the user for their location. The message has not been sent yet, so the system needs to notify the user by sending a clear prompt asking for their location.",
   "action_query": "send a message to the user asking for their desired location for weather retrieval"
+}}
+
+- If is in GUI mode and requires interaction based actions to be performed:
+{{
+  "reasoning": "The current step requires interaction based actions to be performed. The system needs to perform the interaction based actions one by one, not performing multiple actions at the same time.",
+  "action_query": "Move mouse to drop down"
 }}
 
 - If the current step is complete:
