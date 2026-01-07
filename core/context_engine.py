@@ -154,9 +154,9 @@ class ContextEngine:
             operating_system=platform.system(),
             os_version=platform.release(),
             os_platform=platform.platform(),
-            vm_operating_system=platform.system(),
-            vm_os_version=platform.release(),
-            vm_os_platform=platform.platform(),
+            vm_operating_system="linux",
+            vm_os_version="",
+            vm_os_platform=""
             )
         return prompt
     
