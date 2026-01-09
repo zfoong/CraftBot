@@ -112,7 +112,11 @@ class GUIModule:
             # ===================================
             # 2. Check Limits
             # ===================================
-            # TODO: Check Limits
+            if not await self._check_agent_limits():
+                return {
+                    "status": "error",
+                    "message": "Agent limits reached"
+                }
 
             # ===================================
             # 3. Select Action
@@ -227,6 +231,7 @@ class GUIModule:
                 return reasoning_result
             except ValueError as e:                
                 raise RuntimeError("Failed to obtain valid reasoning from VLM") from e
+
     def _parse_reasoning_response(self, response: str) -> ReasoningResult:
         """
         Parse and validate the structured JSON response from the reasoning LLM call.
@@ -249,3 +254,21 @@ class GUIModule:
             reasoning=reasoning,
             action_query=action_query,
         )
+
+    async def _check_agent_limits(self) -> bool:
+        agent_properties = STATE.get_agent_properties()
+        action_count: int = agent_properties.get("action_count", 0)
+        max_actions: int = agent_properties.get("max_actions_per_task", 0)
+        token_count: int = agent_properties.get("token_count", 0)
+        max_tokens: int = agent_properties.get("max_tokens_per_task", 0)
+
+        # Check action limits
+        if (action_count / max_actions) >= 1.0:
+            return False
+
+        # Check token limits
+        if (token_count / max_tokens) >= 1.0:
+            return False
+        
+        # No limits close or reached
+        return True

@@ -232,10 +232,6 @@ class AgentBase:
             # Initialize session and extract trigger data
             trigger_data: TriggerData = self._extract_trigger_data(trigger)
             await self._initialize_session(trigger_data.gui_mode, session_id)
-            
-            # Check if agent should continue (limits check)
-            if not await self._check_agent_limits():
-                return
 
             # Handle GUI mode task execution (early return path)
             if self._should_handle_gui_task():
@@ -258,10 +254,11 @@ class AgentBase:
             # Post-action handling
             new_session_id = action_output.get("task_id") or session_id
             await self._finalize_action_execution(new_session_id, action_output, session_id)
+            return
 
         except Exception as e:
             await self._handle_react_error(e, new_session_id, session_id, action_output)
-
+            return
         finally:
             self._cleanup_session()
 
@@ -416,6 +413,8 @@ class AgentBase:
     ) -> None:
         """Handle post-action cleanup and trigger scheduling."""
         self.state_manager.bump_event_stream()
+        if not await self._check_agent_limits():
+            return
         await self._create_new_trigger(new_session_id, action_output, STATE)
 
     async def _handle_react_error(
