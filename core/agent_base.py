@@ -29,9 +29,11 @@ import time
 import uuid
 import json
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, TYPE_CHECKING
 
-from core.task.task import Step
+if TYPE_CHECKING:
+    from core.action.action import Action
+
 from core.action.action_library import ActionLibrary
 from core.action.action_manager import ActionManager
 from core.action.action_router import ActionRouter
@@ -45,7 +47,7 @@ from core.context_engine import ContextEngine
 from core.state.state_manager import StateManager
 from core.state.agent_state import STATE
 from core.trigger import Trigger, TriggerQueue
-from core.prompt import STEP_REASONING_PROMPT, GUI_REASONING_PROMPT
+from core.prompt import STEP_REASONING_PROMPT
 from core.state.types import ReasoningResult
 from core.task.task_manager import TaskManager
 from core.task.task_planner import TaskPlanner
@@ -59,6 +61,14 @@ class AgentCommand:
     name: str
     description: str
     handler: Callable[[], Awaitable[str | None]]
+
+
+@dataclass
+class TriggerData:
+    """Structured data extracted from a Trigger."""
+    query: str
+    gui_mode: bool | None
+    parent_id: str | None
 
 class AgentBase:
     """
@@ -157,7 +167,9 @@ class AgentBase:
         self._command_registry: Dict[str, AgentCommand] = {}
         self._register_builtin_commands()
 
-    # ─────────────────────────── commands ──────────────────────────────
+    # =====================================
+    # Commands
+    # =====================================
 
     def _register_builtin_commands(self) -> None:
         self.register_command(
@@ -195,7 +207,9 @@ class AgentBase:
 
         return self._command_registry
 
-    # ─────────────────────────── agent “turn” ────────────────────────────
+    # =====================================
+    # Agent Turn
+    # =====================================
     async def react(self, trigger: Trigger) -> None:
         """
         This is the main agent cycle. It executes a full agent turn in response to an incoming trigger.
@@ -214,166 +228,232 @@ class AgentBase:
 
         try:
             logger.debug("[REACT] starting...")
-
-            STATE.set_agent_property(
-                "current_task_id", session_id
-            )
-
-            query: str = trigger.next_action_description
-            reasoning: str = ""
-            current_step_index: int | None = None
-            gui_mode = trigger.payload.get("gui_mode")
-            parent_id = trigger.payload.get("parent_action_id")
-
-            # ===================================
-            # 1. Start Session
-            # ===================================
-            await self.state_manager.start_session(gui_mode)
-
-            # ===================================
-            # 2. Check Limits
-            # ===================================
-            should_continue:bool = await self._check_agent_limits()
-            if not should_continue:
+            
+            # Initialize session and extract trigger data
+            trigger_data: TriggerData = self._extract_trigger_data(trigger)
+            await self._initialize_session(trigger_data.gui_mode, session_id)
+            
+            # Check if agent should continue (limits check)
+            if not await self._check_agent_limits():
                 return
 
-            # ===================================
-            # 3. Select Action
-            # ===================================
-            logger.debug("[REACT] selecting action")
-            is_running_task: bool = self.state_manager.is_running_task()
-
-            if is_running_task:
-                # GUI-mode handling
-                if STATE.gui_mode:
-                    logger.debug("[GUI MODE] Entered GUI mode.")
-                    step: Optional[Step] = self.state_manager.get_current_step()
-
-                    if step is None:
-                        raise ValueError("No current step found in StateManager")
-
-                    gui_response: dict = await GUIHandler.gui_module.perform_gui_task_step(
-                        step=step, 
-                        session_id=session_id, 
-                        next_action_description=query, 
-                        parent_action_id=parent_id
-                    )
-
-                    if gui_response.get("status") == "ok":
-                        action_decision = gui_response.get("next_action")
-                    else:
-                        raise ValueError(gui_response.get("message"))
-                else:
-                    # Perform reasoning to guide action selection within the task
-                    reasoning_result: ReasoningResult = await self._perform_reasoning(query=query)
-                    reasoning: str = reasoning_result.reasoning
-                    action_query: str = reasoning_result.action_query
-    
-                    logger.debug(f"[AGENT QUERY] {action_query}")
-                    action_decision = await self.action_router.select_action_in_task(
-                        query=action_query, reasoning=reasoning, GUI_mode=STATE.gui_mode
-                    )
-            else:
-                logger.debug(f"[AGENT QUERY] {query}")
-                action_decision = await self.action_router.select_action(
-                    query=query
+            # Handle GUI mode task execution (early return path)
+            if self._should_handle_gui_task():
+                action_output, new_session_id = await self._handle_gui_task_execution(
+                    trigger_data, session_id
                 )
+                await self._finalize_action_execution(new_session_id, action_output, session_id)
+                return
 
-            if not action_decision:
-                raise ValueError("Action router returned no decision.")
-
-            # ===================================
-            # 4. Get Action
-            # ===================================
-            action_name = action_decision.get("action_name")
-            action_params = action_decision.get("parameters", {})
-
-            if not action_name:
-                raise ValueError("No valid action selected by the router.")
-
-            # Retrieve action
-            action = self.action_library.retrieve_action(action_name)
-            if action is None:
-                raise ValueError(
-                    f"Action '{action_name}' not found in the library. "
-                    "Check DB connectivity or ensure the action is registered."
-                )
+            # Select and execute action (standard path)
+            action_decision, reasoning = await self._select_action(trigger_data)
+            action, action_params, parent_id = await self._retrieve_and_prepare_action(
+                action_decision, trigger_data.parent_id
+            )
             
-            # Determine parent action
-            if not parent_id and is_running_task:
-                current_step = self.state_manager.get_current_step()
-                if current_step and current_step.action_id:
-                    parent_id = current_step.action_id
-
-            parent_id = parent_id or None  # enforce None at root
-
-            # ===================================
-            # 5. Execute Action
-            # ===================================
-            logger.info(f"[GUI ACTION]: ready to run {action}")
-            try:
-                action_output = await self.action_manager.execute_action(
-                    action=action,
-                    context=reasoning if reasoning else query,
-                    event_stream=STATE.event_stream,
-                    parent_id=parent_id,
-                    session_id=session_id,
-                    is_running_task=is_running_task,
-                    input_data=action_params,
-                )
-            except Exception as e:
-                logger.error(f"[REACT ERROR] executing action '{action_name}': {e}", exc_info=True)
-                raise
-
-            # ===================================
-            # 6. Post-Action Handling
-            # ===================================
+            action_output = await self._execute_action(
+                action, action_params, trigger_data, reasoning, parent_id, session_id
+            )
+            
+            # Post-action handling
             new_session_id = action_output.get("task_id") or session_id
-
-            self.state_manager.bump_event_stream()
-
-            # Schedule next trigger if continuing a task
-            await self._create_new_trigger(new_session_id, action_output, STATE)
+            await self._finalize_action_execution(new_session_id, action_output, session_id)
 
         except Exception as e:
-            # log error without raising again
-            tb = traceback.format_exc()
-            logger.error(f"[REACT ERROR] {e}\n{tb}")
-
-            try:
-                session_to_use = new_session_id or session_id
-                if session_to_use and self.event_stream_manager:
-                    logger.debug("[REACT ERROR] logging to event stream")
-
-                    self.event_stream_manager.log(
-                        "error",
-                        f"[REACT] {type(e).__name__}: {e}\n{tb}",
-                        display_message=None,
-                    )
-
-                    logger.debug("[AGENT BASE] Action failed")
-
-                    self.state_manager.bump_event_stream()
-
-                    logger.debug("[AGENT BASE] Action failed and then bumped")
-                    logger.debug(f"[AGENT BASE] Action Output: {action_output}")
-
-                    # Schedule fallback follow-up only if action_output exists
-                    logger.debug("[AGENT BASE] Failed action so create new trigger")
-                    await self._create_new_trigger(session_to_use, action_output, STATE)
-
-            except Exception:
-                logger.error("[REACT ERROR] Failed to log to event stream or create trigger", exc_info=True)
+            await self._handle_react_error(e, new_session_id, session_id, action_output)
 
         finally:
-            # Always end session safely
-            try:
-                self.state_manager.clean_state()
-            except Exception:
-                logger.warning("[REACT] Failed to end session safely")
+            self._cleanup_session()
 
+    # =====================================
+    # Internal Methods
+    # =====================================
 
-    # ───────────────────── helpers used by handlers/commands ──────────────
+    def _extract_trigger_data(self, trigger: Trigger) -> TriggerData:
+        """Extract and structure data from trigger."""
+        return TriggerData(
+            query=trigger.next_action_description,
+            gui_mode=trigger.payload.get("gui_mode"),
+            parent_id=trigger.payload.get("parent_action_id"),
+        )
+
+    async def _initialize_session(self, gui_mode: bool | None, session_id: str) -> None:
+        """Initialize the agent session and set current task ID."""
+        STATE.set_agent_property("current_task_id", session_id)
+        await self.state_manager.start_session(gui_mode)
+
+    def _should_handle_gui_task(self) -> bool:
+        """Check if we should handle GUI task execution."""
+        return self.state_manager.is_running_task() and STATE.gui_mode
+
+    async def _handle_gui_task_execution(
+        self, trigger_data: TriggerData, session_id: str
+    ) -> tuple[dict, str]:
+        """
+        Handle GUI mode task step execution.
+        
+        Returns:
+            Tuple of (action_output, new_session_id)
+        """
+        current_step = self.state_manager.get_current_step()
+        if current_step is None:
+            raise ValueError("No current step found in StateManager")
+
+        logger.debug("[GUI MODE] Entered GUI mode.")
+        
+        gui_response = await GUIHandler.gui_module.perform_gui_task_step(
+            step=current_step,
+            session_id=session_id,
+            next_action_description=trigger_data.query,
+            parent_action_id=trigger_data.parent_id,
+        )
+
+        if gui_response.get("status") != "ok":
+            raise ValueError(gui_response.get("message", "GUI task step failed"))
+
+        action_output = gui_response.get("action_output", {})
+        new_session_id = action_output.get("task_id") or session_id
+        return action_output, new_session_id
+
+    async def _select_action(self, trigger_data: TriggerData) -> tuple[dict, str]:
+        """
+        Select an action based on current task state.
+        
+        Returns:
+            Tuple of (action_decision, reasoning) where reasoning is empty string
+            for non-task contexts.
+        """
+        is_running_task = self.state_manager.is_running_task()
+        
+        if is_running_task:
+            return await self._select_action_in_task(trigger_data.query)
+        else:
+            logger.debug(f"[AGENT QUERY] {trigger_data.query}")
+            action_decision = await self.action_router.select_action(query=trigger_data.query)
+            if not action_decision:
+                raise ValueError("Action router returned no decision.")
+            return action_decision, ""
+
+    async def _select_action_in_task(self, query: str) -> tuple[dict, str]:
+        """
+        Select action when running within a task context.
+        
+        Returns:
+            Tuple of (action_decision, reasoning)
+        """
+        reasoning_result = await self._perform_reasoning(query=query)
+        logger.debug(f"[AGENT QUERY] {reasoning_result.action_query}")
+        
+        action_decision = await self.action_router.select_action_in_task(
+            query=reasoning_result.action_query,
+            reasoning=reasoning_result.reasoning,
+            GUI_mode=STATE.gui_mode,
+        )
+        
+        if not action_decision:
+            raise ValueError("Action router returned no decision.")
+        
+        return action_decision, reasoning_result.reasoning
+
+    async def _retrieve_and_prepare_action(
+        self, action_decision: dict, initial_parent_id: str | None
+    ) -> tuple[Action, dict, str | None]:
+        """
+        Retrieve action from library and determine parent action ID.
+        
+        Returns:
+            Tuple of (action, action_params, parent_id)
+        """
+        action_name = action_decision.get("action_name")
+        action_params = action_decision.get("parameters", {})
+        
+        if not action_name:
+            raise ValueError("No valid action selected by the router.")
+
+        action = self.action_library.retrieve_action(action_name)
+        if action is None:
+            raise ValueError(
+                f"Action '{action_name}' not found in the library. "
+                "Check DB connectivity or ensure the action is registered."
+            )
+        
+        # Determine parent action ID
+        parent_id = initial_parent_id
+        if not parent_id and self.state_manager.is_running_task():
+            current_step = self.state_manager.get_current_step()
+            if current_step and current_step.action_id:
+                parent_id = current_step.action_id
+        
+        return action, action_params, parent_id or None
+
+    async def _execute_action(
+        self,
+        action: Action,
+        action_params: dict,
+        trigger_data: TriggerData,
+        reasoning: str,
+        parent_id: str | None,
+        session_id: str,
+    ) -> dict:
+        """Execute the selected action."""
+        is_running_task = self.state_manager.is_running_task()
+        context = reasoning if reasoning else trigger_data.query
+        
+        logger.info(f"[ACTION] Ready to run {action}")
+        
+        return await self.action_manager.execute_action(
+            action=action,
+            context=context,
+            event_stream=STATE.event_stream,
+            parent_id=parent_id,
+            session_id=session_id,
+            is_running_task=is_running_task,
+            input_data=action_params,
+        )
+
+    async def _finalize_action_execution(
+        self, new_session_id: str, action_output: dict, session_id: str
+    ) -> None:
+        """Handle post-action cleanup and trigger scheduling."""
+        self.state_manager.bump_event_stream()
+        await self._create_new_trigger(new_session_id, action_output, STATE)
+
+    async def _handle_react_error(
+        self,
+        error: Exception,
+        new_session_id: str | None,
+        session_id: str,
+        action_output: dict,
+    ) -> None:
+        """Handle errors during react execution."""
+        tb = traceback.format_exc()
+        logger.error(f"[REACT ERROR] {error}\n{tb}")
+
+        session_to_use = new_session_id or session_id
+        if not session_to_use or not self.event_stream_manager:
+            return
+
+        try:
+            logger.debug("[REACT ERROR] Logging to event stream")
+            self.event_stream_manager.log(
+                "error",
+                f"[REACT] {type(error).__name__}: {error}\n{tb}",
+                display_message=None,
+            )
+            self.state_manager.bump_event_stream()
+            await self._create_new_trigger(session_to_use, action_output, STATE)
+        except Exception as e:
+            logger.error(
+                "[REACT ERROR] Failed to log to event stream or create trigger",
+                exc_info=True,
+            )
+
+    def _cleanup_session(self) -> None:
+        """Safely cleanup session state."""
+        try:
+            self.state_manager.clean_state()
+        except Exception as e:
+            logger.warning(f"[REACT] Failed to end session safely: {e}")
 
     async def _check_agent_limits(self) -> bool:
         agent_properties = STATE.get_agent_properties()
@@ -492,65 +572,6 @@ class AgentBase:
         # All retries exhausted — fail fast with a clear error
         raise RuntimeError("Failed to obtain valid reasoning from LLM") from last_error
 
-    async def _perform_reasoning_GUI(self, image_bytes, query: str, retries: int = 2, log_reasoning_event = False) -> ReasoningResult:
-        """
-        Perform LLM-based reasoning on a user query to guide action selection.
-
-        This function calls an asynchronous LLM API, validates its structured JSON
-        response, and retries if the output is malformed.
-
-        Args:
-            query (str): The raw user query from the user.
-            retries (int): Number of retry attempts if the LLM returns invalid JSON.
-
-        Returns:
-            ReasoningResult: A validated reasoning result containing:
-                - reasoning: The model's reasoning output
-                - action_query: A refined query used for action selection
-        """
-
-        # Build the system prompt using the current context configuration
-        system_prompt, _ = self.context_engine.make_prompt(
-            user_flags={"query": False, "expected_output": False},
-            system_flags={"policy": False, "gui_event_stream": True},
-        )
-
-        # Format the user prompt with the incoming query
-        prompt = GUI_REASONING_PROMPT
-
-        # Track the last parsing/validation error for meaningful failure reporting
-        last_error: Exception | None = None
-
-        # Attempt the LLM call and parsing up to (retries + 1) times
-        for attempt in range(retries + 1):            
-            response = await self.vlm.generate_response_async(
-                image_bytes,
-                system_prompt=system_prompt,
-                user_prompt=prompt,
-            )
-
-            try:
-                # Parse and validate the structured JSON response
-                reasoning_result = self._parse_reasoning_response(response)
-
-                if self.event_stream_manager and log_reasoning_event:
-                    self.event_stream_manager.log(
-                        "agent GUI reasoning",
-                        reasoning_result.reasoning,
-                        severity="DEBUG",
-                        display_message=None,
-                    )
-                    self.state_manager.bump_event_stream()
-
-                return reasoning_result
-
-            except ValueError as e:
-                # Capture the error and retry if attempts remain
-                last_error = e
-
-        # All retries exhausted — fail fast with a clear error
-        raise RuntimeError("Failed to obtain valid reasoning from VLM") from last_error
-
     async def _create_new_trigger(self, new_session_id, action_output, STATE):
         """
         Schedule a follow-up trigger when a task is ongoing.
@@ -641,7 +662,9 @@ class AgentBase:
         except Exception as e:
             logger.error(f"Error handling incoming message: {e}", exc_info=True)
 
-    # ────────────────────────────── hooks ────────────────────────────────
+    # =====================================
+    # Hooks
+    # =====================================
 
     def _load_extra_system_prompt(self) -> str:
         """
@@ -663,7 +686,9 @@ class AgentBase:
             data_dir = data_dir, chroma_path=chroma_path
         )
 
-    # ────────────────────────── internals ────────────────────────────────
+    # =====================================
+    # Internals
+    # =====================================
 
     async def reset_agent_state(self) -> str:
         """
@@ -706,7 +731,10 @@ class AgentBase:
             action_query=action_query,
         )
 
-    # ─────────────────────────── lifecycle ──────────────────────────────
+    # =====================================
+    # Lifecycle
+    # =====================================
+
     async def run(self, *, provider: str | None = None, api_key: str = "") -> None:
         """
         Launch the interactive TUI loop for the agent.
