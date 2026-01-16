@@ -103,8 +103,8 @@ class _CraftApp(App):
     CSS = """
     Screen {
         layout: vertical;
-        background: #111111;
-        color: #f5f5f5;
+        background: #ccc;
+        color: #FF4F18;
     }
 
     /* Shared chrome */
@@ -115,10 +115,11 @@ class _CraftApp(App):
 
     #chat-panel, #action-panel {
         height: 100%;
-        border: solid #444444;
+        border: solid #FF4F18;
         border-title-align: left;
         margin: 0 1;
         min-width: 0;  /* allow panels to shrink with the terminal */
+        background: #fff;
     }
 
     #chat-log, #action-log {
@@ -126,6 +127,7 @@ class _CraftApp(App):
         text-overflow: fold;
         overflow-x: hidden;
         min-width: 0;  /* enable reflow instead of clamped min-content width */
+        color: #FF4F18;
     }
 
     #chat-panel {
@@ -144,7 +146,7 @@ class _CraftApp(App):
 
     #bottom-region {
         height: auto;
-        border-top: solid #333333;
+        border-top: solid #FF4F18;
         padding: 1;
     }
 
@@ -154,12 +156,14 @@ class _CraftApp(App):
         text-wrap: nowrap;
         overflow: hidden;
         text-style: bold;
-        color: #dddddd;
+        color: #FF4F18;
+        background: #fff;
     }
 
     #chat-input {
-        border: solid #444444;
-        background: #1a1a1a;
+        border: solid #FF4F18;
+        background: #fff;
+        color: #FF4F18;
     }
 
     /* Menu layer */
@@ -172,8 +176,8 @@ class _CraftApp(App):
         width: 90;
         max-width: 100%;
         max-height: 95%;
-        border: solid #444444;
-        background: #0f0f0f;
+        border: solid #FF4F18;
+        background: #fff;
         padding: 3 5;
         content-align: center middle;
         overflow: auto;
@@ -187,6 +191,7 @@ class _CraftApp(App):
         text-style: bold;
         margin-bottom: 1;
         content-align: center middle;
+        color: #FF4F18;
     }
 
     /* Command-prompt style options */
@@ -205,15 +210,15 @@ class _CraftApp(App):
 
     /* Default item text */
     .menu-item {
-        color: #cfcfcf;
+        color: #FF4F18;
     }
 
     /* Highlight for list selections */
     #menu-options > ListItem.--highlight .menu-item,
     #provider-options > ListItem.--highlight .menu-item,
     #settings-actions-list > ListItem.--highlight .menu-item {
-        background: #222222;
-        color: #ffffff;
+        background: #FF4F18;
+        color: #fff;
         text-style: bold;
     }
 
@@ -235,8 +240,8 @@ class _CraftApp(App):
         width: 70;
         max-width: 100%;
         max-height: 90%;
-        border: solid #444444;
-        background: #101010;
+        border: solid #FF4F18;
+        background: #fff;
         padding: 2 3 3 3;
         content-align: center top;
         overflow: auto;
@@ -244,6 +249,17 @@ class _CraftApp(App):
 
     #settings-card Input {
         width: 100%;
+        background: #fff;
+        color: #FF4F18;
+        border: solid #FF4F18;
+    }
+
+    #menu-copy {
+        color: #ccc;
+    }
+
+    #provider-hint, #menu-hint, #settings-title {
+        color: #ccc;
     }
 
     /* Settings actions styled like a prompt list */
@@ -749,13 +765,13 @@ class TUIInterface:
     """Asynchronous Textual TUI driver that feeds user prompts to the agent."""
 
     _STYLE_COLORS = {
-        "user": "bold plum1",
-        "agent": "bold gold1",
-        "action": "bold deep_sky_blue1",
-        "task": "bold dark_orange",
-        "error": "bold red",
-        "info": "bold grey70",
-        "system": "bold medium_orchid",
+        "user": "bold #fff",
+        "agent": "bold #FF4F18",
+        "action": "bold #FF4F18",
+        "task": "bold #ccc",
+        "error": "bold #FF4F18",
+        "info": "bold #ccc",
+        "system": "bold #FF4F18",
     }
 
     _CHAT_LABEL_WIDTH = 7
@@ -1106,7 +1122,7 @@ class TUIInterface:
 
     def format_action_entry(self, entry: _ActionEntry) -> RenderableType:
         kind = entry.kind.replace("_", " ").title()
-        colour = "bold deep_sky_blue1" if entry.style == "action" else "bold dark_orange"
+        colour = "bold #FF4F18" if entry.style == "action" else "bold #ccc"
         label_text = f"{kind}:"
         return self._format_labelled_entry(
             label_text,
