@@ -1032,7 +1032,6 @@ Examples:
 </output_format>
 """
 
-
 GUI_REASONING_PROMPT = """
 <objective>
 You are performing reasoning to control a desktop/web browser/application as GUI agent. 
@@ -1085,7 +1084,61 @@ Return ONLY a JSON object with two fields:
 - If the current step is complete:
 {{
   "reasoning": "The acknowledgment message has already been successfully sent, so step 0 is complete. The system should proceed to the next step.",
-  "action_query": "step complete, move to next step"
+  "action_query": "step complete, move to next step",
+}}
+</output_format>
+"""
+
+GUI_REASONING_PROMPT_OMNIPARSER = """
+<objective>
+You are performing reasoning to control a desktop/web browser/application as GUI agent. 
+You are provided with a task description, a history of previous actions, and corresponding screenshots. 
+Your goal is to describe the screen in your reasoning and perform reasoning for the next action according to the previous actions. 
+Please note that if performing the same action multiple times results in a static screen with no changes, you should attempt a modified or alternative action.
+</objective>
+
+<validation>
+- Verify if the screenshot visually shows if the previous action in the event stream has been performed successfully.
+- ONLY give response based on the GUI state information
+</validation>
+
+<reasoning_protocol>
+Follow these instructions carefully:
+1. Base your reasoning and decisions ONLY on the current screen and any relevant context from the task.
+2. If there are any warnings in the event stream about the current step, consider them in your reasoning and adjust your plan accordingly.
+3. If the event stream shows repeated patterns, figure out the root cause and adjust your plan accordingly.
+4. When task is complete, if GUI mode is active, you should switch to CLI mode.
+5. DO NOT perform more than one action at a time. For example, if you have to type in a search bar, you should only perform the typing action, not typing and selecting from the drop down and clicking on the button at the same time.
+6. Play close attention to the state of the screen and the elements on the screen and the data on screen and the relevant data extracted from the screen.
+7. You MUST reason according to the previous events, action and reasoning to understand the recent action trajectory and check if the previous action works as intented or not.
+7. You MUST check if the previous reasoning and action works as intented or not and how it affects your current action.
+8. If an interaction based action is not working as intented, you should try to reason about the problem and adjust accordingly.
+9. Pay close attention to the current mode of the agent - CLI or GUI.
+10. If goal is to move to next step, you MUST use the 'start next step' action to move on.
+11. If the result of the task has been achieved, you MUST use switch to CLI mode action to switch to CLI mode.
+</reasoning_protocol>
+
+<quality_control>
+- Describe the screen in detail corresponding to the task.
+- Verify that your reasoning fully supports the action_query.
+- Avoid assumptions about future screen or their execution.
+- Make sure the query is general and descriptive enough to retrieve relevant GUI actions from a vector database.
+</quality_control>
+
+<output_format>
+Return ONLY a JSON object with two fields:
+
+{{
+  "reasoning": "<a description of the current screen detail needed for the task, natural-language chain-of-thought explaining understanding, validation, and decision>",
+  "action_query": "<semantic query string describing the kind of action needed to execute the current step, or indicating the step is complete>",
+  "item_index": <index of the item in the image>
+}}
+
+- If the current step is complete:
+{{
+  "reasoning": "The acknowledgment message has already been successfully sent, so step 0 is complete. The system should proceed to the next step.",
+  "action_query": "step complete, move to next step",
+  "item_index": 42
 }}
 </output_format>
 """
@@ -1153,28 +1206,3 @@ Analyze the image and generate the JSON list.
 DO NOT hallucinate or make up any information.
 After getting the pixels, do an extra check to make sure the pixel location is visually accurate on the image. If not, try to adjust the pixel location to make it more accurate.
 """
-
-GUI_ACTION_PARAMETERS_VALIDATION_PROMPT = """
-You are a GUI agent and your goal is to validate the action parameters.
-
-You are given the following action decision:
-{action_decision}
-
-You are given the following query (ignore coordinates in the query):
-{query}
-
-You need to validate the action parameters against the query.
-
-Criteria for validation:
-1. An action is valid (True) if it accurately fulfills the entire request in the query.
-2. An action is ALSO valid (True) if it accurately performs a necessary partial step towards fulfilling the query. For example, if the query asks to "clear text and type new text", an action that only clears the text is valid because it is a correct initial step.
-3. If action parameters are coordinates, validate if the coordinates are accurate for the target element described in the query.
-
-Output Format:
-Return ONLY a valid JSON object with this structure and no extra commentary:
-{{
-  "valid": <True if the criteria above are met, False otherwise>
-}}
-"""
-
-DATA="can you book a flight for me in GUI mode from London to Tokyo on the 20 Feb and do not ask any questions"

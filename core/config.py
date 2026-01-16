@@ -14,3 +14,6 @@ PROJECT_ROOT = get_project_root()
 AGENT_WORKSPACE_ROOT = PROJECT_ROOT / "workspace"
 MAX_ACTIONS_PER_TASK: int = 150
 MAX_TOKEN_PER_TASK: int = 6000000 # of tokens
+
+USE_OMNIPARSER: bool = True
+HAS_GUI: bool = True
