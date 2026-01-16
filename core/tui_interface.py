@@ -115,8 +115,9 @@ class _CraftApp(App):
 
     #chat-panel, #action-panel {
         height: 100%;
-        border: solid #444444;
+        border: solid #ffffff;
         border-title-align: left;
+        border-title-color: #ffffff;
         margin: 0 1;
         min-width: 0;  /* allow panels to shrink with the terminal */
     }
