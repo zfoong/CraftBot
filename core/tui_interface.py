@@ -212,7 +212,7 @@ class _CraftApp(App):
     #menu-options > ListItem.--highlight .menu-item,
     #provider-options > ListItem.--highlight .menu-item,
     #settings-actions-list > ListItem.--highlight .menu-item {
-        background: #ff4ff18;
+        background: #ff4f18;
         color: #ffffff;
         text-style: bold;
     }
