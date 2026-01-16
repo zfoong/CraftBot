@@ -87,9 +87,8 @@ class GUIModule:
                 "action_output": None,
             }
 
-            while STATE.gui_mode:
-                response: dict = await self._perform_gui_task_step_action(step, session_id, next_action_description, parent_action_id)
-                logger.info(f"[GUI TASK STEP ACTION RESPONSE] {response}")
+            response: dict = await self._perform_gui_task_step_action(step, session_id, next_action_description, parent_action_id)
+            logger.info(f"[GUI TASK STEP ACTION RESPONSE] {response}")
             
             event_stream_summary: str | None = self.gui_event_stream_manager.get_stream().head_summary
             response["event_stream_summary"] = event_stream_summary
