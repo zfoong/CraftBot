@@ -115,6 +115,7 @@ class GUIModule:
             # 2. Check Limits
             # ===================================
             if not await self._check_agent_limits():
+                self.switch_to_cli_mode()
                 return {
                     "status": "error",
                     "message": "Agent limits reached"
@@ -146,7 +147,7 @@ class GUIModule:
             pixel_position: List[Dict] = await self._get_pixel_position(png_bytes, action_query)
 
             # 3. Select action
-            action_search_query: str = action_query + " " + json.dumps(pixel_position)
+            action_search_query: str = action_query + " " + json.dumps(pixel_position) + ". Just use the max value of the x and y coordinates for the pixel position."
             action_decision = await self.action_router.select_action_in_GUI(query=action_search_query, reasoning=reasoning, GUI_mode=True)
 
             if not action_decision:

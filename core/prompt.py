@@ -1151,6 +1151,7 @@ Guidelines:
 
 Analyze the image and generate the JSON list.
 DO NOT hallucinate or make up any information.
+After getting the pixels, do an extra check to make sure the pixel location is visually accurate on the image. If not, try to adjust the pixel location to make it more accurate.
 """
 
 GUI_ACTION_PARAMETERS_VALIDATION_PROMPT = """
