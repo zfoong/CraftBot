@@ -51,4 +51,22 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
+    args = set(sys.argv[1:])
+
+    flag_ignore_omniparse = "no-omniparse" in args
+    if flag_ignore_omniparse:
+        os.environ["USE_OMNIPARSER"] = "False"
+    else:
+        os.environ["USE_OMNIPARSER"] = "True"
+
+    print(f"[*] Using Omniparser: {os.getenv('USE_OMNIPARSER')}")
+
+    flag_ignore_conda = "no-conda" in args
+    if flag_ignore_conda:
+        os.environ["USE_CONDA"] = "False"
+    else:
+        os.environ["USE_CONDA"] = "True"
+
+    print(f"[*] Using Conda: {os.getenv('USE_CONDA')}")
+
     main()

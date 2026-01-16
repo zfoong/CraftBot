@@ -99,8 +99,19 @@ This executes the built-in **White Collar Agent**, that you can communicate to:
 3. Run command /help to seek help
 4. Get along with the AI agent
 5. Do advanced computer-use tasks with a dedicated but lightweight WebRTC Linux VM
----
 
+### Terminal Arguments
+| Argument | Description |
+| :--- | :--- |
+| `no-omniparse` | Disable the use of microsoft omniparser to analyse UI - will greatly reduce GUI action accuracy. It is highly encouraged to use omniparser |
+| `no-conda` | Installs all packages globally instead of inside a conda environment |
+
+**EXAMPLE**
+```bash
+python start.py no-omniparse no-conda
+```
+
+---
 ## Run with container
 
 The repository root included a Docker configuration with Python 3.10, key system packages (including Tesseract for OCR), and all Python dependencies defined in `environment.yml`/`requirements.txt` so the agent can run consistently in isolated environments. 

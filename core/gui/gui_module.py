@@ -6,7 +6,6 @@ from gradio_client import Client, file
 from typing import Dict, Optional, List, Tuple
 from core.action.action import Action
 from core.state.agent_state import STATE
-from core.config import USE_OMNIPARSER
 from core.state.types import ReasoningResult
 from core.task.task import Step
 from core.gui.handler import GUIHandler
@@ -40,8 +39,8 @@ class GUIModule:
         # ==================================
         #  CONFIG
         # ==================================
-        omniparser_base_url: str = os.getenv("OMNIPARSER_BASE_URL", "")
-        self.can_use_omniparser: bool = USE_OMNIPARSER and omniparser_base_url
+        omniparser_base_url: str = os.getenv("OMNIPARSER_BASE_URL", "http://127.0.0.1:7861")
+        self.can_use_omniparser: bool = os.getenv("USE_OMNIPARSER", "False") == "True" and omniparser_base_url
         if self.can_use_omniparser:
             self.gradio_client: Client | None = Client(omniparser_base_url)
         else:
