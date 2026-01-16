@@ -362,14 +362,21 @@ class _CraftApp(App):
     # ────────────────────────────── menu helpers ─────────────────────────────
 
     def _logo_text(self) -> Text:
-        return Text(
-            """
-░█░█░█░█░▀█▀░▀█▀░█▀▀░░░█▀▀░█▀█░█░░░█░░░█▀█░█▀▄░░░█▀█░█▀▀░█▀▀░█▀█░▀█▀
-░█▄█░█▀█░░█░░░█░░█▀▀░░░█░░░█░█░█░░░█░░░█▀█░█▀▄░░░█▀█░█░█░█▀▀░█░█░░█░
-░▀░▀░▀░▀░▀▀▀░░▀░░▀▀▀░░░▀▀▀░▀▀▀░▀▀▀░▀▀▀░▀░▀░▀░▀░░░▀░▀░▀▀▀░▀▀▀░▀░▀░░▀░
-            """.rstrip("\n"),
-            justify="center",
-        )
+        lines = [
+            "░█░█░█░█░▀█▀░▀█▀░█▀▀░░░█▀▀░█▀█░█░░░█░░░█▀█░█▀▄░░░█▀█░█▀▀░█▀▀░█▀█░▀█▀",
+            "░█▄█░█▀█░░█░░░█░░█▀▀░░░█░░░█░█░█░░░█░░░█▀█░█▀▄░░░█▀█░█░█░█▀▀░█░█░░█░",
+            "░▀░▀░▀░▀░▀▀▀░░▀░░▀▀▀░░░▀▀▀░▀▀▀░▀▀▀░▀▀▀░▀░▀░▀░▀░░░▀░▀░▀▀▀░▀▀▀░▀░▀░░▀░",
+        ]
+        logo_text = "\n".join(lines)
+        text = Text(logo_text, justify="center")
+        agent_start = 49
+        agent_len = 19
+        line_len = len(lines[0])
+        for idx in range(len(lines)):
+            start = idx * (line_len + 1) + agent_start
+            end = start + agent_len
+            text.stylize("#FF4F18", start, end)
+        return text
 
     def _open_settings(self) -> None:
         if self.query("#settings-card"):
