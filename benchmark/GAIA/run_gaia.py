@@ -30,6 +30,21 @@ import logging
 
 GAIA_BASE_URL = "https://huggingface.co/datasets/gaia-benchmark/GAIA/resolve/main/2023/validation/"
 OUTPUT_FILE = "benchmark/GAIA/results.jsonl"
+MAX_STEPS = 30
+TRIGGER_TIMEOUT_SEC = 120
+
+def _latest_send_message(agent, task_id):
+    history = agent.db_interface.find_action_history(
+        session_id=task_id,
+        name="send message",
+        status="success",
+        limit=1,
+    )
+    if not history:
+        return None
+    outputs = history[0].get("outputs") or {}
+    message = outputs.get("message")
+    return message.strip() if isinstance(message, str) else None
 
 async def run_agent_cycle(agent, task_id, question, file_path=None):
     """
@@ -45,7 +60,7 @@ async def run_agent_cycle(agent, task_id, question, file_path=None):
         tuple: (final_answer, status)
     """
     
-    # Need change to accept question
+    agent.state_manager.record_user_message(question)
     await agent.triggers.put(
         Trigger(
             fire_at=0,
@@ -59,12 +74,28 @@ async def run_agent_cycle(agent, task_id, question, file_path=None):
     final_answer = None
     status = "failed"
     step_count = 0
-    MAX_STEPS = 30 
     
     try:
         while agent.is_running and step_count < MAX_STEPS:
-            # main agent cycle
-            final_answer = ""
+            try:
+                trigger = await asyncio.wait_for(
+                    agent.triggers.get(),
+                    timeout=TRIGGER_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError:
+                status = "timeout"
+                break
+
+            await agent.react(trigger)
+            step_count += 1
+
+            final_answer = _latest_send_message(agent, task_id) or final_answer
+
+            if not agent.state_manager.is_running_task():
+                pending = await agent.triggers.size()
+                if pending == 0:
+                    status = "completed" if final_answer else "no_answer"
+                    break
         
         if step_count >= MAX_STEPS:
             status = "timeout"
@@ -76,7 +107,7 @@ async def run_agent_cycle(agent, task_id, question, file_path=None):
         status = "exception"
         final_answer = str(e)
         
-    return final_answer, status
+    return final_answer or "", status
 
 async def run_benchmark(limit: int | None = None):
     # 1. Load Dataset

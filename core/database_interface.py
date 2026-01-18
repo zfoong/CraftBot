@@ -292,6 +292,52 @@ class DatabaseInterface:
         )
         return history[:limit]
 
+    def find_action_history(
+        self,
+        *,
+        session_id: str | None = None,
+        name: str | None = None,
+        status: str | None = None,
+        limit: int | None = None,
+        newest_first: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Query action history with optional filters.
+
+        Args:
+            session_id: Optional session identifier to filter by.
+            name: Optional action name to filter by.
+            status: Optional status value to filter by (e.g., ``"success"``).
+            limit: Optional maximum number of entries to return.
+            newest_first: Whether to sort in reverse chronological order.
+
+        Returns:
+            List of action history dictionaries matching the filters.
+        """
+        def entry_sort_key(entry: Dict[str, Any]) -> datetime.datetime:
+            ts = entry.get("endedAt") or entry.get("startedAt")
+            if not ts:
+                return datetime.datetime.min
+            try:
+                return datetime.datetime.fromisoformat(ts)
+            except ValueError:
+                return datetime.datetime.min
+
+        filtered = []
+        for entry in self._iter_action_history():
+            if session_id is not None and entry.get("sessionId") != session_id:
+                continue
+            if name is not None and entry.get("name") != name:
+                continue
+            if status is not None and entry.get("status") != status:
+                continue
+            filtered.append(entry)
+
+        filtered.sort(key=entry_sort_key, reverse=newest_first)
+        if limit is not None:
+            return filtered[:limit]
+        return filtered
+
     # ------------------------------------------------------------------
     # Task logging helpers
     # ------------------------------------------------------------------
