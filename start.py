@@ -485,12 +485,12 @@ if __name__ == "__main__":
 
             # --- Main Environment Setup ---
             # Uncomment these lines to actually run the setup for the main environment
-            # setup_conda_environment(env_name=main_env_name, yml_path=YML_FILE)
-            # verify_conda_env_ready(env_name=main_env_name)
+            setup_conda_environment(env_name=main_env_name, yml_path=YML_FILE)
+            verify_conda_env_ready(env_name=main_env_name)
 
     else:
         print("✅ Conda is not used. Using global environment.")
-        # setup_global_environment(...)
+        setup_global_environment(requirements_file=REQUIREMENTS_FILE)
 
     # --- OmniParser Setup ---
     # This will run if USE_CONDA is true and USE_OMNIPARSER is true.
