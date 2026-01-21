@@ -474,29 +474,49 @@ def launch_in_new_terminal(conda_env_name: Optional[str] = None, conda_base_path
     # Variable to hold the running subprocess handle
     process: Optional[subprocess.Popen] = None
 
-    # === Windows Implementation ===
     if current_os == "win32":
-        def _escape_for_cmd(s: str) -> str:
-            # We are embedding the command inside: cmd /c " ... "
-            return s.replace('"', '^"')
-        
-        if conda_env_name and os.getenv('USE_CONDA') == "True":
-            cmd_list = ["conda", "run", "-n", conda_env_name, "python", "-u", abs_main_script_path] + pass_through_args
+        import subprocess
+
+        workdir = os.path.dirname(abs_main_script_path)
+        use_conda = bool(conda_env_name and os.getenv("USE_CONDA") == "True" and conda_base_path)
+
+        launcher_cmd_path = os.path.join(workdir, "_launch_agent.cmd")
+
+        if use_conda:
+            conda_bat = os.path.join(conda_base_path, "condabin", "conda.bat")
+            if not os.path.exists(conda_bat):
+                conda_bat = "conda"
+
+            cmd_list = [conda_bat, "run", "--no-capture-output", "-n", conda_env_name, "python", "-u", abs_main_script_path] + pass_through_args
+            run_line = "call " + subprocess.list2cmdline(cmd_list)
         else:
             cmd_list = [sys.executable, "-u", abs_main_script_path] + pass_through_args
+            run_line = subprocess.list2cmdline(cmd_list)
 
-        cmd_string = subprocess.list2cmdline(cmd_list)
-        cmd_string = _escape_for_cmd(cmd_string)
+        lines = [
+            "@echo on",
+            f'cd /d "{workdir}"',
+            "echo --- Terminal Started ---",
+            "echo CWD: %CD%",
+            "set PYTHONUNBUFFERED=1",
+            "echo --- Launching main.py ---",
+            run_line,
+            "echo.",
+            "echo Exit code: %ERRORLEVEL%",
+            "echo.",
+            "pause",
+        ]
 
-        # CHANGED FOR BLOCKING:
-        # 1. Removed 'start "" /MAX'. Running 'cmd /c' directly makes it a child process we can wait on.
-        # 2. 'pause' ensures the window stays open until user input.
-        launch_cmd = f'cmd /c "set PYTHONUNBUFFERED=1 && {cmd_string} && echo. && pause"'
-        
-        print("ℹ️ Launching Windows command prompt...")
-        # Use shell=True so cmd /c interprets the string correctly.
-        process = subprocess.Popen(launch_cmd, shell=True)
+        with open(launcher_cmd_path, "w", encoding="utf-8") as f:
+            f.write("\r\n".join(lines) + "\r\n")
 
+        print("Launching Windows command prompt in a new window...")
+
+        cmd_to_run = f'call {launcher_cmd_path}'
+        process = subprocess.Popen(
+            ["cmd.exe", "/d", "/k", cmd_to_run],
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
     # === Linux & macOS Implementation ===
     else:
         python_cmd_string = shlex.join(["python", "-u", abs_main_script_path] + pass_through_args)
