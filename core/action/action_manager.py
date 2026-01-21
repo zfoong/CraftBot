@@ -158,9 +158,9 @@ class ActionManager:
         
         if is_running_task and self.event_stream_manager:
             self.event_stream_manager.log(
-                "action",
+                "action_start",
                 f"Running action {action.name} with input: {input_data}.",
-                display_message=f"Running {action.name}",
+                display_message=action.name,
                 action_name=action.name,
             )
         else:
@@ -237,23 +237,12 @@ class ActionManager:
         logger.debug(f"Action {action.name} completed with status: {status}.")
         
         if is_running_task and self.event_stream_manager:
-            display_status = "failed" if status == "error" else "completed"
             self.event_stream_manager.log(
-                "action",
+                "action_end",
                 f"Action {action.name} completed with output: {outputs}.",
-                display_message=f"{action.name} → {display_status}",
+                display_message=action.name,
                 action_name=action.name,
             )
-
-
-            current_step: Optional[Step] = self.state_manager.get_current_step()
-            if current_step:
-                self.event_stream_manager.log(
-                    "task", 
-                    f"Running task step: '{current_step.step_name}' – {current_step.description}",
-                    display_message=f"Running task step: '{current_step.step_name}' – {current_step.description}"
-                )
-                logger.debug(f"[ActionManager] Step {current_step.step_name} queued ({session_id})")
 
         else:
             logger.warning(f"Action {action.name} completed with status: {status}. But no event stream manager to log to.")

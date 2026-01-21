@@ -5,7 +5,7 @@ import asyncio
 import os
 from asyncio import Queue, QueueEmpty
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Tuple
+from typing import Awaitable, Callable, Optional, Tuple
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -40,6 +40,8 @@ class _ConversationLog(_BaseLog):
 
         # Keep a copy of everything written so it can be reflowed on resize
         self._history: list[RenderableType] = []
+        # Track entry keys to their history index for updates
+        self._entry_keys: dict[str, int] = {}
 
     def append_text(self, content) -> None:
         # Normalize to Rich Text, enable folding of long tokens
@@ -51,15 +53,29 @@ class _ConversationLog(_BaseLog):
     def append_markup(self, markup: str) -> None:
         self.append_text(Text.from_markup(markup))
 
-    def append_renderable(self, renderable: RenderableType) -> None:
+    def append_renderable(self, renderable: RenderableType, entry_key: Optional[str] = None) -> None:
         # Write using expand/shrink so width follows the widget on resize
+        index = len(self._history)
         self._history.append(renderable)
+        if entry_key:
+            self._entry_keys[entry_key] = index
         self.write(renderable, expand=True, shrink=True)
+
+    def update_renderable(self, entry_key: str, renderable: RenderableType) -> None:
+        """Update an existing entry by key."""
+        if entry_key not in self._entry_keys:
+            return
+        index = self._entry_keys[entry_key]
+        if 0 <= index < len(self._history):
+            self._history[index] = renderable
+            # Re-render the entire history
+            self._reflow_history()
 
     def clear(self) -> None:
         """Clear the log and the preserved history."""
 
         self._history.clear()
+        self._entry_keys.clear()
         super().clear()
 
     def _reflow_history(self) -> None:
@@ -95,6 +111,16 @@ class _ActionEntry:
     kind: str
     message: str
     style: str = "action"
+    is_completed: bool = False
+    parent_task: Optional[str] = None  # Task name if this action belongs to a task
+
+
+@dataclass
+class _ActionUpdate:
+    """Container for action update operations."""
+    operation: str  # "add" or "update"
+    entry: Optional[_ActionEntry] = None
+    entry_key: Optional[str] = None
 
 
 class _CraftApp(App):
@@ -277,6 +303,10 @@ class _CraftApp(App):
     _STATUS_PREFIX = "Status: "
     _STATUS_GAP = 4
     _STATUS_INITIAL_PAUSE = 6
+
+    # Icons for task/action status
+    _ICON_COMPLETED = "+"
+    _ICON_LOADING_FRAMES = ["●", "○"]  # Animated loading icons
 
     _MENU_ITEMS = [
         ("menu-start", "start"),
@@ -465,6 +495,7 @@ class _CraftApp(App):
 
         self.set_interval(0.1, self._flush_pending_updates)
         self.set_interval(0.2, self._tick_status_marquee)
+        self.set_interval(0.5, self._tick_loading_animation)  # Loading icon animation
         self._sync_layers()
 
         # Initialize menu selection visuals
@@ -542,11 +573,19 @@ class _CraftApp(App):
 
         while True:
             try:
-                action = self._interface.action_updates.get_nowait()
+                action_update = self._interface.action_updates.get_nowait()
             except QueueEmpty:
                 break
-            entry = self._interface.format_action_entry(action)
-            action_log.append_renderable(entry)
+
+            if action_update.operation == "add":
+                entry = self._interface.format_action_entry(action_update.entry)
+                action_log.append_renderable(entry, entry_key=action_update.entry_key)
+            elif action_update.operation == "update":
+                # Get the updated entry from the tracked entries
+                if action_update.entry_key in self._interface._task_action_entries:
+                    updated_entry = self._interface._task_action_entries[action_update.entry_key]
+                    renderable = self._interface.format_action_entry(updated_entry)
+                    action_log.update_renderable(action_update.entry_key, renderable)
 
         while True:
             try:
@@ -584,6 +623,26 @@ class _CraftApp(App):
                     self._status_pause = self._STATUS_INITIAL_PAUSE
 
         self._render_status()
+
+    def _tick_loading_animation(self) -> None:
+        """Update loading animation frame and refresh action panel."""
+        self._interface._loading_frame_index = (self._interface._loading_frame_index + 1) % len(self._ICON_LOADING_FRAMES)
+
+        # Re-render all incomplete action entries with the new animation frame
+        action_log = self.query_one("#action-log", _ConversationLog)
+
+        # Check if there are any incomplete entries to animate
+        has_incomplete = any(
+            not entry.is_completed
+            for entry in self._interface._task_action_entries.values()
+        )
+
+        if has_incomplete:
+            # Update all incomplete entries
+            for entry_key, entry in self._interface._task_action_entries.items():
+                if not entry.is_completed:
+                    renderable = self._interface.format_action_entry(entry)
+                    action_log.update_renderable(entry_key, renderable)
 
     def _render_status(self) -> None:
         status_bar = self.query_one("#status-bar", Static)
@@ -759,7 +818,7 @@ class TUIInterface:
     }
 
     _CHAT_LABEL_WIDTH = 7
-    _ACTION_LABEL_WIDTH = 7
+    _ACTION_LABEL_WIDTH = 5  # Adjusted for icon format [+] or [●]/[○]
 
     def __init__(
         self, agent: "AgentBase", *, default_provider: str, default_api_key: str
@@ -775,8 +834,13 @@ class TUIInterface:
         self._command_handlers: dict[str, Callable[[], Awaitable[None]]] = {}
 
         self.chat_updates: Queue[TimelineEntry] = Queue()
-        self.action_updates: Queue[_ActionEntry] = Queue()
+        self.action_updates: Queue[_ActionUpdate] = Queue()
         self.status_updates: Queue[str] = Queue()
+
+        # Track current task and action states
+        self._current_task_name: Optional[str] = None
+        self._task_action_entries: dict[str, _ActionEntry] = {}  # task/action name -> entry
+        self._loading_frame_index: int = 0  # Current frame of loading animation
 
         self._default_provider = default_provider
         self._default_api_key = default_api_key
@@ -1048,7 +1112,46 @@ class TUIInterface:
 
     async def _handle_action_event(self, kind: str, message: str, *, style: str = "action") -> None:
         """Record an action update and refresh the status bar."""
-        await self.action_updates.put(_ActionEntry(kind=kind, message=message, style=style))
+        entry_key = f"{style}:{message}"
+
+        # Handle task start
+        if kind == "task_start":
+            self._current_task_name = message
+            entry = _ActionEntry(
+                kind=kind,
+                message=message,
+                style=style,
+                is_completed=False,
+                parent_task=None
+            )
+            self._task_action_entries[entry_key] = entry
+            await self.action_updates.put(_ActionUpdate(operation="add", entry=entry, entry_key=entry_key))
+
+        # Handle task end - update existing entry
+        elif kind == "task_end":
+            if entry_key in self._task_action_entries:
+                self._task_action_entries[entry_key].is_completed = True
+                await self.action_updates.put(_ActionUpdate(operation="update", entry_key=entry_key))
+            self._current_task_name = None
+
+        # Handle action start
+        elif kind == "action_start":
+            entry = _ActionEntry(
+                kind=kind,
+                message=message,
+                style=style,
+                is_completed=False,
+                parent_task=self._current_task_name
+            )
+            self._task_action_entries[entry_key] = entry
+            await self.action_updates.put(_ActionUpdate(operation="add", entry=entry, entry_key=entry_key))
+
+        # Handle action end - update existing entry
+        elif kind == "action_end":
+            if entry_key in self._task_action_entries:
+                self._task_action_entries[entry_key].is_completed = True
+                await self.action_updates.put(_ActionUpdate(operation="update", entry_key=entry_key))
+
         if style == "action":
             status = self._derive_status(kind, message)
             if status != self._status_message:
@@ -1105,12 +1208,31 @@ class TUIInterface:
         )
 
     def format_action_entry(self, entry: _ActionEntry) -> RenderableType:
-        kind = entry.kind.replace("_", " ").title()
-        colour = "bold deep_sky_blue1" if entry.style == "action" else "bold dark_orange"
-        label_text = f"{kind}:"
+        # Choose icon based on completion status
+        if entry.is_completed:
+            icon = _CraftApp._ICON_COMPLETED
+        else:
+            # Use current frame of loading animation
+            icon = _CraftApp._ICON_LOADING_FRAMES[self._loading_frame_index % len(_CraftApp._ICON_LOADING_FRAMES)]
+
+        # Determine color based on style and completion
+        if entry.style == "task":
+            colour = "bold dark_orange"
+        else:  # action
+            colour = "bold deep_sky_blue1"
+
+        # Format: [icon]
+        label_text = f"[{icon}]"
+
+        # Add indentation to message for actions that belong to a task
+        if entry.parent_task and entry.style == "action":
+            message = f"    {entry.message}"
+        else:
+            message = entry.message
+
         return self._format_labelled_entry(
             label_text,
-            entry.message,
+            message,
             colour=colour,
             label_width=self._ACTION_LABEL_WIDTH,
         )
