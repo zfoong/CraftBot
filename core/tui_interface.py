@@ -12,6 +12,8 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import var
+from textual.widgets import OptionList
+from textual.widgets.option_list import Option
 
 from rich.console import RenderableType
 from rich.table import Table
@@ -24,6 +26,65 @@ from core.logger import logger
 
 if False:  # pragma: no cover
     from core.agent_base import AgentBase  # type: ignore
+
+
+class _ContextMenu(OptionList):
+    """Simple context menu for copy operations."""
+
+    DEFAULT_CSS = """
+    _ContextMenu {
+        width: 20;
+        height: auto;
+        border: ascii #ff4f18;
+        background: #0a0a0a;
+        layer: overlay;
+    }
+
+    _ContextMenu > .option-list--option {
+        color: #e5e5e5;
+        padding: 0 1;
+    }
+
+    _ContextMenu > .option-list--option-highlighted {
+        background: #ff4f18;
+        color: #ffffff;
+    }
+    """
+
+    def __init__(self, text_to_copy: str, x: int, y: int) -> None:
+        super().__init__(Option("Copy text", id="copy"))
+        self.text_to_copy = text_to_copy
+        self.styles.offset = (x, y)
+        # Set border to use ASCII characters
+        self.border_title = None
+        self.styles.border = ("ascii", "#ff4f18")
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle menu selection."""
+        if event.option_id == "copy":
+            try:
+                # Try using pyperclip first for better compatibility
+                import pyperclip
+                pyperclip.copy(self.text_to_copy)
+                self.app.notify("Text copied!", severity="information", timeout=2)
+            except ImportError:
+                # Fallback to Textual's method if pyperclip not available
+                try:
+                    self.app.copy_to_clipboard(self.text_to_copy)
+                    self.app.notify("Text copied!", severity="information", timeout=2)
+                except Exception as e:
+                    self.app.notify(f"Copy failed: {str(e)}", severity="error", timeout=3)
+        self.remove()
+
+    def on_blur(self) -> None:
+        """Close menu when focus is lost."""
+        self.remove()
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle escape key to close the menu."""
+        if event.key == "escape":
+            self.remove()
+            event.stop()
 
 
 class _ConversationLog(_BaseLog):
@@ -43,6 +104,8 @@ class _ConversationLog(_BaseLog):
         self._history: list[RenderableType] = []
         # Track entry keys to their history index for updates
         self._entry_keys: dict[str, int] = {}
+        # Store plain text for each entry for copy functionality
+        self._text_content: list[str] = []
 
     def append_text(self, content) -> None:
         # Normalize to Rich Text, enable folding of long tokens
@@ -60,6 +123,11 @@ class _ConversationLog(_BaseLog):
         self._history.append(renderable)
         if entry_key:
             self._entry_keys[entry_key] = index
+
+        # Extract and store plain text content
+        text_content = self._extract_text(renderable)
+        self._text_content.append(text_content)
+
         self.write(renderable, expand=True, shrink=True)
 
     def update_renderable(self, entry_key: str, renderable: RenderableType) -> None:
@@ -77,6 +145,7 @@ class _ConversationLog(_BaseLog):
 
         self._history.clear()
         self._entry_keys.clear()
+        self._text_content.clear()
         super().clear()
 
     def _reflow_history(self) -> None:
@@ -89,6 +158,93 @@ class _ConversationLog(_BaseLog):
         super().clear()
         for renderable in history:
             self.write(renderable, expand=True, shrink=True)
+
+    def _extract_text(self, renderable: RenderableType) -> str:
+        """Extract plain text from a renderable object, excluding labels."""
+        if isinstance(renderable, Text):
+            return renderable.plain
+        elif isinstance(renderable, str):
+            return renderable
+        elif isinstance(renderable, Table):
+            # Extract only the message content (second column), skip the label (first column)
+            try:
+                # Access the table columns - we want the second column (index 1)
+                if len(renderable.columns) >= 2:
+                    message_column = renderable.columns[1]
+                    # Extract text from all cells in the message column
+                    text_parts = []
+                    if hasattr(message_column, '_cells'):
+                        for cell in message_column._cells:
+                            if isinstance(cell, Text):
+                                text_parts.append(cell.plain)
+                            elif isinstance(cell, str):
+                                text_parts.append(cell)
+                            else:
+                                text_parts.append(str(cell))
+                    return " ".join(text_parts)
+                else:
+                    # Fallback if table structure is unexpected
+                    from io import StringIO
+                    from rich.console import Console
+                    string_io = StringIO()
+                    console = Console(file=string_io, force_terminal=False, force_jupyter=False, width=200)
+                    console.print(renderable)
+                    return string_io.getvalue().strip()
+            except (AttributeError, IndexError, TypeError):
+                # Fallback: use Rich Console to render to plain text
+                from io import StringIO
+                from rich.console import Console
+                string_io = StringIO()
+                console = Console(file=string_io, force_terminal=False, force_jupyter=False, width=200)
+                console.print(renderable)
+                return string_io.getvalue().strip()
+        else:
+            # Fallback: try to convert to string
+            return str(renderable)
+
+    def _get_line_at_y(self, y: int) -> Optional[int]:
+        """Get the line index at the given y coordinate."""
+        # RichLog doesn't expose line mapping directly, so we approximate
+        # based on the number of lines rendered
+        if not self._text_content:
+            return None
+
+        # Estimate which entry was clicked based on y position
+        # This is approximate since we don't have exact line-to-entry mapping
+        lines = self.lines
+        if lines and 0 <= y < len(lines):
+            # Map y coordinate to entry index
+            # Each entry might span multiple lines, so we need to be approximate
+            entries_count = len(self._text_content)
+            if entries_count > 0:
+                # Simple heuristic: divide the visible area by number of entries
+                entry_index = min(y * entries_count // max(len(lines), 1), entries_count - 1)
+                return entry_index
+        return None
+
+    def on_click(self, event: events.Click) -> None:
+        """Handle click events to show copy menu for the clicked cell."""
+        # Remove any existing context menu
+        for menu in self.app.query("_ContextMenu"):
+            menu.remove()
+
+        # Try to find which entry was clicked
+        clicked_index = self._get_line_at_y(event.y)
+
+        if clicked_index is not None and 0 <= clicked_index < len(self._text_content):
+            text_to_copy = self._text_content[clicked_index]
+        else:
+            # Fallback: use the most recent entry
+            if self._text_content:
+                text_to_copy = self._text_content[-1]
+            else:
+                return
+
+        if text_to_copy.strip():
+            # Create context menu at click position
+            menu = _ContextMenu(text_to_copy, event.screen_x, event.screen_y)
+            self.app.screen.mount(menu)
+            menu.focus()
 
     def on_resize(self, event: events.Resize) -> None:  # pragma: no cover - UI layout
         """Force a reflow when the widget width changes.
