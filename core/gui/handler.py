@@ -108,9 +108,6 @@ try {
         else:
             raise RuntimeError(f"Could not determine OS type for container '{container_id}'")
 
-        # Overlay grid on the screenshot
-        # img_bytes = cls._add_grid_overlay(img_bytes)
-
         if debug:
             try:
                 timestamp = int(time.time())
@@ -283,53 +280,6 @@ except Exception as e:
     sys.exit(1)
 """
         return wrapper
-
-    @classmethod
-    def _add_grid_overlay(cls, img_bytes: bytes) -> bytes:
-        """
-        Overlays a 10x10 pixel grid on the screenshot to help with coordinate reference.
-        Returns the modified image as PNG bytes.
-        """
-        try:
-            from PIL import Image, ImageDraw
-            
-            # Load image from bytes
-            img = Image.open(io.BytesIO(img_bytes))
-            
-            # Convert to RGBA if not already (to support transparency)
-            if img.mode != 'RGBA':
-                img = img.convert('RGBA')
-            
-            width, height = img.size
-            
-            # Create a drawing context
-            draw = ImageDraw.Draw(img)
-            
-            # Grid spacing: 10 pixels
-            grid_size = 8
-            
-            # Use semi-transparent red for grid lines (R, G, B, Alpha)
-            grid_color = (255, 0, 0, 64)  # Red with 25% opacity
-            
-            # Draw vertical lines
-            for x in range(0, width, grid_size):
-                draw.line([(x, 0), (x, height)], fill=grid_color, width=1)
-            
-            # Draw horizontal lines
-            for y in range(0, height, grid_size):
-                draw.line([(0, y), (width, y)], fill=grid_color, width=1)
-            
-            # Save to bytes
-            output = io.BytesIO()
-            img.save(output, format='PNG')
-            return output.getvalue()
-            
-        except ImportError:
-            logger.warning("[GUIHandler] PIL/Pillow not available for grid overlay, returning original image")
-            return img_bytes
-        except Exception as e:
-            logger.warning(f"[GUIHandler] Failed to add grid overlay: {e}, returning original image")
-            return img_bytes
 
     @classmethod
     def _validate_screenshot_output(cls, stdout: bytes, stderr: bytes, code: int) -> bytes:
