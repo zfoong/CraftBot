@@ -158,7 +158,7 @@ class ActionManager:
         if is_running_task:
             self._log_event_stream(
                 is_gui_task=is_gui_task,
-                event_type="action",
+                event_type="action_start",
                 event=f"Running action {action.name} with input: {input_data}. {context if context else ''}",
                 display_message=f"Running {action.name}",
                 action_name=action.name,
@@ -238,24 +238,23 @@ class ActionManager:
             display_status = "failed" if status == "error" else "completed"
             self._log_event_stream(
                 is_gui_task=is_gui_task,
-                event_type="action",
+                event_type="action_end",
                 event=f"Action {action.name} completed with output: {outputs}. {context if context else ''}",
                 display_message=f"{action.name} → {display_status}",
                 action_name=action.name,
             )
 
-
-            current_step: Optional[Step] = self.state_manager.get_current_step()
-            if current_step:
-                self._log_event_stream(
-                    is_gui_task=is_gui_task,
-                    event_type="task",
-                    event=f"Running task step: '{current_step.step_name}' – {current_step.description} {context if context else ''}",
-                    display_message=f"Running task step: '{current_step.step_name}' – {current_step.description}",
-                    action_name=action.name,
-                )
-                logger.debug(f"[ActionManager] Step {current_step.step_name} queued ({session_id})")
-
+            # current_step: Optional[Step] = self.state_manager.get_current_step()
+            # if current_step:
+            #     self._log_event_stream(
+            #         is_gui_task=is_gui_task,
+            #         event_type="task",
+            #         event=f"Running task step: '{current_step.step_name}' – {current_step.description} {context if context else ''}",
+            #         display_message=f"Running task step: '{current_step.step_name}' – {current_step.description}",
+            #         action_name=action.name,
+            #     )
+            #     logger.debug(f"[ActionManager] Step {current_step.step_name} queued ({session_id})")
+                
         else:
             logger.warning(f"Action {action.name} completed with status: {status}. But no event stream manager to log to.")
         
