@@ -1367,7 +1367,18 @@ class TUIInterface:
 
     async def _handle_action_event(self, kind: str, message: str, *, style: str = "action") -> None:
         """Record an action update and refresh the status bar."""
-        entry_key = f"{style}:{message}"
+        # Extract action name from display message formats:
+        # action_start: "Running {action_name}" -> extract action_name
+        # action_end: "{action_name} → completed/failed" -> extract action_name
+        if kind == "action_start" and message.startswith("Running "):
+            action_name = message[8:]  # Remove "Running " prefix
+        elif kind == "action_end" and " → " in message:
+            action_name = message.split(" → ")[0]
+        else:
+            action_name = message
+
+        # Use action name as the consistent key
+        entry_key = f"{style}:{action_name}"
 
         # Handle task start
         if kind == "task_start":
@@ -1397,7 +1408,7 @@ class TUIInterface:
             self._agent_state = "working"
             entry = _ActionEntry(
                 kind=kind,
-                message=message,
+                message=action_name,  # Use just the action name
                 style=style,
                 is_completed=False,
                 parent_task=self._current_task_name

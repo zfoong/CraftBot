@@ -12,7 +12,7 @@ MODEL_REGISTRY = {
         InterfaceType.EMBEDDING: "text-embedding-004",
     },
     "byteplus": {
-        InterfaceType.LLM: "kimi-k2-250711",
+        InterfaceType.LLM: "kimi-k2-250905",
         InterfaceType.VLM: "seed-1-6-250915",
         InterfaceType.EMBEDDING: "skylark-embedding-vision-250615",
     },
