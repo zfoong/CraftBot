@@ -32,11 +32,86 @@ def _atomic_action_venv_process(
     Executes an action inside an ephemeral virtual environment.
     Runs in a SEPARATE PROCESS.
     """
+    # GUI mode - in a Docker container
+    if mode == "GUI":
+        return GUIHandler.execute_action(GUIHandler.TARGET_CONTAINER, action_code, input_data, mode)
+
+    # Sandboxed mode - NOT in a Docker container
     try:
-        result = GUIHandler.execute_action(GUIHandler.TARGET_CONTAINER, action_code, input_data, mode)
-        return result
+        with tempfile.TemporaryDirectory(prefix="action_venv_") as tmpdir:
+            tmp = Path(tmpdir)
+
+            # ─── Create virtual environment ───
+            venv_dir = tmp / "venv"
+            venv.EnvBuilder(with_pip=True).create(venv_dir)
+
+            python_bin = (
+                venv_dir / "Scripts" / "python.exe"
+                if os.name == "nt"
+                else venv_dir / "bin" / "python"
+            )
+
+            # ─── Write action script ───
+            # We inject input_data as a global so the action code can access it
+            action_file = tmp / "action.py"
+            action_file.write_text(
+                f"""
+import json
+import sys
+
+input_data = json.loads({json.dumps(json.dumps(input_data))})
+
+# ─── USER CODE ───
+{action_code}
+
+# ─── Find and call the function ───
+func = None
+local_vars = dict(locals())
+for name, obj in local_vars.items():
+    if callable(obj) and not name.startswith('_') and name not in ('input_data', 'json', 'sys'):
+        func = obj
+        break
+
+if func is None:
+    # Fallback: check if output variable was set (legacy behavior)
+    if 'output' in local_vars:
+        print(local_vars['output'])
+        sys.exit(0)
+    else:
+        sys.exit(1)
+
+# Call the function and print result as JSON
+try:
+    result = func(input_data)
+    if isinstance(result, dict):
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print(str(result))
+except Exception as e:
+    import traceback
+    print("Execution failed: " + str(e) + "\\n" + traceback.format_exc(), file=sys.stderr)
+    sys.exit(1)
+""",
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [python_bin, str(action_file)],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+
+            return {
+                "stdout": proc.stdout.strip(),
+                "stderr": proc.stderr.strip(),
+                "returncode": proc.returncode,
+            }
+
+    except subprocess.TimeoutExpired:
+        return {"stdout": "", "stderr": "Execution timed out", "returncode": -1}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"stdout": "", "stderr": f"Execution failed: {e}", "returncode": -1}
 
 def _atomic_action_internal(
     action_name: str,
