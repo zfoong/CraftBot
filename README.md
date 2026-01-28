@@ -30,7 +30,7 @@
 
 ## 🚀 Overview
 <h3 align="center">
-White Collar Agent is your AI Personal Assistant that lives inside your machine and works 24/7 for you. 
+White Collar Agent is your Personal AI Assistant that lives inside your machine and works 24/7 for you. 
 </h3>
 
 It can autonomously interpret tasks, plan actions, and execute actions to achieve complex goals. <br/>	
