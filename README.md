@@ -1,6 +1,6 @@
 
 <div align="center">
-    <img src="assets/WCA_README_banner.png" alt="CraftOS Banner" width="620"/>
+    <img src="assets/WCA_README_banner.png" alt="CraftOS Banner" width="1280"/>
 </div>
 <br>
 <div align="center">
