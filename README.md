@@ -1,9 +1,12 @@
+
 <div align="center">
-    <img src="assets/craftos_mascot.png" alt="CraftOS Logo" width="200"/>
+    <img src="assets/WCA_README_banner.png" alt="CraftOS Banner" width="620"/>
 </div>
 <br>
-
-<h1 align="center">White Collar Agent</h1>
+<div align="center">
+    <img src="assets/white_collar_agent_icons_text.png" alt="CraftOS Logo" width="480"/>
+</div>
+<br>
 
 <div align="center">
   <img src="https://img.shields.io/badge/OS-Windows-blue?logo=windows&logoColor=white" alt="Windows">
@@ -20,10 +23,7 @@
   </a>
   
 </div>
-
-
-
----
+<br>
 <p align="center">
   <a href="README.ja.md"> 日本語版はこちら</a> | <a href="README.cn.md"> 中文版README </a>
 </p>
@@ -39,10 +39,6 @@ Users can:
 - 🧠 Use the **built-in agent** to automatically plan and execute complex series of tasks  
 - 🧩 **Subclass the base agent** to build their own specialized agent behaviors or workflows
 - 💻 Interact with the agent with a **TUI interface**.
-
-<div align="center">
-    <img src="assets/white_collar_agent_demo.PNG" alt="Demo" width="720"/>
-</div>
 
 This makes it an ideal tool for organisations, researchers, and developers exploring **System-based agentic AI**, **runtime code generation**, and **autonomous execution** to automate their workflows and achieve results.
 This is an open-source project and is still in development, so we welcome any suggestions, contributions, and feedback! You are free to use, host, and monetize this project (with credit given in case of distribution and monetization).
