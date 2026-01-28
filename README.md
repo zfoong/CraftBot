@@ -29,18 +29,11 @@
 </p>
 
 ## 🚀 Overview
+<h3 align="center">
+White Collar Agent is your AI Personal Assistant that lives inside your machine and works 24/7 for you. 
+</h3>
 
-**White Collar Agent** is a minimal yet powerful computer-use AI agent that can perform a series of complex computer-based and browser-based tasks.  
-It can autonomously interpret tasks, plan actions, and execute actions to achieve complex goals.
-It can switch between CLI and GUI mode, depending on the nature of tasks. 
-The code also serves as a foundation for building your own intelligent agents.
-
-Users can:
-- 🧠 Use the **built-in agent** to automatically plan and execute complex series of tasks  
-- 🧩 **Subclass the base agent** to build their own specialized agent behaviors or workflows
-- 💻 Interact with the agent with a **TUI interface**.
-
-This makes it an ideal tool for organisations, researchers, and developers exploring **System-based agentic AI**, **runtime code generation**, and **autonomous execution** to automate their workflows and achieve results.
+It can autonomously interpret tasks, plan actions, and execute actions to achieve complex goals. <br/>	
 This is an open-source project and is still in development, so we welcome any suggestions, contributions, and feedback! You are free to use, host, and monetize this project (with credit given in case of distribution and monetization).
 
 ---
@@ -52,7 +45,8 @@ This is an open-source project and is still in development, so we welcome any su
 - 🧩 **Subclass & Extend** — Build your own agents by inheriting from the base class.  
 - 🔍 **Task Document Interface** — Define structured tasks for the agent to perform in-context learning.  
 - 🧰 **Actions Library** — Reusable tools (web search, code execution, I/O, etc.).  
-- 🪶 **Lightweight & Cross-Platform** — Works seamlessly across Linux and Windows.
+- ⚡ **Lightweight & Cross-Platform** — Works seamlessly across Linux and Windows.
+- 💻 **Support multiple LLM providers** — Bring your own API keys (Anthropic, OpenAI, Gemini, BytePlus, or even running your own Ollama endpoint).
 
 > [!IMPORTANT]
 > **Note for GUI mode:** The GUI mode is still in experimental phase. This means you will encounter a lot of issues when the agent decides to switch to GUI mode. We are still working on it.
