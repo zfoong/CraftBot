@@ -8,7 +8,7 @@ import tempfile
 import venv
 import uuid
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Any, List
 from core.logger import logger
 from core.gui.handler import GUIHandler
@@ -18,7 +18,11 @@ from core.gui.handler import GUIHandler
 # ============================================
 
 PROCESS_POOL = ProcessPoolExecutor()
+THREAD_POOL = ThreadPoolExecutor(max_workers=4)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# Default timeout for action execution (100 minutes, GUI mode might need more time to run)
+DEFAULT_ACTION_TIMEOUT = 6000
 
 # ============================================
 # Worker: runs in a separate PROCESS
@@ -197,6 +201,7 @@ def _atomic_action_venv_process(
     input_data: dict,
     timeout: int,
     mode: str,
+    requirements: List[str] = None,
 ) -> dict:
     """
     Executes an action inside an ephemeral virtual environment.
@@ -226,6 +231,30 @@ def _atomic_action_venv_process(
                 if os.name == "nt"
                 else venv_dir / "bin" / "python"
             )
+
+            # ─── Install requirements in the venv ───
+            # Installation failures are logged but don't block execution.
+            # If a package is truly needed, the action will fail with an import error.
+            if requirements:
+                for pkg in requirements:
+                    try:
+                        pip_result = subprocess.run(
+                            [str(python_bin), "-m", "pip", "install", "--quiet", pkg],
+                            capture_output=True,
+                            text=True,
+                            timeout=120
+                        )
+                        if pip_result.returncode != 0:
+                            stderr_lower = pip_result.stderr.lower()
+                            if "no matching distribution" in stderr_lower or "could not find" in stderr_lower:
+                                pass  # Not a real package, skip silently
+                            else:
+                                # Log but continue - action will fail with import error if truly needed
+                                print(f"Warning: Could not install '{pkg}': {pip_result.stderr.strip()[:100]}", file=sys.stderr)
+                    except subprocess.TimeoutExpired:
+                        print(f"Warning: Installation timed out for '{pkg}'", file=sys.stderr)
+                    except Exception as e:
+                        print(f"Warning: Error installing '{pkg}': {e}", file=sys.stderr)
 
             # ─── Write action script ───
             # We inject input_data as a global so the action code can access it
@@ -384,6 +413,7 @@ def _atomic_action_internal(
 ) -> dict:
     """
     Executes an internal action in-process.
+    Requirements are pre-installed at startup via install_all_action_requirements().
     """
     try:
         # Execute the function definition
@@ -433,11 +463,12 @@ class ActionExecutor:
         action: Any, # Usually 'Action'
         input_data: dict,
         *,
-        timeout: int = 1800,
+        timeout: int = None,
     ) -> dict:
         execution_mode = getattr(action, "execution_mode", "sandboxed")
         mode = getattr(action, "mode", "CLI")
-        requirements = getattr(action, "requirements", []) or []
+        # Use action's timeout, then parameter, then default
+        effective_timeout = getattr(action, "timeout", None) or timeout or DEFAULT_ACTION_TIMEOUT
         logger.debug(f"[EXECTION CODE] {action.code}")
 
         frozen = getattr(sys, "frozen", False)
@@ -447,25 +478,26 @@ class ActionExecutor:
             _ensure_requirements(requirements)
 
         if execution_mode == "internal":
-            # Actions that import from the `core` package (e.g. "create
-            # and start task", "end task") need access to the parent
-            # process's state/task managers and MUST run in-process.
-            needs_framework = "core." in (action.code or "")
-
-            if frozen and mode != "GUI" and not needs_framework:
-                # Frozen exe: C-extension packages can't load in the
-                # bundled runtime.  Run via the system Python instead.
-                system_python = _find_system_python()
-                if system_python:
-                    result = _atomic_action_internal_subprocess(
-                        action.code, input_data, system_python, timeout,
-                    )
-                else:
-                    result = {"status": "error", "message": "No system Python found; cannot run internal action from frozen exe."}
-            else:
-                result = _atomic_action_internal(action.name, action.code, input_data, mode)
+            # Requirements are pre-installed at startup, no need to pass them
+            loop = asyncio.get_running_loop()
+            try:
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        THREAD_POOL,
+                        _atomic_action_internal,
+                        action.name,
+                        action.code,
+                        input_data,
+                        mode,
+                    ),
+                    timeout=effective_timeout,
+                )
+            except asyncio.TimeoutError:
+                return {"status": "error", "message": f"Execution timed out after {effective_timeout}s while running internal action."}
 
         elif execution_mode == "sandboxed":
+            # Sandboxed mode needs requirements since it creates a fresh venv each time
+            requirements = getattr(action, "requirements", [])
             loop = asyncio.get_running_loop()
             try:
                 result = await asyncio.wait_for(
@@ -474,13 +506,14 @@ class ActionExecutor:
                         _atomic_action_venv_process,
                         action.code,
                         input_data,
-                        timeout,
+                        effective_timeout,
                         mode,
+                        requirements,
                     ),
-                    timeout=timeout + 5,
+                    timeout=effective_timeout + 5,
                 )
             except asyncio.TimeoutError:
-                return {"status": "error", "message": f"Execution timed out after {timeout}s while running sandboxed action."}
+                return {"status": "error", "message": f"Execution timed out after {effective_timeout}s while running sandboxed action."}
         else:
             raise ValueError(f"Unknown execution_mode: {execution_mode}")
 
