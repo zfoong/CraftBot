@@ -212,6 +212,16 @@ def get_cache_metrics() -> CacheMetrics:
     return _cache_metrics
 
 
+# ─────────────────────────── BytePlus Constants ───────────────────────────
+# Maximum input length for BytePlus API (in tokens)
+BYTEPLUS_MAX_INPUT_TOKENS = 229376
+
+
+class BytePlusContextOverflowError(Exception):
+    """Raised when BytePlus API rejects input due to context length exceeding maximum."""
+    pass
+
+
 # ─────────────────────────── BytePlus Cache Manager ───────────────────────────
 class BytePlusCacheManager:
     """Manages both prefix and session caches for BytePlus Responses API.
@@ -268,6 +278,7 @@ class BytePlusCacheManager:
         previous_response_id: Optional[str] = None,
         caching_enabled: bool = True,
         caching_prefix: bool = False,
+        json_mode: bool = False,
     ) -> Dict[str, Any]:
         """Make a request to BytePlus Responses API.
 
@@ -278,6 +289,7 @@ class BytePlusCacheManager:
             previous_response_id: ID of previous response to chain from (for caching).
             caching_enabled: Whether to enable caching for this request.
             caching_prefix: Whether this is a prefix cache (True) or session cache (False).
+            json_mode: Whether to enforce JSON output format.
 
         Returns:
             Raw response dict from the API including 'id' and 'output'.
@@ -291,6 +303,10 @@ class BytePlusCacheManager:
             "input": input_messages,
             "temperature": temperature,
         }
+
+        # Enable JSON mode if requested
+        if json_mode:
+            payload["text"] = {"format": {"type": "json_object"}}
 
         # IMPORTANT: max_output_tokens is NOT supported when caching.prefix is set
         # Only add max_output_tokens when NOT using prefix caching
@@ -333,6 +349,15 @@ class BytePlusCacheManager:
             response.raise_for_status()
             return {}
 
+        # Check for context overflow error before raising status
+        if response.status_code == 400:
+            error_info = response_json.get("error", {})
+            error_message = error_info.get("message", "")
+            # Detect "Input length X exceeds the maximum length Y" error
+            if "exceeds the maximum length" in error_message:
+                logger.warning(f"[BYTEPLUS] Context overflow detected: {error_message}")
+                raise BytePlusContextOverflowError(error_message)
+
         response.raise_for_status()
         return response_json
 
@@ -356,7 +381,8 @@ class BytePlusCacheManager:
     # ─────────────────── Prefix Cache Methods ───────────────────
 
     def get_or_create_prefix_cache(
-        self, system_prompt: str, user_prompt: str, temperature: float, max_tokens: int
+        self, system_prompt: str, user_prompt: str, temperature: float, max_tokens: int,
+        call_type: Optional[str] = None
     ) -> Dict[str, Any]:
         """Get response using prefix cache, creating cache on first call.
 
@@ -374,11 +400,15 @@ class BytePlusCacheManager:
             user_prompt: The user prompt for this request.
             temperature: Sampling temperature.
             max_tokens: Maximum tokens in response.
+            call_type: Type of LLM call (e.g., "reasoning"). Used to enable JSON mode.
 
         Returns:
             Response dict with 'id', 'output', 'usage', etc.
         """
         prompt_hash = hashlib.sha256(system_prompt.encode()).hexdigest()[:16]
+
+        # Enable JSON mode for reasoning calls
+        json_mode = call_type in (LLMCallType.REASONING, LLMCallType.GUI_REASONING)
 
         if prompt_hash in self._prefix_cache_registry:
             # Use existing prefix cache - chain from stored response_id
@@ -392,6 +422,7 @@ class BytePlusCacheManager:
                 previous_response_id=response_id,
                 caching_enabled=False,  # Don't update the cache, just use it
                 caching_prefix=False,
+                json_mode=json_mode,
             )
 
         # First call - use regular caching (NOT prefix=True which returns no output)
@@ -406,6 +437,7 @@ class BytePlusCacheManager:
             previous_response_id=None,
             caching_enabled=True,  # Enable caching, response will be cached automatically
             caching_prefix=False,  # Do NOT use prefix=True - it returns no output!
+            json_mode=json_mode,
         )
 
         # Store the response_id for future requests
@@ -605,6 +637,9 @@ class GeminiCacheManager:
         import time
         cache_key = self._make_cache_key(system_prompt, call_type)
 
+        # Enable JSON mode for reasoning calls
+        json_mode = call_type in (LLMCallType.REASONING, LLMCallType.GUI_REASONING)
+
         # Check if we have an existing cache
         if cache_key in self._cache_registry:
             cache_name = self._cache_registry[cache_key]
@@ -619,6 +654,7 @@ class GeminiCacheManager:
                         prompt=user_prompt,
                         temperature=temperature,
                         max_output_tokens=max_tokens,
+                        json_mode=json_mode,
                     )
                 except Exception as e:
                     logger.warning(f"[GEMINI CACHE] Cache {cache_name} failed, recreating: {e}")
@@ -648,6 +684,7 @@ class GeminiCacheManager:
                     prompt=user_prompt,
                     temperature=temperature,
                     max_output_tokens=max_tokens,
+                    json_mode=json_mode,
                 )
         except Exception as e:
             logger.warning(f"[GEMINI CACHE] Failed to create cache for {cache_key}: {e}")
@@ -662,6 +699,7 @@ class GeminiCacheManager:
             system_prompt=system_prompt,
             temperature=temperature,
             max_output_tokens=max_tokens,
+            json_mode=json_mode,
         )
 
     def invalidate_cache(self, system_prompt: str, call_type: str) -> None:
@@ -1183,37 +1221,33 @@ class LLMInterface:
                 system_prompt_for_new_session, user_prompt, log_response=False
             )
 
-        # Check if session exists
-        if not self._byteplus_cache_manager.has_session(task_id, call_type):
-            # Try to get stored system prompt (from create_session_cache call at task start)
-            session_key = f"{task_id}:{call_type}"
-            stored_system_prompt = self._session_system_prompts.get(session_key)
-            effective_system_prompt = system_prompt_for_new_session or stored_system_prompt
+        # Use prefix cache for BytePlus - caches system prompt only, each call is independent
+        # This avoids context accumulation that causes overflow
+        session_key = f"{task_id}:{call_type}"
+        stored_system_prompt = self._session_system_prompts.get(session_key)
+        effective_system_prompt = system_prompt_for_new_session or stored_system_prompt
 
-            if effective_system_prompt:
-                # Create session AND make first call (Responses API does both)
-                try:
-                    result = self._byteplus_cache_manager.create_session_cache(
-                        task_id=task_id,
-                        call_type=call_type,
-                        system_prompt=effective_system_prompt,
-                        user_prompt=user_prompt,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                    )
-                    response = self._process_session_response(result, task_id, call_type, is_first_call=True)
-                except Exception as e:
-                    logger.warning(f"[SESSION] Failed to create session: {e}, falling back to standard")
-                    return self._generate_response_sync(
-                        effective_system_prompt, user_prompt, log_response=False
-                    )
-            else:
-                raise ValueError(
-                    f"No session for task {task_id}:{call_type} and no system prompt to create one"
-                )
-        else:
-            # Use existing session cache
-            response = self._generate_byteplus_with_session(task_id, call_type, user_prompt)
+        if not effective_system_prompt:
+            raise ValueError(
+                f"No system prompt for task {task_id}:{call_type}"
+            )
+
+        # Use prefix cache - each call sends: cached_system_prompt + current_user_prompt
+        # Context stays constant (~3-5k tokens), never grows
+        try:
+            result = self._byteplus_cache_manager.get_or_create_prefix_cache(
+                system_prompt=effective_system_prompt,
+                user_prompt=user_prompt,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                call_type=call_type,
+            )
+            response = self._process_prefix_response(result, session_key)
+        except Exception as e:
+            logger.warning(f"[PREFIX CACHE] Failed: {e}, falling back to standard")
+            return self._generate_response_sync(
+                effective_system_prompt, user_prompt, log_response=False
+            )
 
         cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
 
@@ -1265,6 +1299,53 @@ class LLMInterface:
         self._log_to_db(
             f"[SESSION:{session_key}]",
             "[session_call]",
+            content,
+            "success",
+            token_count_input,
+            token_count_output,
+        )
+
+        return {
+            "tokens_used": total_tokens or 0,
+            "content": content or ""
+        }
+
+    def _process_prefix_response(
+        self, result: Dict[str, Any], session_key: str
+    ) -> Dict[str, Any]:
+        """Process response from prefix cache call and record metrics.
+
+        Args:
+            result: Raw response from Responses API.
+            session_key: The session key for logging.
+
+        Returns:
+            Processed response dict with 'tokens_used' and 'content'.
+        """
+        # Parse content (Responses API format)
+        content = self._parse_responses_api_content(result)
+
+        # Token usage from Responses API
+        usage = result.get("usage") or {}
+        token_count_input = int(usage.get("input_tokens", 0))
+        token_count_output = int(usage.get("output_tokens", 0))
+        total_tokens = int(usage.get("total_tokens", 0)) or (token_count_input + token_count_output)
+
+        # Log cache info and record metrics
+        cached_tokens = usage.get("input_tokens_details", {}).get("cached_tokens", 0)
+        metrics = get_cache_metrics()
+        if cached_tokens and cached_tokens > 0:
+            logger.info(f"[CACHE] BytePlus prefix cache hit: {cached_tokens}/{token_count_input} tokens cached")
+            metrics.record_hit("byteplus", "prefix", cached_tokens=cached_tokens, total_tokens=token_count_input)
+        else:
+            # First call or cache miss
+            metrics.record_miss("byteplus", "prefix", total_tokens=token_count_input)
+
+        logger.info(f"BYTEPLUS PREFIX RESPONSE for {session_key}: input={token_count_input}, cached={cached_tokens}")
+
+        self._log_to_db(
+            f"[PREFIX:{session_key}]",
+            "[prefix_call]",
             content,
             "success",
             token_count_input,
@@ -1331,6 +1412,9 @@ class LLMInterface:
 
         The context grows with each call as we chain responses via previous_response_id.
         Each call type has its own session to avoid polluting different prompt structures.
+
+        If context overflow is detected, the session is automatically reset and retried
+        with a fresh session containing only the system prompt and current user prompt.
         """
         token_count_input = token_count_output = 0
         total_tokens = 0
@@ -1374,6 +1458,53 @@ class LLMInterface:
                 metrics.record_miss("byteplus", "session", total_tokens=token_count_input)
 
             status = "success"
+
+        except BytePlusContextOverflowError as overflow_exc:
+            # Context exceeded maximum length - reset session and retry with fresh context
+            logger.warning(f"[BYTEPLUS] Context overflow for {session_key}, resetting session and retrying...")
+
+            # End the overflowed session
+            self._byteplus_cache_manager.end_session(task_id, call_type)
+
+            # Get the stored system prompt for this session
+            system_prompt = self._session_system_prompts.get(session_key)
+            if not system_prompt:
+                exc_obj = ValueError(f"Cannot reset session {session_key}: no system prompt stored")
+                logger.error(str(exc_obj))
+            else:
+                try:
+                    # Create a fresh session with system prompt and current user prompt
+                    logger.info(f"[BYTEPLUS] Creating fresh session for {session_key} after overflow")
+                    result = self._byteplus_cache_manager.create_session_cache(
+                        task_id=task_id,
+                        call_type=call_type,
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                    )
+
+                    logger.info(f"BYTEPLUS SESSION RESPONSE (after reset): {result}")
+
+                    # Parse response
+                    content = self._parse_responses_api_content(result)
+
+                    # Token usage
+                    usage = result.get("usage") or {}
+                    token_count_input = int(usage.get("input_tokens", 0))
+                    token_count_output = int(usage.get("output_tokens", 0))
+                    total_tokens = int(usage.get("total_tokens", 0)) or (token_count_input + token_count_output)
+
+                    # Record as cache miss (fresh session)
+                    metrics = get_cache_metrics()
+                    metrics.record_miss("byteplus", "session_reset", total_tokens=token_count_input)
+
+                    status = "success"
+                    logger.info(f"[BYTEPLUS] Successfully recovered from context overflow for {session_key}")
+
+                except Exception as retry_exc:
+                    exc_obj = retry_exc
+                    logger.error(f"Error retrying BytePlus Session API for {session_key} after reset: {retry_exc}")
 
         except Exception as exc:
             exc_obj = exc
@@ -1436,6 +1567,10 @@ class LLMInterface:
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
             }
+
+            # Enable JSON mode for reasoning calls to ensure valid JSON output
+            if call_type in (LLMCallType.REASONING, LLMCallType.GUI_REASONING):
+                request_kwargs["response_format"] = {"type": "json_object"}
 
             # Add prompt_cache_key when call_type is provided for better cache routing
             # This helps when alternating between different call types (reasoning, action_selection)
@@ -1888,11 +2023,19 @@ class LLMInterface:
             if not self._anthropic_client:
                 raise RuntimeError("Anthropic client was not initialised.")
 
+            # Enable JSON mode for reasoning calls via prefilling
+            json_mode = call_type in (LLMCallType.REASONING, LLMCallType.GUI_REASONING)
+
             # Build the message with optional system prompt
+            messages = [{"role": "user", "content": user_prompt}]
+            # For JSON mode, use prefilling to force JSON output
+            if json_mode:
+                messages.append({"role": "assistant", "content": "{"})
+
             message_kwargs: Dict[str, Any] = {
                 "model": self.model,
                 "max_tokens": self.max_tokens,
-                "messages": [{"role": "user", "content": user_prompt}],
+                "messages": messages,
             }
 
             if system_prompt:
@@ -1931,6 +2074,10 @@ class LLMInterface:
                     content += block.text
 
             content = content.strip()
+
+            # If using JSON mode prefilling, prepend the '{' that was used as prefill
+            if json_mode:
+                content = "{" + content
 
             # Token usage from Anthropic response
             token_count_input = response.usage.input_tokens

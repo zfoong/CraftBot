@@ -75,6 +75,17 @@ class ActionMetadata:
     requirements: List[str] = field(default_factory=list)
     test_payload: Optional[Dict[str, Any]] = None
 
+    @property
+    def display_name(self) -> str:
+        """Returns a user-friendly display name from the snake_case name.
+
+        Examples:
+            'grep_files' -> 'Grep files'
+            'mouse_click' -> 'Mouse click'
+            'web_search' -> 'Web search'
+        """
+        return self.name.replace('_', ' ').capitalize()
+
 @dataclass
 class RegisteredAction:
     """Combines the actual Python callable with its metadata."""

@@ -38,7 +38,7 @@ from core.action.action_manager import ActionManager
 from core.action.action_router import ActionRouter
 from core.tui import TUIInterface
 from core.internal_action_interface import InternalActionInterface
-from core.llm_interface import LLMInterface, LLMCallType
+from core.llm import LLMInterface, LLMCallType
 from core.vlm_interface import VLMInterface
 from core.database_interface import DatabaseInterface
 from core.logger import logger
@@ -750,7 +750,7 @@ class AgentBase:
         self.state_manager.reset()
         self.event_stream_manager.clear_all()
 
-        return "Agent state reset. Starting fresh." 
+        return "Agent state reset. Starting fresh."
 
     def _parse_reasoning_response(self, response: str) -> ReasoningResult:
         """

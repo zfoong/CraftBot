@@ -161,7 +161,7 @@ class ActionManager:
                 is_gui_task=is_gui_task,
                 event_type="action_start",
                 event=f"Running action {action.name} with input: {input_data}.",
-                display_message=f"Running {action.name}",
+                display_message=f"Running {action.display_name}",
                 action_name=action.name,
             )
             
@@ -241,7 +241,7 @@ class ActionManager:
                 is_gui_task=is_gui_task,
                 event_type="action_end",
                 event=f"Action {action.name} completed with output: {outputs}.",
-                display_message=f"{action.name} → {display_status}",
+                display_message=f"{action.display_name} → {display_status}",
                 action_name=action.name,
             )
 
