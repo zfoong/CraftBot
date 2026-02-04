@@ -160,19 +160,14 @@ class ActionRouter:
         )
         logger.info(f"ActionRouter using compiled action list: {len(action_candidates)} actions")
 
-        # Dedupe names while preserving insertion order
-        action_name_candidates = list({candidate["name"]: None for candidate in action_candidates}.keys())
-
         # Build the instruction prompt for the LLM
-        # KV CACHING: Inject dynamic context into user prompt
+        # KV CACHING: Static/session-static content first, dynamic (event_stream) last
         # Reasoning is now part of the action selection prompt (single LLM call)
         prompt = SELECT_ACTION_IN_TASK_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(),
-            task_state=self.context_engine.get_task_state(),
             event_stream=self.context_engine.get_event_stream(),
             query=query,
             action_candidates=self._format_candidates(action_candidates),
-            action_name_candidates=self._format_action_names(action_name_candidates),
         )
 
         max_retries = 3
@@ -231,18 +226,14 @@ class ActionRouter:
         )
         logger.info(f"ActionRouter (simple task) using compiled action list: {len(action_candidates)} actions")
 
-        # Dedupe names while preserving insertion order
-        action_name_candidates = list({candidate["name"]: None for candidate in action_candidates}.keys())
-
         # Build the instruction prompt using simple task prompt
+        # KV CACHING: Static/session-static content first, dynamic (event_stream) last
         # Reasoning is now part of the action selection prompt (single LLM call)
         prompt = SELECT_ACTION_IN_SIMPLE_TASK_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(),
-            task_state=self.context_engine.get_task_state(),
             event_stream=self.context_engine.get_event_stream(),
             query=query,
             action_candidates=self._format_candidates(action_candidates),
-            action_name_candidates=self._format_action_names(action_name_candidates),
         )
 
         max_retries = 3
@@ -311,20 +302,15 @@ class ActionRouter:
         )
         logger.info(f"ActionRouter (GUI) using compiled action list: {len(action_candidates)} actions")
 
-        # Dedupe names while preserving insertion order
-        action_name_candidates = list({candidate["name"]: None for candidate in action_candidates}.keys())
-
         # Build the instruction prompt for the LLM
-        # KV CACHING: Inject dynamic context into user prompt (GUI mode uses gui_event_stream)
+        # KV CACHING: Static/session-static content first, dynamic (gui_event_stream) last
         # Reasoning is now part of the action selection prompt (single LLM call)
         prompt = SELECT_ACTION_IN_GUI_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(),
-            task_state=self.context_engine.get_task_state(),
             gui_event_stream=self.context_engine.get_gui_event_stream(),
             gui_state=gui_state,
             query=query,
             action_candidates=self._format_candidates(action_candidates),
-            action_name_candidates=self._format_action_names(action_name_candidates),
         )
 
         max_retries = 3

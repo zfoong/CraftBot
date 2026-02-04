@@ -160,7 +160,7 @@ These are the existing triggers in your queue:
 """
 
 # --- Action Router ---
-# KV CACHING OPTIMIZED: Static content FIRST, dynamic content in MIDDLE, output format LAST
+# KV CACHING OPTIMIZED: Static content FIRST, session-static in MIDDLE, dynamic (event_stream) LAST
 SELECT_ACTION_PROMPT = """
 <rules>
 Action Selection Rules:
@@ -213,22 +213,6 @@ Critical Rules:
 - Always use double quotes around strings so the JSON is valid.
 </notes>
 
----
-
-{event_stream}
-
-<objective>
-Here is your goal:
-{query}
-
-Your job is to choose the best action from the action library and prepare the input parameters needed to run it immediately.
-</objective>
-
-<actions>
-Here are the available actions, including their descriptions and input schema:
-{action_candidates}
-</actions>
-
 <output_format>
 Return ONLY a valid JSON object with this structure and no extra commentary:
 {{
@@ -239,11 +223,27 @@ Return ONLY a valid JSON object with this structure and no extra commentary:
   }}
 }}
 </output_format>
+
+<actions>
+Here are the available actions, including their descriptions and input schema:
+{action_candidates}
+</actions>
+
+<objective>
+Here is your goal:
+{query}
+
+Your job is to choose the best action from the action library and prepare the input parameters needed to run it immediately.
+</objective>
+
+---
+
+{event_stream}
 """
 
 # Used in User Prompt when asking the model to select an action from the list of candidates
 # core.action.action_router.ActionRouter.select_action_in_task
-# KV CACHING OPTIMIZED: Static content FIRST, dynamic content in MIDDLE, output format LAST
+# KV CACHING OPTIMIZED: Static content FIRST, session-static in MIDDLE, dynamic (event_stream) LAST
 SELECT_ACTION_IN_TASK_PROMPT = """
 <rules>
 Todo Workflow Phases (follow this order):
@@ -269,7 +269,7 @@ Adaptive Execution:
 - Use 'list_action_sets' to see what action sets are available if unsure
 
 Critical Rules:
-- The selected action MUST be from the allowed action list. If none suitable, set action_name to "" (empty string).
+- The selected action MUST be from the actions list. If none suitable, set action_name to "" (empty string).
 - DO NOT SPAM the user. Max 2 retries for questions before skipping.
 - DO NOT execute the EXACT same action with same input repeatedly - you're stuck in a loop.
 - DO NOT use 'send_message' to claim completion without doing the work.
@@ -282,7 +282,7 @@ Critical Rules:
 
 <reasoning_protocol>
 Before selecting an action, you MUST reason through these steps:
-1. Identify the current todo (marked 'in_progress' or first 'pending').
+1. Identify the current todo from the [todos] event (marked [>] in_progress or first [ ] pending).
 2. Determine which phase this todo belongs to (Acknowledge/Collect/Execute/Verify/Confirm/Cleanup).
 3. Analyze what "done" means for this specific todo.
 4. Check the event stream to see if the required action was already performed.
@@ -298,31 +298,6 @@ Before selecting an action, you MUST reason through these steps:
 - DO NOT return empty response. When encounter issue, return 'send_message' to inform user.
 </notes>
 
----
-
-{event_stream}
-
-{task_state}
-
-{agent_state}
-
-<objective>
-Here is your goal:
-{query}
-
-Your job is to reason about the current state, then select the next action and provide the input parameters so it can be executed immediately.
-</objective>
-
-<actions>
-This is the list of action candidates, each including descriptions and input schema:
-{action_candidates}
-</actions>
-
-<allowed_action_names>
-You may only choose from these action names:
-{action_name_candidates}
-</allowed_action_names>
-
 <output_format>
 Return ONLY a valid JSON object with this structure and no extra commentary:
 {{
@@ -334,9 +309,27 @@ Return ONLY a valid JSON object with this structure and no extra commentary:
   }}
 }}
 </output_format>
+
+<actions>
+This is the list of action candidates, each including descriptions and input schema:
+{action_candidates}
+</actions>
+
+{agent_state}
+
+<objective>
+Here is your goal:
+{query}
+
+Your job is to reason about the current state, then select the next action and provide the input parameters so it can be executed immediately.
+</objective>
+
+---
+
+{event_stream}
 """
 
-# KV CACHING OPTIMIZED: Static content FIRST, dynamic content in MIDDLE, output format LAST
+# KV CACHING OPTIMIZED: Static content FIRST, session-static in MIDDLE, dynamic (gui_event_stream) LAST
 SELECT_ACTION_IN_GUI_PROMPT = """
 <rules>
 GUI Action Selection Rules:
@@ -359,7 +352,7 @@ Before selecting an action, you MUST reason through these steps:
 3. Check the event stream for warnings or repeated patterns that need adjustment.
 4. Determine what the next action should be to progress toward the goal.
 5. If selecting a click/mouse action, identify the specific UI element to interact with.
-6. Consider if the current todo is complete and needs updating.
+6. Consider if the current todo is complete (check [todos] event) and needs updating.
 7. Check if task is complete and mode switch is needed.
 </reasoning_protocol>
 
@@ -369,37 +362,6 @@ Before selecting an action, you MUST reason through these steps:
 - Always use double quotes around strings so the JSON is valid.
 - DO NOT return empty response. When encounter issue, return 'send_message' to inform user.
 </notes>
-
----
-
-{gui_event_stream}
-
-{task_state}
-
-{agent_state}
-
-<gui_state>
-Current screen state (screenshot description or parsed elements):
-{gui_state}
-</gui_state>
-
-<objective>
-You are a GUI agent. You are given a goal and your event stream, with screenshots. You need to reason about the current state and perform the next action to complete the task.
-Here is your goal:
-{query}
-
-Your job is to reason about the screen, select the next GUI action, and provide the input parameters so it can be executed immediately.
-</objective>
-
-<actions>
-This is the list of action candidates, each including descriptions and input schema:
-{action_candidates}
-</actions>
-
-<allowed_action_names>
-You may only choose from these action names:
-{action_name_candidates}
-</allowed_action_names>
 
 <output_format>
 Return ONLY a valid JSON object with this structure and no extra commentary:
@@ -417,10 +379,34 @@ Note: The 'element_to_find' field is used to locate pixel coordinates for mouse/
 - For mouse_click, mouse_move, mouse_drag: describe the element like "the Firefox icon on the desktop" or "the search button"
 - For keyboard actions, send_message, task_update_todos, etc.: set element_to_find to ""
 </output_format>
+
+<actions>
+This is the list of action candidates, each including descriptions and input schema:
+{action_candidates}
+</actions>
+
+{agent_state}
+
+<gui_state>
+Current screen state (screenshot description or parsed elements):
+{gui_state}
+</gui_state>
+
+<objective>
+You are a GUI agent. You are given a goal and your event stream, with screenshots. You need to reason about the current state and perform the next action to complete the task.
+Here is your goal:
+{query}
+
+Your job is to reason about the screen, select the next GUI action, and provide the input parameters so it can be executed immediately.
+</objective>
+
+---
+
+{gui_event_stream}
 """
 
 # Used for simple task mode - streamlined action selection without todo workflow
-# KV CACHING OPTIMIZED: Static content FIRST, dynamic content in MIDDLE, output format LAST
+# KV CACHING OPTIMIZED: Static content FIRST, session-static in MIDDLE, dynamic (event_stream) LAST
 SELECT_ACTION_IN_SIMPLE_TASK_PROMPT = """
 <rules>
 Simple Task Execution Rules:
@@ -459,11 +445,18 @@ Before selecting an action, quickly reason through:
 - DO NOT return empty response. When encounter issue, return 'send_message' to inform user.
 </notes>
 
----
+<output_format>
+Return ONLY a valid JSON object:
+{{
+  "reasoning": "<brief reasoning about current state and what action to take>",
+  "action_name": "<action name>",
+  "parameters": {{ ... }}
+}}
+</output_format>
 
-{event_stream}
-
-{task_state}
+<actions>
+{action_candidates}
+</actions>
 
 {agent_state}
 
@@ -474,22 +467,9 @@ SIMPLE TASK - Execute quickly:
 Reason briefly, then select the next action to complete this task efficiently.
 </objective>
 
-<actions>
-{action_candidates}
-</actions>
+---
 
-<allowed_action_names>
-{action_name_candidates}
-</allowed_action_names>
-
-<output_format>
-Return ONLY a valid JSON object:
-{{
-  "reasoning": "<brief reasoning about current state and what action to take>",
-  "action_name": "<action name>",
-  "parameters": {{ ... }}
-}}
-</output_format>
+{event_stream}
 """
 
 # --- Event Stream ---

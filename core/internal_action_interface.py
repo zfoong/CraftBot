@@ -295,7 +295,57 @@ class InternalActionInterface:
             raise RuntimeError("InternalActionInterface not initialized with TaskManager.")
 
         updated_todos = cls.task_manager.update_todos(todos)
+
+        # Emit [todos] event to event stream for session caching optimization
+        # Format: [ ] Pending | [>] In Progress | [x] Completed
+        cls._emit_todos_event(updated_todos)
+
         return {"status": "ok", "todos": updated_todos}
+
+    @classmethod
+    def _emit_todos_event(cls, todos: List[Dict[str, Any]]) -> None:
+        """
+        Emit a [todos] event to the event stream showing current todo status.
+
+        Format:
+        HH:MM:SS [todos]:
+          [ ] Item1
+          [>] Item2
+          [x] Item3
+
+        This enables session caching by keeping todos in the dynamic event stream
+        rather than as a separate prompt component.
+        """
+        if cls.state_manager is None:
+            return
+
+        todo_lines = []
+        for todo in todos:
+            status = todo.get("status", "pending")
+            content = todo.get("content", "")
+
+            # Determine checkbox based on status
+            if status == "completed":
+                checkbox = "[x]"
+            elif status == "in_progress":
+                checkbox = "[>]"
+            else:
+                checkbox = "[ ]"
+
+            todo_lines.append(f"  {checkbox} {content}")
+
+        if todo_lines:
+            todos_str = "\n" + "\n".join(todo_lines)
+        else:
+            todos_str = "(no todos)"
+
+        # Log to event stream with kind="todos"
+        cls.state_manager.event_stream_manager.log(
+            kind="todos",
+            message=todos_str,
+            severity="INFO",
+        )
+        cls.state_manager.bump_event_stream()
 
     @classmethod
     async def mark_task_completed(cls, message: Optional[str] = None) -> Dict[str, Any]:
