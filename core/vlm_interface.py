@@ -19,7 +19,7 @@ from core.models.types import InterfaceType
 from core.google_gemini_client import GeminiClient
 from core.logger import logger
 from core.state.agent_state import STATE
-from core.llm_interface import get_cache_metrics, get_cache_config
+from core.llm import get_cache_metrics, get_cache_config
 
 class VLMInterface:
     _CODE_BLOCK_RE = re.compile(r"^```(?:\w+)?\s*|\s*```$", re.MULTILINE)

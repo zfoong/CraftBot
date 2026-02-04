@@ -9,10 +9,18 @@ that was polluting the CLI output).
 from __future__ import annotations
 
 import base64
+import logging
 import os
 from typing import Any, Dict, Iterable, List, Optional
 
 import requests
+
+# Logging setup
+try:
+    from core.logger import logger  # type: ignore
+except Exception:  # pragma: no cover
+    logger = logging.getLogger(__name__)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 DEFAULT_API_BASE = "https://generativelanguage.googleapis.com"
 DEFAULT_API_VERSION = "v1beta"
@@ -61,6 +69,7 @@ class GeminiClient:
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        json_mode: bool = False,
     ) -> Dict[str, Any]:
         """Generate text for a purely textual prompt.
 
@@ -88,6 +97,8 @@ class GeminiClient:
             generation_config["temperature"] = temperature
         if max_output_tokens is not None:
             generation_config["maxOutputTokens"] = max_output_tokens
+        if json_mode:
+            generation_config["responseMimeType"] = "application/json"
 
         payload: Dict[str, Any] = {"contents": contents}
         if system_prompt:
@@ -271,6 +282,7 @@ class GeminiClient:
         prompt: str,
         temperature: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        json_mode: bool = False,
     ) -> Dict[str, Any]:
         """Generate text using an explicit cache.
 
@@ -283,6 +295,7 @@ class GeminiClient:
             prompt: The user prompt for this request.
             temperature: Sampling temperature.
             max_output_tokens: Maximum output tokens.
+            json_mode: If True, enforce JSON output format.
 
         Returns:
             Dict with tokens_used, content, prompt_tokens, completion_tokens, cached_tokens.
@@ -299,6 +312,8 @@ class GeminiClient:
             generation_config["temperature"] = temperature
         if max_output_tokens is not None:
             generation_config["maxOutputTokens"] = max_output_tokens
+        if json_mode:
+            generation_config["responseMimeType"] = "application/json"
 
         payload: Dict[str, Any] = {
             "contents": contents,
@@ -399,6 +414,15 @@ class GeminiClient:
             json=payload,
             timeout=self._timeout,
         )
+
+        # Log response details before raising for status (helps debug API errors)
+        if not response.ok:
+            try:
+                error_json = response.json()
+                logger.warning(f"[GEMINI ERROR] Status: {response.status_code}, Body: {error_json}")
+            except Exception:
+                logger.warning(f"[GEMINI ERROR] Status: {response.status_code}, Raw text: {response.text[:1000]}")
+
         response.raise_for_status()
         return response.json()
 

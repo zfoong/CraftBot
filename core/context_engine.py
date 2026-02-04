@@ -193,7 +193,7 @@ class ContextEngine:
                         checkbox = "[ ]"
                     lines.append(f"{checkbox} {todo.content}")
             else:
-                lines.append("(no todos yet - use 'update todos' to add items)")
+                lines.append("(no todos yet - use 'task_update_todos' to add items)")
 
             lines.append("</current_task>")
             return "\n".join(lines)
@@ -210,10 +210,6 @@ class ContextEngine:
             return (
                 "<agent_state>\n"
                 f"- Active Task ID: {agent_properties.get('current_task_id')}\n"
-                f"- Current Task action count: {agent_properties.get('action_count', 0)}\n"
-                f"- Max Actions per Task: {agent_properties.get('max_actions_per_task')}\n"
-                f"- Current Task token count: {agent_properties.get('token_count', 0)}\n"
-                f"- Max Tokens per Task: {agent_properties.get('max_tokens_per_task')}\n"
                 f"- Current Mode: {gui_mode_status}\n"
                 "</agent_state>"
             )

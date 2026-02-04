@@ -16,7 +16,7 @@ from core.action.action_library import ActionLibrary
 from core.action.action_router import ActionRouter
 from core.context_engine import ContextEngine
 from core.event_stream.event_stream_manager import EventStreamManager
-from core.llm_interface import LLMInterface, LLMCallType
+from core.llm import LLMInterface, LLMCallType
 from core.logger import logger
 
 class GUIModule:

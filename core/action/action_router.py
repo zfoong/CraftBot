@@ -15,7 +15,7 @@ from core.context_engine import ContextEngine
 from core.state.agent_state import STATE
 
 from core.logger import logger
-from core.llm_interface import LLMCallType
+from core.llm import LLMCallType
 from core.prompt import SELECT_ACTION_IN_TASK_PROMPT, SELECT_ACTION_PROMPT, SELECT_ACTION_IN_GUI_PROMPT, SELECT_ACTION_IN_SIMPLE_TASK_PROMPT
 from decorators.profiler import profile, OperationCategory
 
@@ -86,7 +86,7 @@ class ActionRouter:
             Dict[str, Any]: Parsed decision containing ``action_name`` and
             ``parameters`` ready for execution or creation.
         """
-        conversation_mode_actions = ["send message", "ask question", "start task", "update todos", "end task", "ignore"]
+        conversation_mode_actions = ["send_message", "task_start", "task_update_todos", "task_end", "ignore"]
         action_candidates = []
         
         for action in conversation_mode_actions:
@@ -247,7 +247,7 @@ class ActionRouter:
         action_name_candidates = []
 
         # Exclude todo management and ignore actions for simple tasks
-        ignore_actions = ["ignore", "update todos"]
+        ignore_actions = ["ignore", "task_update_todos"]
 
         # Retrieve default actions
         default_actions = self.action_library.retrieve_default_action()

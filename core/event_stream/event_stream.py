@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 from core.event_stream.event import Event, EventRecord
-from core.llm_interface import LLMInterface
+from core.llm import LLMInterface
 from core.prompt import EVENT_STREAM_SUMMARIZATION_PROMPT
 from sklearn.feature_extraction.text import TfidfVectorizer
 from core.logger import logger
@@ -155,7 +155,7 @@ class EventStream:
             file_path.write_text(message, encoding="utf-8")
             keywords = ", ".join(self._extract_keywords(message)) or "n/a"
             return (
-                f"Action {action_name} completed. The output is too long therefore is saved in {file_path} to save token. | keywords: {keywords} | To retrieve the content, agent MUST use the 'grep' action to extract the context with keywords or use 'stream read' to read the content line by line in file."
+                f"Action {action_name} completed. The output is too long therefore is saved in {file_path} to save token. | keywords: {keywords} | To retrieve the content, agent MUST use the 'grep_files' action to extract the context with keywords or use 'read_file_paginated' to read the content line by line in file."
             )
         except Exception:
             logger.exception(

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from collections import defaultdict, OrderedDict
 from typing import Dict, List, Optional, Any
 from core.logger import logger
-from core.llm_interface import LLMInterface
+from core.llm import LLMInterface
 from core.state.agent_state import STATE
 from core.prompt import CHECK_TRIGGERS_STATE_PROMPT
 from decorators.profiler import profile, OperationCategory

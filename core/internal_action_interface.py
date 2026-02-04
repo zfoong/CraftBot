@@ -6,7 +6,7 @@ framework internal functions.
 """
 
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
-from core.llm_interface import LLMInterface, LLMCallType
+from core.llm import LLMInterface, LLMCallType
 from core.vlm_interface import VLMInterface
 from core.task.task_manager import TaskManager
 from core.task.task import Task

@@ -94,6 +94,17 @@ class Action:
         self.requirements = requirements or []
         self.timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
 
+    @property
+    def display_name(self) -> str:
+        """Returns a user-friendly display name from the snake_case name.
+
+        Examples:
+            'grep_files' -> 'Grep files'
+            'mouse_click' -> 'Mouse click'
+            'web_search' -> 'Web search'
+        """
+        return self.name.replace('_', ' ').capitalize()
+
     def to_dict(self):
         """Convert Action to a dictionary format (for database storage)."""
         return {
