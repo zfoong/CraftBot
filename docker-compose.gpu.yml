@@ -1,0 +1,12 @@
+# GPU override for OmniParser.
+# Usage: docker compose --profile with-omniparser -f docker-compose.yml -f docker-compose.gpu.yml up
+# Requires: NVIDIA Container Toolkit (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/)
+services:
+  omniparser:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

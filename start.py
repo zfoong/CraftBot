@@ -15,11 +15,17 @@ from dotenv import load_dotenv
 # Load environment variables from .env if present
 load_dotenv()
 
+# --- Base directory (handles PyInstaller frozen exe) ---
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # --- Configuration ---
-CONFIG_FILE = "config.json"
-MAIN_APP_SCRIPT = "main.py"
-YML_FILE = "environment.yml"
-REQUIREMENTS_FILE = "requirements.txt"
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+MAIN_APP_SCRIPT = os.path.join(BASE_DIR, "main.py")
+YML_FILE = os.path.join(BASE_DIR, "environment.yml")
+REQUIREMENTS_FILE = os.path.join(BASE_DIR, "requirements.txt")
 
 OMNIPARSER_REPO_URL = "https://github.com/zfoong/OmniParser_CraftOS.git"
 OMNIPARSER_BRANCH = "CraftOS"
@@ -599,18 +605,34 @@ def launch_in_new_terminal(conda_env_name: Optional[str] = None, conda_base_path
     print("✅ Setup script finished.")
     sys.exit(0)
 
+# --- Frozen exe entry point ---
+def run_frozen():
+    """When running as a PyInstaller exe, skip env setup and run the agent directly."""
+    args_set = set(sys.argv[1:])
+    initialize_environment(args_set)
+
+    # Import and run core.main directly (deps are already bundled in the exe)
+    sys.path.insert(0, BASE_DIR)
+    from core.main import main as core_main
+    core_main()
+
 # --- Main Execution ---
 if __name__ == "__main__":
+    # If running as a frozen PyInstaller exe, skip all setup
+    if getattr(sys, 'frozen', False):
+        run_frozen()
+        sys.exit(0)
+
     args_set = set(sys.argv[1:])
     # Get both flags
     requested_cpu_only, fast_mode = initialize_environment(args_set)
-    
+
     conda_base_path = None
     main_env_name = None
 
     if os.getenv('USE_CONDA') == "True":
         is_installed, reason, conda_base_path = is_conda_installed_robust()
-        
+
         if not is_installed:
             print(f"❌ Conda is not installed ({reason}). Please use --no-conda.")
             sys.exit(1)
@@ -623,7 +645,7 @@ if __name__ == "__main__":
                  setup_conda_environment(env_name=main_env_name, yml_path=YML_FILE)
             else:
                  print(f"ℹ️ Skipping main Conda env update check (--fast).")
-            
+
             verify_conda_env_ready(env_name=main_env_name) # Optional check
 
     else:

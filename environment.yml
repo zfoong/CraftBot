@@ -42,3 +42,4 @@ dependencies:
       - docling
       - textual>=0.58.0
       - gradio_client
+      - python-dotenv

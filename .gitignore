@@ -21,3 +21,9 @@ node_modules
 .claude/
 OmniParser_CraftOS/
 _launch_agent.cmd
+dist/
+build/
+*.egg-info/
+debug_images
+.vscode/
+.idea/

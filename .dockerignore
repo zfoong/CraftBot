@@ -16,3 +16,10 @@ __pypackages__
 build
 dist
 .DS_Store
+.github
+install.sh
+install.bat
+*.egg-info
+OmniParser_CraftOS
+debug_images
+workspace
