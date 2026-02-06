@@ -41,7 +41,7 @@ class GUIHandler:
     # --- Linux Screenshot Payload (Python) ---
     _LINUX_SCREENSHOT_PAYLOAD = """
 import sys, io, os
-if "DISPLAY" not in os.environ: os.environ["DISPLAY"] = ":0"
+if "DISPLAY" not in os.environ: os.environ["DISPLAY"] = ":1"
 try:
     import mss
     from PIL import Image
@@ -150,11 +150,24 @@ try {
             raise RuntimeError(f"Unknown OS Type: {os_type}")
 
         logger.debug(f"[GUIHandler] Running action via {python_executable[0]} on {os_type}...")
-        
+
+        # Set X11 environment for Linux containers so pyautogui/Xlib can
+        # connect without an XauthError.  XAUTHORITY is pointed at a
+        # path we ensure exists, and DISPLAY at the KasmVNC virtual display.
+        x11_env = None
+        if os_type == "linux":
+            x11_env = {"DISPLAY": ":1", "XAUTHORITY": "/config/.Xauthority"}
+            # Ensure .Xauthority file exists (touch is idempotent)
+            cls._run_docker_exec(
+                container_id,
+                ["/bin/sh", "-c", "touch /config/.Xauthority"],
+            )
+
         stdout, stderr, code = cls._run_docker_exec(
-            container_id, 
-            python_executable, 
-            wrapper_script.encode('utf-8')
+            container_id,
+            python_executable,
+            wrapper_script.encode('utf-8'),
+            env=x11_env,
         )
         
         return cls._validate_action_output(stdout, stderr, code)
@@ -167,10 +180,14 @@ try {
     def _get_linux_screen_with_auto_install(cls, container_id: str) -> bytes:
         """Handles Linux capture lifecycle, including auto-installing Pillow."""
         logger.debug("[GUIHandler] Attempting Linux capture...")
+        x11_env = {"DISPLAY": ":1", "XAUTHORITY": "/config/.Xauthority"}
+        # Ensure .Xauthority exists
+        cls._run_docker_exec(container_id, ["/bin/sh", "-c", "touch /config/.Xauthority"])
         stdout, stderr, code = cls._run_docker_exec(
-            container_id, 
-            ["python3"], 
-            cls._LINUX_SCREENSHOT_PAYLOAD.encode()
+            container_id,
+            ["python3"],
+            cls._LINUX_SCREENSHOT_PAYLOAD.encode(),
+            env=x11_env,
         )
 
         if code == cls._EXIT_CODE_MISSING_PACKAGE:
@@ -179,9 +196,10 @@ try {
             cls._install_linux_package(container_id, cls._LINUX_REQUIRED_PKG)
             logger.debug("[GUIHandler] Retrying capture after installation...")
             stdout, stderr, code = cls._run_docker_exec(
-                container_id, 
-                ["python3"], 
-                cls._LINUX_SCREENSHOT_PAYLOAD.encode()
+                container_id,
+                ["python3"],
+                cls._LINUX_SCREENSHOT_PAYLOAD.encode(),
+                env=x11_env,
             )
 
         return cls._validate_screenshot_output(stdout, stderr, code)
@@ -226,6 +244,12 @@ import inspect
 import sys
 import os
 import traceback
+
+# --- 0. Ensure X11 env is set for pyautogui / Xlib ---
+if "DISPLAY" not in os.environ:
+    os.environ["DISPLAY"] = ":1"
+if "XAUTHORITY" not in os.environ:
+    os.environ["XAUTHORITY"] = "/config/.Xauthority"
 
 # --- 1. Inject Input Data ---
 try:
@@ -350,10 +374,14 @@ except Exception as e:
                 raise RuntimeError(f"Failed to install '{pkg_name}'. Exit {code}. Error: {err_msg}")
 
     @classmethod
-    def _run_docker_exec(cls, container_id: str, shell_cmd: list, stdin_data: Optional[bytes] = None) -> Tuple[bytes, bytes, int]:
+    def _run_docker_exec(cls, container_id: str, shell_cmd: list, stdin_data: Optional[bytes] = None, env: Optional[Dict[str, str]] = None) -> Tuple[bytes, bytes, int]:
         """Helper to run docker exec piping data in and out."""
         try:
-            cmd = ["docker", "exec", "-i", container_id] + shell_cmd
+            cmd = ["docker", "exec", "-i"]
+            if env:
+                for k, v in env.items():
+                    cmd += ["-e", f"{k}={v}"]
+            cmd += [container_id] + shell_cmd
             # logger.debug(f"Executing command: {' '.join(cmd)}") # Optional verbose logging
             process = subprocess.Popen(
                 cmd,

@@ -338,6 +338,33 @@ class ActionManager:
                 logger.error(f"Action execution error: {output['error']}")
                 return output  # DO NOT parse
 
+            # Sandboxed actions return {stdout, stderr, returncode}.
+            # Try to parse the JSON result from stdout, and surface
+            # non-zero return codes as errors so the agent can react.
+            if "returncode" in output:
+                rc = output.get("returncode", 0)
+                stdout_raw = output.get("stdout", "")
+                stderr_raw = output.get("stderr", "")
+
+                if rc != 0:
+                    logger.error(f"Sandboxed action returned non-zero exit code {rc}: {stderr_raw}")
+                    return {
+                        "error": stderr_raw or f"Action exited with code {rc}",
+                        "stdout": stdout_raw,
+                        "stderr": stderr_raw,
+                        "returncode": rc,
+                    }
+
+                # Try to extract the JSON result printed by the action
+                # wrapper (it's the last JSON object in stdout).
+                if stdout_raw:
+                    try:
+                        parsed = self._parse_action_output(stdout_raw)
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except Exception:
+                        logger.debug("Could not parse JSON from sandboxed stdout; returning raw output.")
+
             logger.debug(f"[ACTION] Parsed action output: {output}")
             return output
 

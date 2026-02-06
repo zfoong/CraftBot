@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import multiprocessing
 import os
 import sys
 import json
@@ -9,6 +10,11 @@ import time
 import urllib.request
 import urllib.error
 from typing import Tuple, Optional, Dict, Any
+
+# Must be called before ANY other code when running as a frozen exe
+# on Windows.  Without this, ProcessPoolExecutor workers re-execute
+# start.py from scratch instead of running the target function.
+multiprocessing.freeze_support()
 
 from dotenv import load_dotenv
 

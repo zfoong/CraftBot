@@ -23,7 +23,7 @@ from core.action.action_framework.registry import action
             "description": "List of search\u2010result objects containing {title, url, content, type}."
         }
     },
-    requirement=["ClientSession", "DDGS", "build", "aiohttp", "duckduckgo-search", "google-api-python-client"],
+    requirement=["ClientSession", "DDGS", "build", "aiohttp", "ddgs", "google-api-python-client"],
     test_payload={
         "query": "latest AI developments 2025",
         "num_results": 5,

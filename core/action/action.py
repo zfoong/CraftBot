@@ -26,7 +26,8 @@ class Action:
         last_use: bool = None,
         default: bool = False,
         platforms: List[str] = ["windows", "linux", "darwin"],
-        platform_overrides: dict[str, dict] = {}
+        platform_overrides: dict[str, dict] = {},
+        requirements: Optional[List[str]] = None,
     ):
         """
         Initialize a new :class:`Action` definition.
@@ -82,6 +83,7 @@ class Action:
         self.default = default  
         self.mode = mode
         self.execution_mode = execution_mode
+        self.requirements: List[str] = requirements or []
 
     def to_dict(self):
         """Convert Action to a dictionary format (for database storage)."""
@@ -128,7 +130,8 @@ class Action:
             default=data.get("default", False) ,
             platforms=data.get("platforms", ["windows", "linux", "darwin"]),
             platform_overrides=data.get("platform_overrides", {}),
-            execution_mode=data.get("execution_mode", "sandboxed")
+            execution_mode=data.get("execution_mode", "sandboxed"),
+            requirements=data.get("requirements", []),
         )
 
         return data_to_return

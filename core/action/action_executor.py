@@ -1,13 +1,15 @@
 import asyncio
+import importlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import venv
 import uuid
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
-from typing import Any
+from typing import Any, List
 from core.logger import logger
 from core.gui.handler import GUIHandler
 
@@ -22,6 +24,174 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Worker: runs in a separate PROCESS
 # ============================================
 
+def _find_system_python() -> str | None:
+    """
+    Locate a usable system Python interpreter.
+
+    When running inside a PyInstaller frozen exe, ``sys.executable``
+    points to the bundled exe — not a real Python — so ``pip install``
+    would fail.  This helper finds the real interpreter.
+
+    On Windows the search order is ``python`` then ``python3`` because
+    real CPython installers register ``python.exe`` while the
+    WindowsApps ``python3.exe`` is only a Microsoft Store redirect
+    stub (exit-code 9009).  Every candidate is validated with a quick
+    ``--version`` call before being accepted.
+    """
+    import shutil
+
+    # Not frozen → sys.executable is fine
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+
+    # On Windows real CPython is "python"; "python3" is often the
+    # Store stub.  On Unix "python3" is the canonical name.
+    if os.name == "nt":
+        candidates = ("python", "python3")
+    else:
+        candidates = ("python3", "python")
+
+    # Frozen → search PATH for a real Python
+    for name in candidates:
+        found = shutil.which(name)
+        if not found:
+            continue
+
+        # Skip the WindowsApps Store stubs explicitly
+        if os.name == "nt" and "WindowsApps" in found:
+            logger.debug(f"[PYTHON] Skipping Windows Store stub: {found}")
+            continue
+
+        # Validate the interpreter actually works
+        try:
+            subprocess.check_call(
+                [found, "--version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+            return found
+        except Exception:
+            logger.debug(f"[PYTHON] Candidate '{found}' failed --version check, skipping.")
+            continue
+
+    return None
+
+
+def _ensure_requirements(requirements: List[str], python_bin: str | None = None) -> None:
+    """
+    Install pip packages that are not yet available.
+
+    *requirements* may contain a mix of importable module names (e.g.
+    ``"DDGS"``) and pip package names (e.g. ``"duckduckgo-search"``).
+    Only entries that look like valid pip package names (lowercase, may
+    contain hyphens) are attempted.  The rest are silently skipped —
+    they are likely class/symbol names listed for documentation only.
+
+    Packages are always installed into the *system* Python's
+    site-packages.  When running from a frozen exe, the action code
+    itself will also run via the system Python (subprocess), so the
+    packages are available where they're needed.
+
+    Args:
+        requirements: List from the action's ``requirement`` field.
+        python_bin:   Python interpreter to use for pip.  When *None*
+                      the system Python is auto-detected (handles
+                      PyInstaller frozen exe).  Pass the venv python
+                      path for sandboxed actions.
+    """
+    if not requirements:
+        return
+
+    pip_python = python_bin or _find_system_python()
+    if not pip_python:
+        logger.warning("[REQUIREMENTS] No Python interpreter found on PATH; cannot install packages.")
+        return
+
+    installed_any = False
+    for pkg in requirements:
+        pkg = pkg.strip()
+        if not pkg:
+            continue
+
+        # Heuristic: skip entries that look like class names
+        # (e.g. "DDGS", "ClientSession", "build") rather than pip
+        # packages.  Pip packages are lowercase and may contain
+        # hyphens/underscores/dots.
+        if not pkg[0].islower() and "-" not in pkg:
+            continue
+
+        # Derive the importable module name for the quick check.
+        # Only useful when NOT frozen (in-process imports work).
+        import_name = pkg.replace("-", "_").split("[")[0]
+
+        if not getattr(sys, "frozen", False):
+            try:
+                importlib.import_module(import_name)
+                continue  # already installed
+            except ImportError:
+                pass
+        else:
+            # When frozen, we can't reliably import-check packages
+            # destined for the system Python.  Use pip to check instead.
+            try:
+                subprocess.check_call(
+                    [str(pip_python), "-m", "pip", "show", "--quiet", pkg],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=15,
+                )
+                continue  # already installed in system Python
+            except Exception:
+                pass
+
+        try:
+            subprocess.check_call(
+                [str(pip_python), "-m", "pip", "install", "--quiet", pkg],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=120,
+            )
+            installed_any = True
+            logger.info(f"[REQUIREMENTS] Installed '{pkg}'")
+        except Exception as e:
+            logger.warning(f"[REQUIREMENTS] Failed to install '{pkg}': {e}")
+
+    # Refresh import caches so in-process exec() can find new packages.
+    if installed_any:
+        importlib.invalidate_caches()
+
+
+def _suppress_worker_stdio():
+    """
+    Redirect OS-level stdout/stderr to devnull in the worker process.
+
+    This prevents venv.EnvBuilder, ensurepip, and other subprocess calls
+    from writing to the inherited terminal, which would corrupt the
+    Textual TUI display.
+
+    Returns (saved_stdout_fd, saved_stderr_fd) for later restoration.
+    """
+    import sys as _sys
+    _sys.stdout.flush()
+    _sys.stderr.flush()
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    saved_stdout = os.dup(1)
+    saved_stderr = os.dup(2)
+    os.dup2(devnull_fd, 1)
+    os.dup2(devnull_fd, 2)
+    os.close(devnull_fd)
+    return saved_stdout, saved_stderr
+
+
+def _restore_worker_stdio(saved_stdout, saved_stderr):
+    """Restore stdout/stderr from saved file descriptors."""
+    os.dup2(saved_stdout, 1)
+    os.dup2(saved_stderr, 2)
+    os.close(saved_stdout)
+    os.close(saved_stderr)
+
+
 def _atomic_action_venv_process(
     action_code: str,
     input_data: dict,
@@ -30,11 +200,17 @@ def _atomic_action_venv_process(
 ) -> dict:
     """
     Executes an action inside an ephemeral virtual environment.
-    Runs in a SEPARATE PROCESS.
+    Runs in a SEPARATE PROCESS via ProcessPoolExecutor.
+
+    stdout/stderr are suppressed at the OS level so that venv creation
+    and other subprocess calls do not corrupt the parent's TUI.
     """
     # GUI mode - in a Docker container
     if mode == "GUI":
         return GUIHandler.execute_action(GUIHandler.TARGET_CONTAINER, action_code, input_data, mode)
+
+    # Suppress worker stdout/stderr to prevent TUI corruption
+    saved_stdout, saved_stderr = _suppress_worker_stdio()
 
     # Sandboxed mode - NOT in a Docker container
     try:
@@ -96,7 +272,7 @@ except Exception as e:
             )
 
             proc = subprocess.run(
-                [python_bin, str(action_file)],
+                [str(python_bin), str(action_file)],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -112,6 +288,93 @@ except Exception as e:
         return {"stdout": "", "stderr": "Execution timed out", "returncode": -1}
     except Exception as e:
         return {"stdout": "", "stderr": f"Execution failed: {e}", "returncode": -1}
+    finally:
+        _restore_worker_stdio(saved_stdout, saved_stderr)
+
+def _atomic_action_internal_subprocess(
+    action_code: str,
+    input_data: dict,
+    python_bin: str,
+    timeout: int = 300,
+) -> dict:
+    """
+    Run an 'internal' action via the system Python as a subprocess.
+
+    Used when running from a PyInstaller frozen exe: C-extension packages
+    (like lxml) installed for the system Python cannot be loaded into
+    the frozen runtime.  Running the action in the system Python avoids
+    this incompatibility.
+    """
+    with tempfile.TemporaryDirectory(prefix="action_internal_") as tmpdir:
+        tmp = Path(tmpdir)
+        action_file = tmp / "action.py"
+        action_file.write_text(
+            f"""
+import json
+import sys
+
+input_data = json.loads({json.dumps(json.dumps(input_data))})
+
+# ─── USER CODE ───
+{action_code}
+
+# ─── Find and call the function ───
+func = None
+local_vars = dict(locals())
+for name, obj in local_vars.items():
+    if callable(obj) and not name.startswith('_') and name not in ('input_data', 'json', 'sys'):
+        func = obj
+        break
+
+if func is None:
+    if 'output' in local_vars:
+        out = local_vars['output']
+        print(json.dumps(out, ensure_ascii=False) if isinstance(out, dict) else str(out))
+        sys.exit(0)
+    else:
+        print(json.dumps({{"status": "error", "message": "No callable function found in action code"}}))
+        sys.exit(1)
+
+try:
+    result = func(input_data)
+    if isinstance(result, dict):
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print(str(result))
+except Exception as e:
+    import traceback
+    print(json.dumps({{"status": "error", "message": str(e)}}))
+    sys.exit(1)
+""",
+            encoding="utf-8",
+        )
+
+        try:
+            proc = subprocess.run(
+                [python_bin, str(action_file)],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+
+            if proc.returncode != 0:
+                err = proc.stderr.strip() or f"Action exited with code {proc.returncode}"
+                return {"status": "error", "message": err}
+
+            stdout = proc.stdout.strip()
+            if not stdout:
+                return {"status": "success", "output": ""}
+
+            try:
+                return json.loads(stdout)
+            except json.JSONDecodeError:
+                return {"status": "success", "output": stdout}
+
+        except subprocess.TimeoutExpired:
+            return {"status": "error", "message": "Execution timed out"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
 
 def _atomic_action_internal(
     action_name: str,
@@ -174,10 +437,33 @@ class ActionExecutor:
     ) -> dict:
         execution_mode = getattr(action, "execution_mode", "sandboxed")
         mode = getattr(action, "mode", "CLI")
+        requirements = getattr(action, "requirements", []) or []
         logger.debug(f"[EXECTION CODE] {action.code}")
 
+        frozen = getattr(sys, "frozen", False)
+
+        # Pre-install declared pip requirements
+        if requirements and execution_mode == "internal":
+            _ensure_requirements(requirements)
+
         if execution_mode == "internal":
-            result = _atomic_action_internal(action.name,action.code, input_data, mode)
+            # Actions that import from the `core` package (e.g. "create
+            # and start task", "end task") need access to the parent
+            # process's state/task managers and MUST run in-process.
+            needs_framework = "core." in (action.code or "")
+
+            if frozen and mode != "GUI" and not needs_framework:
+                # Frozen exe: C-extension packages can't load in the
+                # bundled runtime.  Run via the system Python instead.
+                system_python = _find_system_python()
+                if system_python:
+                    result = _atomic_action_internal_subprocess(
+                        action.code, input_data, system_python, timeout,
+                    )
+                else:
+                    result = {"status": "error", "message": "No system Python found; cannot run internal action from frozen exe."}
+            else:
+                result = _atomic_action_internal(action.name, action.code, input_data, mode)
 
         elif execution_mode == "sandboxed":
             loop = asyncio.get_running_loop()
