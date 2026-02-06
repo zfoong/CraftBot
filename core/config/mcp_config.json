@@ -5,20 +5,27 @@
       "description": "Read, write, and manage files and directories",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ],
       "env": {},
-      "enabled": true,
-      "action_set_name": "mcp_filesystem"
+      "enabled": true
     },
     {
-      "name": "memory",
-      "description": "Knowledge graph for storing and retrieving entities and relations",
+      "name": "github",
+      "description": "GitHub API integration for repositories, issues, and PRs",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "env": {},
-      "enabled": true,
-      "action_set_name": "mcp_memory"
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": ""
+      },
+      "enabled": true
     }
   ],
   "auto_connect": true

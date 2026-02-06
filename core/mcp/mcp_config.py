@@ -71,17 +71,21 @@ class MCPServerConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
+        result = {
             "name": self.name,
             "description": self.description,
             "transport": self.transport,
             "command": self.command,
             "args": self.args,
-            "url": self.url,
             "env": self.env,
             "enabled": self.enabled,
-            "action_set_name": self.action_set_name,
         }
+        # Only include optional fields if they have values
+        if self.url:
+            result["url"] = self.url
+        if self.action_set_name:
+            result["action_set_name"] = self.action_set_name
+        return result
 
 
 @dataclass
@@ -164,3 +168,56 @@ class MCPConfig:
             if server.name == name:
                 return server
         return None
+
+    def add_server(self, server: MCPServerConfig) -> bool:
+        """
+        Add a new server configuration.
+
+        Args:
+            server: Server configuration to add
+
+        Returns:
+            True if added, False if server with same name already exists
+        """
+        if self.get_server_by_name(server.name):
+            logger.warning(f"Server '{server.name}' already exists")
+            return False
+        self.mcp_servers.append(server)
+        logger.info(f"Added MCP server: {server.name}")
+        return True
+
+    def remove_server(self, name: str) -> bool:
+        """
+        Remove a server configuration by name.
+
+        Args:
+            name: Name of the server to remove
+
+        Returns:
+            True if removed, False if not found
+        """
+        for i, server in enumerate(self.mcp_servers):
+            if server.name == name:
+                del self.mcp_servers[i]
+                logger.info(f"Removed MCP server: {name}")
+                return True
+        logger.warning(f"Server '{name}' not found")
+        return False
+
+    def enable_server(self, name: str) -> bool:
+        """Enable a server by name."""
+        server = self.get_server_by_name(name)
+        if server:
+            server.enabled = True
+            logger.info(f"Enabled MCP server: {name}")
+            return True
+        return False
+
+    def disable_server(self, name: str) -> bool:
+        """Disable a server by name."""
+        server = self.get_server_by_name(name)
+        if server:
+            server.enabled = False
+            logger.info(f"Disabled MCP server: {name}")
+            return True
+        return False

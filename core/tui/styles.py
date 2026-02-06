@@ -86,7 +86,7 @@ TextLog {
     width: 90;
     max-width: 100%;
     max-height: 95%;
-    border: solid #2a2a2a;
+    border: none;
     background: #000000;
     padding: 3 5;
     content-align: center middle;
@@ -168,14 +168,51 @@ TextLog {
 
 /* Settings card */
 #settings-card {
-    width: 70;
     max-width: 100%;
-    max-height: 90%;
-    border: solid #2a2a2a;
+    height: 100%;
+    border: none;
     background: #000000;
     padding: 2 3 3 3;
     content-align: center top;
     overflow: auto;
+    layout: vertical;
+}
+
+/* Settings tab bar */
+#settings-tab-bar {
+    height: auto;
+    margin-bottom: 1;
+}
+
+/* Tab button styling */
+.settings-tab {
+    width: auto;
+    min-width: 12;
+    height: 1;
+    background: #1a1a1a;
+    color: #666666;
+    border: none;
+    margin-right: 1;
+}
+
+.settings-tab:hover {
+    background: #2a2a2a;
+    color: #a0a0a0;
+}
+
+.settings-tab.-active {
+    background: #ff4f18;
+    color: #ffffff;
+}
+
+/* Settings sections */
+#section-models, #section-mcp {
+    height: auto;
+    padding: 1 0;
+}
+
+#section-models.-hidden, #section-mcp.-hidden {
+    display: none;
 }
 
 #settings-card Static {
@@ -226,5 +263,156 @@ TextLog {
 #chat-layer.-hidden,
 #menu-layer.-hidden {
     display: none;
+}
+
+
+
+/* MCP Server list */
+#mcp-server-list {
+    height: auto;
+    max-height: 15;
+    margin: 1 0;
+    border: solid #2a2a2a;
+    background: #0a0a0a;
+    padding: 1;
+}
+
+.mcp-server-row {
+    height: 1;
+    margin-bottom: 1;
+}
+
+.mcp-server-name {
+    width: 20;
+    color: #ff4f18;
+}
+
+.mcp-server-desc {
+    width: 1fr;
+    color: #666666;
+}
+
+.mcp-config-btn {
+    width: 3;
+    min-width: 3;
+    height: 1;
+    background: #333333;
+    color: #00cc00;
+    border: none;
+    margin-right: 1;
+}
+
+.mcp-config-btn:hover {
+    background: #00cc00;
+    color: #000000;
+}
+
+.mcp-remove-btn {
+    width: 3;
+    min-width: 3;
+    height: 1;
+    background: #333333;
+    color: #ff4f18;
+    border: none;
+}
+
+.mcp-remove-btn:hover {
+    background: #ff4f18;
+    color: #ffffff;
+}
+
+.mcp-empty {
+    color: #666666;
+    text-style: italic;
+}
+
+#mcp-servers-title, #mcp-add-title {
+    color: #ffffff;
+    text-style: bold;
+    margin-top: 1;
+}
+
+#mcp-template-list {
+    width: 100%;
+    height: auto;
+    max-height: 8;
+    margin: 1 0;
+    background: transparent;
+    border: none;
+}
+
+#mcp-template-list > ListItem {
+    padding: 0 0;
+}
+
+#mcp-hint {
+    color: #666666;
+    text-style: italic;
+    margin-top: 1;
+}
+
+/* MCP Environment Editor Modal - positioned as overlay */
+#mcp-env-editor {
+    width: 60;
+    max-width: 90%;
+    border: solid #ff4f18;
+    background: #0a0a0a;
+    padding: 2 3;
+}
+
+#mcp-env-title {
+    color: #ffffff;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#mcp-env-fields {
+    height: auto;
+    margin: 1 0;
+}
+
+.mcp-env-label {
+    color: #ff4f18;
+    margin-top: 1;
+}
+
+.mcp-env-input {
+    width: 100%;
+    border: solid #2a2a2a;
+    background: #000000;
+    color: #e5e5e5;
+}
+
+.mcp-env-input:focus {
+    border: solid #ff4f18;
+}
+
+#mcp-env-actions {
+    height: auto;
+    margin-top: 1;
+}
+
+.mcp-env-btn {
+    width: auto;
+    min-width: 10;
+    height: 3;
+    background: #333333;
+    color: #a0a0a0;
+    border: solid #2a2a2a;
+    margin-right: 1;
+}
+
+.mcp-env-btn:hover {
+    background: #ff4f18;
+    color: #ffffff;
+}
+
+/* Overlay layer for modals */
+#mcp-env-overlay {
+    layer: overlay;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    align: center middle;
 }
 """

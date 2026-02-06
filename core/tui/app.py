@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 
 from textual import events
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.reactive import var
-from textual.widgets import Input, Static, ListView, ListItem, Label
+from textual.widgets import Input, Static, ListView, ListItem, Label, Button
 
 from rich.text import Text
 
@@ -20,6 +20,17 @@ from core.models.types import InterfaceType
 from core.tui.styles import TUI_CSS
 from core.tui.settings import save_settings_to_env, get_api_key_env_name
 from core.tui.widgets import ConversationLog, PasteableInput
+from core.tui.mcp_settings import (
+    list_mcp_servers,
+    add_mcp_server_from_template,
+    remove_mcp_server,
+    enable_mcp_server,
+    disable_mcp_server,
+    get_available_templates,
+    update_mcp_server_env,
+    get_server_env_vars,
+    MCP_SERVER_TEMPLATES,
+)
 
 if TYPE_CHECKING:
     from core.tui.interface import TUIInterface
@@ -170,7 +181,7 @@ class CraftApp(App):
                     Text(self.status_text, no_wrap=True, overflow="crop"),
                     id="status-bar",
                 ),
-                Input(placeholder="Type a message and press Enter…", id="chat-input"),
+                PasteableInput(placeholder="Type a message and press Enter…", id="chat-input"),
                 id="bottom-region",
             ),
             id="chat-layer",
@@ -207,8 +218,18 @@ class CraftApp(App):
         # Get model name for current provider
         model_name = self._get_model_for_provider(self._provider)
 
-        settings = Container(
-            Static("Settings", id="settings-title"),
+        # Build MCP server list items
+        mcp_server_items = self._build_mcp_server_list_items()
+
+        # Build tab buttons
+        tab_buttons = Horizontal(
+            Button("Models", id="tab-btn-models", classes="settings-tab -active"),
+            Button("MCP Servers", id="tab-btn-mcp", classes="settings-tab"),
+            id="settings-tab-bar",
+        )
+
+        # Build Models section content
+        models_section = Container(
             Static("LLM Provider"),
             ListView(
                 ListItem(Label("OpenAI", classes="menu-item")),
@@ -226,6 +247,32 @@ class CraftApp(App):
                 id="api-key-input",
                 value=self._api_key,
             ),
+            id="section-models",
+        )
+
+        # Build MCP section content
+        mcp_section = Container(
+            Static("Configured MCP Servers", id="mcp-servers-title"),
+            VerticalScroll(
+                *mcp_server_items,
+                id="mcp-server-list",
+            ),
+            Static("Add MCP Server", id="mcp-add-title"),
+            ListView(
+                *[ListItem(Label(f"  {name}", classes="menu-item"), id=f"mcp-add-{name}")
+                  for name in list(MCP_SERVER_TEMPLATES.keys())[:6]],  # Show first 6 templates
+                id="mcp-template-list",
+            ),
+            Static("Use /mcp command for more options", id="mcp-hint"),
+            id="section-mcp",
+            classes="-hidden",  # Hidden by default
+        )
+
+        settings = Container(
+            Static("Settings", id="settings-title"),
+            tab_buttons,
+            models_section,
+            mcp_section,
             ListView(
                 ListItem(Label("save", classes="menu-item"), id="settings-save"),
                 ListItem(Label("cancel", classes="menu-item"), id="settings-cancel"),
@@ -236,6 +283,65 @@ class CraftApp(App):
 
         self.query_one("#menu-layer").mount(settings)
         self.call_after_refresh(self._init_settings_provider_selection)
+
+    def _build_mcp_server_list_items(self) -> list:
+        """Build list items for MCP servers."""
+        servers = list_mcp_servers()
+        items = []
+
+        if not servers:
+            items.append(Static("No MCP servers configured", classes="mcp-empty"))
+        else:
+            for server in servers:
+                status = "[+]" if server["enabled"] else "[-]"
+                name = server["name"]
+
+                # Check for unconfigured env vars
+                env_vars = server.get("env", {})
+                empty_vars = [k for k, v in env_vars.items() if not v]
+
+                # Build display name with warning if needed
+                if empty_vars:
+                    display_name = f"{status} {name} (!)"
+                else:
+                    display_name = f"{status} {name}"
+
+                desc = server["description"][:25] + "..." if len(server["description"]) > 25 else server["description"]
+
+                # Only show config button if server has env vars
+                if env_vars:
+                    items.append(
+                        Horizontal(
+                            Static(display_name, classes="mcp-server-name"),
+                            Static(desc, classes="mcp-server-desc"),
+                            Button("*", id=f"mcp-config-{name}", classes="mcp-config-btn"),
+                            Button("x", id=f"mcp-remove-{name}", classes="mcp-remove-btn"),
+                            classes="mcp-server-row",
+                        )
+                    )
+                else:
+                    items.append(
+                        Horizontal(
+                            Static(display_name, classes="mcp-server-name"),
+                            Static(desc, classes="mcp-server-desc"),
+                            Button("x", id=f"mcp-remove-{name}", classes="mcp-remove-btn"),
+                            classes="mcp-server-row",
+                        )
+                    )
+
+        return items
+
+    def _refresh_mcp_server_list(self) -> None:
+        """Refresh the MCP server list in settings."""
+        if not self.query("#mcp-server-list"):
+            return
+
+        server_list = self.query_one("#mcp-server-list", VerticalScroll)
+        server_list.remove_children()
+
+        items = self._build_mcp_server_list_items()
+        for item in items:
+            server_list.mount(item)
 
     def _close_settings(self) -> None:
         for card in self.query("#settings-card"):
@@ -397,7 +503,7 @@ class CraftApp(App):
         chat_layer.set_class(self.show_menu is True, "-hidden")
 
         if not self.show_menu:
-            chat_input = self.query_one("#chat-input", Input)
+            chat_input = self.query_one("#chat-input", PasteableInput)
             chat_input.focus()
             return
 
@@ -724,3 +830,146 @@ class CraftApp(App):
             else:
                 self._close_settings()
             return
+
+        if list_id == "mcp-template-list":
+            # Handle MCP template selection
+            item_id = event.item.id
+            if item_id and item_id.startswith("mcp-add-"):
+                template_name = item_id[8:]  # Remove "mcp-add-" prefix
+                success, message = add_mcp_server_from_template(template_name)
+                if success:
+                    self.notify(message, severity="information", timeout=3)
+                    self._refresh_mcp_server_list()
+                else:
+                    self.notify(message, severity="error", timeout=3)
+            return
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events."""
+        button_id = event.button.id
+
+        # Handle settings tab switching
+        if button_id == "tab-btn-models":
+            self._switch_settings_section("models")
+            return
+        elif button_id == "tab-btn-mcp":
+            self._switch_settings_section("mcp")
+            return
+
+        # Handle MCP server remove buttons
+        if button_id and button_id.startswith("mcp-remove-"):
+            server_name = button_id[11:]  # Remove "mcp-remove-" prefix
+            success, message = remove_mcp_server(server_name)
+            if success:
+                self.notify(message, severity="information", timeout=2)
+                self._refresh_mcp_server_list()
+            else:
+                self.notify(message, severity="error", timeout=3)
+
+        # Handle MCP server config buttons
+        if button_id and button_id.startswith("mcp-config-"):
+            server_name = button_id[11:]  # Remove "mcp-config-" prefix
+            self._open_mcp_env_editor(server_name)
+
+        # Handle MCP env editor buttons
+        if button_id == "mcp-env-save":
+            self._save_mcp_env()
+        elif button_id == "mcp-env-cancel":
+            self._close_mcp_env_editor()
+
+    def _switch_settings_section(self, section: str) -> None:
+        """Switch between Models and MCP sections in settings."""
+        # Update button styles
+        models_btn = self.query_one("#tab-btn-models", Button)
+        mcp_btn = self.query_one("#tab-btn-mcp", Button)
+
+        if section == "models":
+            models_btn.add_class("-active")
+            mcp_btn.remove_class("-active")
+        else:
+            models_btn.remove_class("-active")
+            mcp_btn.add_class("-active")
+
+        # Show/hide sections
+        models_section = self.query_one("#section-models", Container)
+        mcp_section = self.query_one("#section-mcp", Container)
+
+        if section == "models":
+            models_section.remove_class("-hidden")
+            mcp_section.add_class("-hidden")
+        else:
+            models_section.add_class("-hidden")
+            mcp_section.remove_class("-hidden")
+
+    def _open_mcp_env_editor(self, server_name: str) -> None:
+        """Open a modal to edit environment variables for an MCP server."""
+        env_vars = get_server_env_vars(server_name)
+
+        if not env_vars:
+            self.notify(f"No environment variables for '{server_name}'", severity="information", timeout=2)
+            return
+
+        # Remove any existing env editor overlay
+        for overlay in self.query("#mcp-env-overlay"):
+            overlay.remove()
+
+        # Build input fields for each env var
+        env_inputs = []
+        for key, value in env_vars.items():
+            env_inputs.append(Static(key, classes="mcp-env-label"))
+            env_inputs.append(
+                PasteableInput(
+                    placeholder=f"Enter {key}",
+                    value=value,
+                    password=False,
+                    id=f"mcp-env-{key}",
+                    classes="mcp-env-input",
+                )
+            )
+
+        # Create an overlay container with the editor inside
+        overlay = Container(
+            Container(
+                Static(f"Configure {server_name}", id="mcp-env-title"),
+                Vertical(*env_inputs, id="mcp-env-fields"),
+                Horizontal(
+                    Button("Save", id="mcp-env-save", classes="mcp-env-btn"),
+                    Button("Cancel", id="mcp-env-cancel", classes="mcp-env-btn"),
+                    id="mcp-env-actions",
+                ),
+                id="mcp-env-editor",
+            ),
+            id="mcp-env-overlay",
+        )
+
+        # Store the server name for saving
+        self._mcp_env_editing_server = server_name
+
+        self.mount(overlay)
+
+    def _save_mcp_env(self) -> None:
+        """Save the edited environment variables."""
+        if not hasattr(self, "_mcp_env_editing_server"):
+            return
+
+        server_name = self._mcp_env_editing_server
+        env_vars = get_server_env_vars(server_name)
+
+        for key in env_vars.keys():
+            input_id = f"#mcp-env-{key}"
+            if self.query(input_id):
+                input_widget = self.query_one(input_id, PasteableInput)
+                new_value = input_widget.value
+                if new_value != env_vars[key]:
+                    update_mcp_server_env(server_name, key, new_value)
+
+        self.notify(f"Saved environment variables for '{server_name}'", severity="information", timeout=2)
+        self._close_mcp_env_editor()
+        self._refresh_mcp_server_list()
+
+    def _close_mcp_env_editor(self) -> None:
+        """Close the env editor modal."""
+        for overlay in self.query("#mcp-env-overlay"):
+            overlay.remove()
+        if hasattr(self, "_mcp_env_editing_server"):
+            del self._mcp_env_editing_server
