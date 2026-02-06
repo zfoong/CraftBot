@@ -14,6 +14,16 @@ from rich.text import Text
 from core.logger import logger
 from core.tui.app import CraftApp
 from core.tui.data import TimelineEntry, ActionEntry, ActionUpdate
+from core.tui.mcp_settings import (
+    list_mcp_servers,
+    add_mcp_server_from_template,
+    remove_mcp_server,
+    enable_mcp_server,
+    disable_mcp_server,
+    get_available_templates,
+    get_template_env_vars,
+    update_mcp_server_env,
+)
 
 if TYPE_CHECKING:
     from core.agent_base import AgentBase
@@ -77,7 +87,13 @@ class TUIInterface:
         }
 
     async def _maybe_handle_command(self, message: str) -> bool:
-        command = message.split()[0].lower()
+        parts = message.split()
+        command = parts[0].lower()
+
+        # Handle /mcp command with subcommands
+        if command == "/mcp":
+            await self._handle_mcp_command(parts[1:])
+            return True
 
         handler = self._command_handlers.get(command)
         if handler:
@@ -220,6 +236,135 @@ class TUIInterface:
         help_text = self._build_help_text()
         await self.chat_updates.put(("System", help_text, "system"))
 
+    async def _handle_mcp_command(self, args: list[str]) -> None:
+        """Handle /mcp command with subcommands."""
+        if not args:
+            # Show help for /mcp command
+            help_text = self._build_mcp_help_text()
+            await self.chat_updates.put(("System", help_text, "system"))
+            return
+
+        subcommand = args[0].lower()
+
+        if subcommand == "list":
+            await self._mcp_list()
+        elif subcommand == "add":
+            if len(args) < 2:
+                templates = get_available_templates()
+                template_names = ", ".join(t["name"] for t in templates)
+                await self.chat_updates.put(
+                    ("System", f"Usage: /mcp add <template>\nAvailable templates: {template_names}", "system")
+                )
+            else:
+                await self._mcp_add(args[1])
+        elif subcommand == "remove":
+            if len(args) < 2:
+                await self.chat_updates.put(("System", "Usage: /mcp remove <server_name>", "system"))
+            else:
+                await self._mcp_remove(args[1])
+        elif subcommand == "enable":
+            if len(args) < 2:
+                await self.chat_updates.put(("System", "Usage: /mcp enable <server_name>", "system"))
+            else:
+                await self._mcp_enable(args[1])
+        elif subcommand == "disable":
+            if len(args) < 2:
+                await self.chat_updates.put(("System", "Usage: /mcp disable <server_name>", "system"))
+            else:
+                await self._mcp_disable(args[1])
+        elif subcommand == "templates":
+            await self._mcp_templates()
+        elif subcommand == "env":
+            if len(args) < 4:
+                await self.chat_updates.put(
+                    ("System", "Usage: /mcp env <server_name> <env_key> <value>", "system")
+                )
+            else:
+                # Join remaining args to allow values with spaces
+                await self._mcp_set_env(args[1], args[2], " ".join(args[3:]))
+        else:
+            await self.chat_updates.put(
+                ("System", f"Unknown /mcp subcommand: {subcommand}. Type /mcp for help.", "system")
+            )
+
+    async def _mcp_list(self) -> None:
+        """List configured MCP servers."""
+        servers = list_mcp_servers()
+        if not servers:
+            await self.chat_updates.put(("System", "No MCP servers configured.", "system"))
+            return
+
+        lines = ["Configured MCP Servers:", ""]
+        for server in servers:
+            status = "[+]" if server["enabled"] else "[-]"
+            lines.append(f"  {status} {server['name']}: {server['description']}")
+            lines.append(f"      Action set: {server['action_set']}")
+        await self.chat_updates.put(("System", "\n".join(lines), "system"))
+
+    async def _mcp_add(self, template_name: str) -> None:
+        """Add an MCP server from a template."""
+        success, message = add_mcp_server_from_template(template_name)
+        severity = "system" if success else "error"
+        await self.chat_updates.put(("System", message, severity))
+
+        if success:
+            # Check for required env vars and show hint
+            env_vars = get_template_env_vars(template_name)
+            empty_vars = [k for k, v in env_vars.items() if not v]
+            if empty_vars:
+                hint = "\nTo configure environment variables, use:"
+                for var in empty_vars:
+                    hint += f"\n  /mcp env {template_name} {var} <value>"
+                await self.chat_updates.put(("System", hint, "system"))
+
+    async def _mcp_remove(self, server_name: str) -> None:
+        """Remove an MCP server."""
+        success, message = remove_mcp_server(server_name)
+        severity = "system" if success else "error"
+        await self.chat_updates.put(("System", message, severity))
+
+    async def _mcp_enable(self, server_name: str) -> None:
+        """Enable an MCP server."""
+        success, message = enable_mcp_server(server_name)
+        severity = "system" if success else "error"
+        await self.chat_updates.put(("System", message, severity))
+
+    async def _mcp_disable(self, server_name: str) -> None:
+        """Disable an MCP server."""
+        success, message = disable_mcp_server(server_name)
+        severity = "system" if success else "error"
+        await self.chat_updates.put(("System", message, severity))
+
+    async def _mcp_templates(self) -> None:
+        """Show available MCP server templates."""
+        templates = get_available_templates()
+        lines = ["Available MCP Server Templates:", ""]
+        for template in templates:
+            lines.append(f"  {template['name']}: {template['description']}")
+        lines.append("")
+        lines.append("Use '/mcp add <template>' to add a server.")
+        await self.chat_updates.put(("System", "\n".join(lines), "system"))
+
+    async def _mcp_set_env(self, server_name: str, env_key: str, env_value: str) -> None:
+        """Set an environment variable for an MCP server."""
+        success, message = update_mcp_server_env(server_name, env_key, env_value)
+        severity = "system" if success else "error"
+        await self.chat_updates.put(("System", message, severity))
+
+    def _build_mcp_help_text(self) -> str:
+        """Build help text for /mcp command."""
+        return """MCP Server Management Commands:
+
+  /mcp list                      - List configured MCP servers
+  /mcp add <template>            - Add a server from a template
+  /mcp remove <name>             - Remove a server
+  /mcp enable <name>             - Enable a server
+  /mcp disable <name>            - Disable a server
+  /mcp templates                 - Show available templates
+  /mcp env <name> <key> <value>  - Set environment variable
+
+Note: Changes require restart to take effect."""
+
     def _build_help_text(self) -> str:
         intro = (
             "I am a computer-use AI agent., I can perform computer-based task autonomously "
@@ -232,6 +377,7 @@ class TUIInterface:
             "/clear": "Clear chat and action timelines from the display.",
             "/reset": "Reset the agent and clear interface state.",
             "/exit": "Exit the session.",
+            "/mcp": "Manage MCP servers (list, add, remove, enable, disable).",
         }
 
         lines: list[str] = [intro, "", "Available commands:"]

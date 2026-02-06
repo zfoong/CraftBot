@@ -32,6 +32,6 @@ pygetwindow
 python3-xlib
 tenacity
 docling
-textual>=0.58.0
+textual>=7.0.0
 pyperclip
 gradio_client
