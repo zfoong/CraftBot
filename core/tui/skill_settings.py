@@ -151,3 +151,57 @@ def get_skill_search_directories() -> List[str]:
         return []
     except Exception:
         return []
+
+
+def toggle_skill(name: str) -> Tuple[bool, str]:
+    """
+    Toggle a skill's enabled state.
+
+    Args:
+        name: The skill name to toggle.
+
+    Returns:
+        Tuple of (success, message).
+    """
+    try:
+        from core.skill.skill_manager import skill_manager
+
+        skill = skill_manager.get_skill(name)
+        if not skill:
+            return False, f"Skill '{name}' not found."
+
+        if skill.enabled:
+            return disable_skill(name)
+        else:
+            return enable_skill(name)
+    except ImportError:
+        return False, "Skill system not available."
+    except Exception as e:
+        return False, f"Failed to toggle skill: {e}"
+
+
+def get_skill_raw_content(name: str) -> Optional[str]:
+    """
+    Get the raw SKILL.md content for a skill.
+
+    Args:
+        name: The skill name.
+
+    Returns:
+        Raw markdown content or None if not found.
+    """
+    try:
+        from core.skill.skill_manager import skill_manager
+
+        skill = skill_manager.get_skill(name)
+        if not skill:
+            return None
+
+        # Read the raw file content
+        if skill.source_path.exists():
+            return skill.source_path.read_text(encoding="utf-8")
+        return None
+    except ImportError:
+        return None
+    except Exception:
+        return None
