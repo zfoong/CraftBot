@@ -61,11 +61,11 @@ class InternalActionInterface:
     # ─────────────────────── LLM Access for Actions ───────────────────────
 
     @classmethod
-    def use_llm(cls, prompt: str, system_message: Optional[str] = None) -> Dict[str, Any]:
-        """Generate a response from the configured LLM."""
+    async def use_llm(cls, prompt: str, system_message: Optional[str] = None) -> Dict[str, Any]:
+        """Generate a response from the configured LLM (async to avoid blocking TUI)."""
         if cls.llm_interface is None:
             raise RuntimeError("InternalActionInterface not initialized with LLMInterface.")
-        response = cls.llm_interface.generate_response(prompt, system_message)
+        response = await cls.llm_interface.generate_response_async(prompt, system_message)
         return {"llm_response": response}
 
     @classmethod
@@ -119,7 +119,7 @@ class InternalActionInterface:
     # ───────────────── Task Management ─────────────────
 
     @classmethod
-    def do_create_task(
+    async def do_create_task(
         cls,
         task_name: str,
         task_description: str,
@@ -149,7 +149,7 @@ class InternalActionInterface:
 
         # Select skills and action sets in a single LLM call (optimized)
         # Skills are selected first, then action sets with knowledge of skill recommendations
-        selected_skills, all_action_sets = cls._select_skills_and_action_sets_via_llm(
+        selected_skills, all_action_sets = await cls._select_skills_and_action_sets_via_llm(
             task_name, task_description
         )
         logger.info(f"[TASK] Auto-selected skills for '{task_name}': {selected_skills}")
@@ -194,7 +194,7 @@ class InternalActionInterface:
         }
 
     @classmethod
-    def _select_action_sets_via_llm(cls, task_name: str, task_description: str) -> List[str]:
+    async def _select_action_sets_via_llm(cls, task_name: str, task_description: str) -> List[str]:
         """
         Make LLM call to automatically select action sets based on task description.
 
@@ -247,8 +247,8 @@ class InternalActionInterface:
                 available_sets=sets_text
             )
 
-            # Step 3: Call LLM (use a simpler call for this quick decision)
-            response = cls.llm_interface.generate_response(
+            # Step 3: Call LLM asynchronously to avoid blocking TUI
+            response = await cls.llm_interface.generate_response_async(
                 user_prompt=prompt,
                 system_prompt="You are a helpful assistant that selects action sets for tasks. Return only valid JSON.",
             )
@@ -293,7 +293,7 @@ class InternalActionInterface:
             return []
 
     @classmethod
-    def _select_skills_via_llm(cls, task_name: str, task_description: str) -> List[str]:
+    async def _select_skills_via_llm(cls, task_name: str, task_description: str) -> List[str]:
         """
         Make LLM call to select relevant skills based on task description.
 
@@ -335,8 +335,8 @@ class InternalActionInterface:
                 available_skills=skills_text
             )
 
-            # Call LLM
-            response = cls.llm_interface.generate_response(
+            # Call LLM asynchronously to avoid blocking TUI
+            response = await cls.llm_interface.generate_response_async(
                 user_prompt=prompt,
                 system_prompt="You are a helpful assistant that selects skills for tasks. Return only valid JSON.",
             )
@@ -397,7 +397,7 @@ class InternalActionInterface:
             return []
 
     @classmethod
-    def _select_skills_and_action_sets_via_llm(
+    async def _select_skills_and_action_sets_via_llm(
         cls, task_name: str, task_description: str
     ) -> tuple[List[str], List[str]]:
         """
@@ -468,8 +468,8 @@ class InternalActionInterface:
                 available_sets=sets_text
             )
 
-            # Call LLM once for both selections
-            response = cls.llm_interface.generate_response(
+            # Call LLM asynchronously to avoid blocking TUI
+            response = await cls.llm_interface.generate_response_async(
                 user_prompt=prompt,
                 system_prompt="You are a helpful assistant that selects skills and action sets for tasks. Return only valid JSON.",
             )
