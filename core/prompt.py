@@ -1200,7 +1200,7 @@ Task Description: {task_description}
 - Review the task description carefully
 - Select AT MOST ONE skill that best matches this specific task
 - ONLY select one skill - do NOT select multiple skills
-- If no skills are relevant, leave the skills array empty
+- If no skills are 90% relevant, you MUST leave the skills array empty to save token
 - Note: Some skills recommend certain action sets (shown as "recommends: [...]")
 
 **Step 2 - Select Action Sets:**

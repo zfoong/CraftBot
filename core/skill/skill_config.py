@@ -121,10 +121,9 @@ class Skill:
 
 @dataclass
 class SkillsConfig:
-    """Global skills configuration."""
+    """Skills configuration."""
 
-    global_skills_dir: Path = field(default_factory=lambda: Path.home() / ".whitecollar" / "skills")
-    project_skills_dir: Optional[Path] = None
+    project_skills_dir: Path = field(default_factory=lambda: Path("skills"))
     auto_load: bool = True
     enabled_skills: List[str] = field(default_factory=list)
     disabled_skills: List[str] = field(default_factory=list)
@@ -158,15 +157,10 @@ class SkillsConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SkillsConfig":
         """Create SkillsConfig from a dictionary."""
-        global_dir = data.get("global_skills_dir", "~/.whitecollar/skills")
-        project_dir = data.get("project_skills_dir")
-
-        # Expand ~ in paths
-        global_path = Path(global_dir).expanduser()
-        project_path = Path(project_dir) if project_dir else None
+        project_dir = data.get("project_skills_dir", "skills")
+        project_path = Path(project_dir)
 
         return cls(
-            global_skills_dir=global_path,
             project_skills_dir=project_path,
             auto_load=data.get("auto_load", True),
             enabled_skills=data.get("enabled_skills", []),
@@ -175,15 +169,12 @@ class SkillsConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        result = {
-            "global_skills_dir": str(self.global_skills_dir),
+        return {
             "auto_load": self.auto_load,
             "enabled_skills": self.enabled_skills,
             "disabled_skills": self.disabled_skills,
+            "project_skills_dir": str(self.project_skills_dir),
         }
-        if self.project_skills_dir:
-            result["project_skills_dir"] = str(self.project_skills_dir)
-        return result
 
     def save(self, config_path: Path) -> None:
         """Save configuration to a JSON file."""
@@ -212,10 +203,6 @@ class SkillsConfig:
         """
         Get list of directories to search for skills.
 
-        Returns directories in priority order (project > global).
+        Returns the project skills directory.
         """
-        dirs = []
-        if self.project_skills_dir:
-            dirs.append(self.project_skills_dir)
-        dirs.append(self.global_skills_dir)
-        return dirs
+        return [self.project_skills_dir]
