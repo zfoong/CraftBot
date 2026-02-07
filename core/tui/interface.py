@@ -591,15 +591,42 @@ Skills are automatically selected during task creation based on the task descrip
         await self.status_updates.put(self._status_message)
 
     async def _consume_triggers(self) -> None:
-        """Continuously consume triggers and hand them to the agent."""
+        """Continuously consume triggers and hand them to the agent.
+
+        The agent.react() call is run in a dedicated thread with its own event loop
+        to completely isolate the agent's processing from the TUI event loop.
+        This ensures animations and user input remain responsive during agent processing.
+        """
         try:
             while self._agent.is_running:
                 trigger = await self._agent.triggers.get()
                 if trigger.session_id:
                     self._tracked_sessions.add(trigger.session_id)
-                await self._agent.react(trigger)
+                # Run react() in a separate thread with its own event loop
+                # This completely decouples agent processing from the TUI
+                await asyncio.get_event_loop().run_in_executor(
+                    None,  # Use default executor (ThreadPoolExecutor)
+                    self._run_react_in_thread,
+                    trigger,
+                )
         except asyncio.CancelledError:  # pragma: no cover
             raise
+
+    def _run_react_in_thread(self, trigger) -> None:
+        """Run agent.react() in a dedicated thread with its own event loop.
+
+        This method is called from run_in_executor and creates a fresh event loop
+        in the worker thread. This ensures that all async operations within react()
+        (including asyncio.to_thread() calls for LLM) are completely isolated from
+        the main TUI event loop.
+        """
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._agent.react(trigger))
+        finally:
+            loop.close()
 
     async def _watch_events(self) -> None:
         """Refresh the conversation timeline with agent actions."""
