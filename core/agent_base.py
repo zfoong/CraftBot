@@ -133,7 +133,7 @@ class AgentBase:
         self.action_manager = ActionManager(
             self.action_library, self.llm, self.db_interface, self.event_stream_manager, self.context_engine, self.state_manager
         )
-        self.action_router = ActionRouter(self.action_library, self.llm, self.vlm, self.context_engine)
+        self.action_router = ActionRouter(self.action_library, self.llm, self.context_engine)
 
         self.task_manager = TaskManager(
             db_interface=self.db_interface,

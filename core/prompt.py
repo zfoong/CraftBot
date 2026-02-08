@@ -377,50 +377,33 @@ GUI Action Selection Rules:
 - DO NOT perform more than one action at a time. For example, if you have to type in a search bar, you should only perform the typing action, not typing and selecting from the drop down and clicking on the button at the same time.
 </rules>
 
-<reasoning_protocol>
-Follow these instructions carefully:
-1. Base your reasoning and decisions ONLY on the current screen and any relevant context from the task.
-2. If there are any warnings in the event stream about the current step, consider them in your reasoning and adjust your plan accordingly.
-3. If the event stream shows repeated patterns, figure out the root cause and adjust your plan accordingly.
-4. When GUI task is complete, if GUI mode is active, you should switch to CLI mode.
-5. DO NOT perform more than one action at a time. For example, if you have to type in a search bar, you should only perform the typing action, not typing and selecting from the drop down and clicking on the button at the same time.
-6. Pay close attention to the state of the screen and the elements on the screen and the data on screen and the relevant data extracted from the screen.
-7. You MUST reason according to the previous events, action and reasoning to understand the recent action trajectory and check if the previous action works as intended or not.
-8. You MUST check if the previous reasoning and action works as intended or not and how it affects your current action.
-9. If an interaction based action is not working as intended, you should try to reason about the problem and adjust accordingly.
-10. Pay close attention to the current mode of the agent - CLI or GUI.
-11. If the current todo is complete, use 'task_update_todos' to mark it as completed.
-12. If the result of the task has been achieved, you MUST use 'switch_mode' action to switch to CLI mode.
-</reasoning_protocol>
-
-<validation>
-- Verify if the screenshot visually shows if the previous action in the event stream has been performed successfully.
-- ONLY give response based on the GUI state information
-- The action_name MUST be one of the listed actions.
-</validation>
-
 <output_format>
 Return ONLY a valid JSON object with this structure and no extra commentary:
 {{
-  "reasoning": "<description of the current screen state, verification of previous action, and decision for next action>",
-  "element_to_find": "<description of the UI element to interact with, or empty string if action doesn't need pixel coordinates>",
-  "action_name": "<name of the chosen action>",
+  "action_name": "<name of the chosen action, or empty string if none apply>",
   "parameters": {{
     "<parameter name>": <value>,
-    ...
+    "...": <value>
   }}
 }}
-
-Note: The 'element_to_find' field is used to locate pixel coordinates for mouse/click actions.
-- For mouse_click, mouse_move, mouse_drag: describe the element like "the Firefox icon on the desktop" or "the search button"
-- For keyboard actions, send_message, task_update_todos, etc.: set element_to_find to ""
 </output_format>
 
-{gui_action_space}
+<notes>
+- Provide every required parameter for the chosen action, respecting each field's type, description, and example.
+- Keep parameter values concise and directly useful for execution.
+- Always use double quotes around strings so the JSON is valid.
+- DO NOT return empty response. When encounter issue (), return 'send message' to inform user.
+</notes>
 
 {agent_state}
 
 {task_state}
+
+{gui_action_space}
+
+---
+
+{event_stream}
 
 <objective>
 You are a GUI agent. You are given a goal and your event stream, with screenshots. You need to reason about the current state and perform the next action to complete the task.
@@ -430,14 +413,10 @@ Here is your goal:
 Your job is to reason about the screen, select the next GUI action, and provide the input parameters so it can be executed immediately.
 </objective>
 
----
-
-<gui_state>
-Current screen state (screenshot description or parsed elements):
-{gui_state}
-</gui_state>
-
-{event_stream}
+<reasoning>
+Here is your reasoning of the current step:
+{reasoning}
+</reasoning>
 """
 
 # Used for simple task mode - streamlined action selection without todo workflow
@@ -1059,18 +1038,9 @@ Follow these instructions carefully:
 - Make sure the query is general and descriptive enough to retrieve relevant GUI actions from a vector database.
 </quality_control>
 
----
-
-{gui_event_stream}
-
 {task_state}
 
 {agent_state}
-
-<gui_state>
-You are provided with a screenshot of the current screen.
-{gui_state}
-</gui_state>
 
 <output_format>
 Return ONLY a JSON object with two fields:
@@ -1086,6 +1056,14 @@ Return ONLY a JSON object with two fields:
   "action_query": "step complete, move to next step"
 }}
 </output_format>
+---
+
+<gui_state>
+You are provided with a screenshot of the current screen.
+{gui_state}
+</gui_state>
+
+{event_stream}
 """
 
 # DEPRECATED: GUI OmniParser reasoning is now integrated into SELECT_ACTION_IN_GUI_PROMPT.
@@ -1126,10 +1104,6 @@ Follow these instructions carefully:
 - Make sure the query is general and descriptive enough to retrieve relevant GUI actions from a vector database.
 </quality_control>
 
----
-
-{gui_event_stream}
-
 {task_state}
 
 {agent_state}
@@ -1150,6 +1124,10 @@ Return ONLY a JSON object with three fields:
   "item_index": 42
 }}
 </output_format>
+
+---
+
+{event_stream}
 """
 
 GUI_QUERY_FOCUSED_PROMPT = """
@@ -1216,7 +1194,7 @@ After getting the pixels, do an extra check to make sure the pixel location is v
 
 ---
 
-Element to find: {element_to_find}
+Element to find: {element_index_to_find}
 
 Analyze the image and generate the JSON list.
 """
