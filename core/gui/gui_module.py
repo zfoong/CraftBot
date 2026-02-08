@@ -65,12 +65,14 @@ task_update_todos(todos=[{content, status}, ...]) # Update todo list. status: 'p
 
 class GUIModule:
     def __init__(
-        self, 
-        provider: str = "byteplus", 
+        self,
+        provider: str = "byteplus",
         action_library: ActionLibrary = None,
         action_router: ActionRouter = None,
         context_engine: ContextEngine = None,
         action_manager: ActionManager = None,
+        event_stream_manager: EventStreamManager = None,
+        tui_footage_callback = None,
     ):
         self.llm: LLMInterface = LLMInterface(provider=provider)
         self.vlm: VLMInterface = VLMInterface(provider="gemini")
@@ -78,7 +80,8 @@ class GUIModule:
         self.action_router: ActionRouter = action_router
         self.context_engine: ContextEngine = context_engine
         self.action_manager: ActionManager = action_manager
-        self.gui_event_stream_manager: EventStreamManager = EventStreamManager(self.llm)
+        self.event_stream_manager: EventStreamManager = event_stream_manager
+        self._tui_footage_callback = tui_footage_callback
 
         # ==================================
         #  CONFIG
@@ -93,69 +96,24 @@ class GUIModule:
         else:
             self.gradio_client: Client | None = None
 
+    def set_tui_footage_callback(self, callback) -> None:
+        """Set the TUI footage callback for screen display."""
+        self._tui_footage_callback = callback
+
     def switch_to_gui_mode(self) -> None:
         STATE.update_gui_mode(True)
 
     def switch_to_cli_mode(self) -> None:
         STATE.update_gui_mode(False)
 
-    def set_gui_event_stream(self, event: str) -> None:
-        self.gui_event_stream_manager.log(
-            "agent GUI event",
-            event,
-            severity="DEBUG",
-            display_message=None,
-        )
-
-    def get_gui_event_stream(self) -> str:
-        return self.gui_event_stream_manager.get_stream().to_prompt_snapshot(include_summary=True)
-
-    def emit_todos_to_gui_event_stream(self, todos: List[Dict[str, Any]]) -> None:
-        """Emit todos event to GUI event stream with checkbox visualization."""
-        todo_lines = []
-        for todo in todos:
-            status = todo.get("status", "pending")
-            content = todo.get("content", "")
-            if status == "completed":
-                checkbox = "[x]"
-            elif status == "in_progress":
-                checkbox = "[>]"
-            else:
-                checkbox = "[ ]"
-            todo_lines.append(f"  {checkbox} {content}")
-
-        todos_str = "\n" + "\n".join(todo_lines) if todo_lines else "(no todos)"
-        self.gui_event_stream_manager.log("todos", todos_str, severity="INFO")
-
     def log_gui_reasoning(self, reasoning: str) -> None:
-        """Log agent reasoning to GUI event stream."""
-        self.gui_event_stream_manager.log(
-            "agent reasoning",
-            reasoning,
-            severity="DEBUG",
-        )
-
-    def log_gui_action_start(self, action_name: str, element: str = "") -> None:
-        """Log GUI action start to event stream."""
-        msg = f"Action: {action_name}"
-        if element:
-            msg += f" on '{element}'"
-        self.gui_event_stream_manager.log(
-            "GUI action start",
-            msg,
-            severity="INFO",
-        )
-
-    def log_gui_action_end(self, action_name: str, status: str, message: str = "") -> None:
-        """Log GUI action completion to event stream."""
-        msg = f"Action: {action_name} - {status}"
-        if message:
-            msg += f" ({message})"
-        self.gui_event_stream_manager.log(
-            "GUI action end",
-            msg,
-            severity="INFO" if status == "success" else "WARN",
-        )
+        """Log agent reasoning to main event stream."""
+        if self.event_stream_manager:
+            self.event_stream_manager.log(
+                "agent reasoning",
+                reasoning,
+                severity="DEBUG",
+            )
 
     async def perform_gui_task_step(self, step: Optional[TodoItem], session_id: str, next_action_description: str, parent_action_id: str) -> dict:
         """
@@ -182,9 +140,6 @@ class GUIModule:
 
             response: dict = await self._perform_gui_task_step_action(step, session_id, next_action_description, parent_action_id)
             logger.info(f"[GUI TASK STEP ACTION RESPONSE] {response}")
-            
-            event_stream_summary: str | None = self.gui_event_stream_manager.get_stream().head_summary
-            response["event_stream_summary"] = event_stream_summary
 
             return response
 
@@ -239,6 +194,13 @@ class GUIModule:
                     "message": "Failed to take screenshot"
                 }
 
+            # Push screenshot to TUI for display
+            if self._tui_footage_callback and png_bytes:
+                try:
+                    await self._tui_footage_callback(png_bytes, GUIHandler.TARGET_CONTAINER)
+                except Exception as e:
+                    logger.debug(f"[GUI] Failed to push footage to TUI: {e}")
+
             # ===================================
             # 3. Get Image Description + Prepare Image for VLM
             # ===================================
@@ -276,8 +238,8 @@ class GUIModule:
             if not action_name:
                 raise ValueError("No valid action selected by the router.")
 
-            # Log reasoning to GUI event stream
-            if self.gui_event_stream_manager and reasoning:
+            # Log reasoning to main event stream
+            if self.event_stream_manager and reasoning:
                 self.log_gui_reasoning(reasoning)
 
             # ===================================
@@ -314,7 +276,7 @@ class GUIModule:
             action_output = await self.action_manager.execute_action(
                 action=action,
                 context=element_to_find if element_to_find else query,
-                event_stream=self.get_gui_event_stream(),
+                event_stream=self.context_engine.get_event_stream(),
                 parent_id=parent_id,
                 session_id=session_id,
                 is_running_task=True,
@@ -347,12 +309,8 @@ class GUIModule:
             user_flags={"query": False, "expected_output": False},
             system_flags={
                 "policy": False,
-                "gui_event_stream": False,
-                "event_stream": False,
-                "task_state": False,
                 "agent_info": False,
                 "role_info": False,
-                "agent_state": False,
                 "base_instruction": False,
                 "environment": False,
             }
@@ -394,7 +352,7 @@ class GUIModule:
         prompt = GUI_REASONING_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(),
             task_state=self.context_engine.get_task_state(),
-            gui_event_stream=self.context_engine.get_gui_event_stream(),
+            gui_event_stream=self.context_engine.get_event_stream(),
             gui_state=query,
         )
 
@@ -421,8 +379,8 @@ class GUIModule:
                 # Parse and validate the structured JSON response
                 reasoning_result, _ = self._parse_reasoning_response(response)
 
-                if self.gui_event_stream_manager and log_reasoning_event:
-                    self.set_gui_event_stream(reasoning_result.reasoning)
+                if self.event_stream_manager and log_reasoning_event:
+                    self.log_gui_reasoning(reasoning_result.reasoning)
 
                 return reasoning_result
             except ValueError as e:
@@ -437,12 +395,8 @@ class GUIModule:
             user_flags={"query": False, "expected_output": False},
             system_flags={
                 "policy": False,
-                "gui_event_stream": False,
-                "event_stream": False,
-                "task_state": False,
                 "agent_info": False,
                 "role_info": False,
-                "agent_state": False,
                 "base_instruction": False,
                 "environment": False,
             }
@@ -539,7 +493,7 @@ class GUIModule:
         prompt = GUI_REASONING_PROMPT_OMNIPARSER.format(
             agent_state=self.context_engine.get_agent_state(),
             task_state=self.context_engine.get_task_state(),
-            gui_event_stream=self.context_engine.get_gui_event_stream(),
+            gui_event_stream=self.context_engine.get_event_stream(),
         )
 
         # Attempt the LLM call and parsing up to (retries + 1) times
@@ -554,11 +508,11 @@ class GUIModule:
                 # Parse and validate the structured JSON response
                 reasoning_result, item_index = self._parse_reasoning_response(response)
 
-                if self.gui_event_stream_manager and log_reasoning_event:
-                    self.set_gui_event_stream(reasoning_result.reasoning)
+                if self.event_stream_manager and log_reasoning_event:
+                    self.log_gui_reasoning(reasoning_result.reasoning)
 
                 return reasoning_result, item_index
-            except ValueError as e:                
+            except ValueError as e:
                 raise RuntimeError("Failed to obtain valid reasoning from VLM") from e
 
     def extract_bbox_from_line(self, data_line: str) -> Optional[List[float]]:

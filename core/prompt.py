@@ -361,7 +361,7 @@ set_mode(target_mode='<cli|gui>') # Switch agent mode. Use 'cli' when GUI task i
 task_update_todos(todos=[{content, status}, ...]) # Update todo list. status: 'pending'|'in_progress'|'completed'.
 """
 
-# KV CACHING OPTIMIZED: Static content FIRST, session-static in MIDDLE, dynamic (gui_event_stream) LAST
+# KV CACHING OPTIMIZED: Static content FIRST, session-static in MIDDLE, dynamic (event_stream) LAST
 SELECT_ACTION_IN_GUI_PROMPT = """
 <rules>
 GUI Action Selection Rules:
@@ -433,7 +433,7 @@ Current screen state (screenshot description or parsed elements):
 {gui_state}
 </gui_state>
 
-{gui_event_stream}
+{event_stream}
 """
 
 # Used for simple task mode - streamlined action selection without todo workflow

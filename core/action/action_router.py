@@ -331,19 +331,20 @@ class ActionRouter:
         logger.info(f"ActionRouter (GUI) using compact action space prompt with {len(compiled_actions)} actions")
 
         # Build the instruction prompt for the LLM
-        # KV CACHING: Static/session-static content first, dynamic (gui_event_stream) last
+        # KV CACHING: Static/session-static content first, dynamic (event_stream) last
         # Reasoning is now part of the action selection prompt (single LLM call)
         #
         # For session caching:
-        # - static_prompt: everything except gui_event_stream (cached prefix)
-        # - full_prompt: includes gui_event_stream (used for first call or non-cached)
+        # - static_prompt: everything except event_stream (cached prefix)
+        # - full_prompt: includes event_stream (used for first call or non-cached)
         # Note: task_state includes skill instructions and is session-static (doesn't change during task)
         # Note: GUI mode uses hardcoded compact action space prompt for efficiency
+        # Note: GUI and CLI now share the unified event stream
         task_state = self.context_engine.get_task_state()
         static_prompt = SELECT_ACTION_IN_GUI_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(),
             task_state=task_state,
-            gui_event_stream="",  # Empty for static prompt
+            event_stream="",  # Empty for static prompt
             gui_state=gui_state,
             query=query,
             gui_action_space=GUI_ACTION_SPACE_PROMPT,
@@ -351,7 +352,7 @@ class ActionRouter:
         full_prompt = SELECT_ACTION_IN_GUI_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(),
             task_state=task_state,
-            gui_event_stream=self.context_engine.get_gui_event_stream(),
+            event_stream=self.context_engine.get_event_stream(),
             gui_state=gui_state,
             query=query,
             gui_action_space=GUI_ACTION_SPACE_PROMPT,
@@ -507,7 +508,7 @@ class ActionRouter:
         Prompt the LLM for a GUI action decision with session caching support.
 
         For BytePlus session caching:
-        - First call: Send full prompt (static_prompt + gui_event_stream)
+        - First call: Send full prompt (static_prompt + event_stream)
         - Subsequent calls: Send only delta events (new events since last call)
 
         Note: VLM calls with image_bytes don't use session caching.
@@ -516,7 +517,7 @@ class ActionRouter:
             prompt: The full prompt (used for non-session calls or first call)
             image_bytes: Optional screenshot bytes for VLM calls
             is_task: Whether this is a task context (enables session caching)
-            static_prompt: The static parts of the prompt without gui_event_stream
+            static_prompt: The static parts of the prompt without event_stream
                           (used for session cache creation)
         """
         max_retries = 3
@@ -529,7 +530,7 @@ class ActionRouter:
 
         for attempt in range(max_retries):
             # KV CACHING: System prompt is now STATIC only
-            # Dynamic content (gui_event_stream) is handled separately for session caching
+            # Dynamic content (event_stream) is handled separately for session caching
             system_prompt, _ = self.context_engine.make_prompt(
                 user_flags={"query": False, "expected_output": False},
                 system_flags={"role_info": not is_task, "agent_info": not is_task, "policy": False},
@@ -582,7 +583,7 @@ class ActionRouter:
                         raw_response = await self.llm_interface.generate_response_with_session_async(
                             task_id=current_task_id,
                             call_type=call_type,
-                            user_prompt=current_prompt,  # Full prompt with gui_event_stream
+                            user_prompt=current_prompt,  # Full prompt with event_stream
                             system_prompt_for_new_session=system_prompt,
                         )
                         self.context_engine.mark_event_stream_synced(call_type)

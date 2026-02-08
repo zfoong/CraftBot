@@ -548,13 +548,10 @@ class InternalActionInterface:
 
         updated_todos = cls.task_manager.update_todos(todos)
 
-        # Emit [todos] event to event stream for session caching optimization
+        # Emit [todos] event to unified event stream for session caching optimization
         # Format: [ ] Pending | [>] In Progress | [x] Completed
+        # Note: CLI and GUI modes now share the same event stream
         cls._emit_todos_event(updated_todos)
-
-        # Also emit to GUI event stream if in GUI mode
-        if STATE.gui_mode and cls.gui_module:
-            cls.gui_module.emit_todos_to_gui_event_stream(updated_todos)
 
         return {"status": "ok", "todos": updated_todos}
 
