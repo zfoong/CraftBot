@@ -12,8 +12,10 @@ from rich.table import Table
 from rich.text import Text
 
 from core.logger import logger
+from core.state.agent_state import STATE
+from core.gui.handler import GUIHandler
 from core.tui.app import CraftApp
-from core.tui.data import TimelineEntry, ActionEntry, ActionUpdate
+from core.tui.data import TimelineEntry, ActionEntry, ActionUpdate, FootageUpdate
 from core.tui.mcp_settings import (
     list_mcp_servers,
     add_mcp_server_from_template,
@@ -69,6 +71,9 @@ class TUIInterface:
         self.chat_updates: Queue[TimelineEntry] = Queue()
         self.action_updates: Queue[ActionUpdate] = Queue()
         self.status_updates: Queue[str] = Queue()
+        self.footage_updates: Queue[FootageUpdate] = Queue()
+        self._gui_mode_ended_flag: bool = False
+        self._last_gui_mode: bool = False
 
         # Track current task and action states
         self._current_task_name: Optional[str] = None
@@ -93,6 +98,30 @@ class TUIInterface:
             "/menu": self._handle_menu_command,
             "/help": self._handle_help_command,
         }
+
+    # =====================================
+    # Footage Methods
+    # =====================================
+
+    async def push_footage(self, image_bytes: bytes, container_id: str = "") -> None:
+        """Push a new screenshot to the footage display."""
+        update = FootageUpdate(
+            image_bytes=image_bytes,
+            timestamp=time.time(),
+            container_id=container_id,
+        )
+        await self.footage_updates.put(update)
+
+    def signal_gui_mode_end(self) -> None:
+        """Signal that GUI mode has ended."""
+        self._gui_mode_ended_flag = True
+
+    def gui_mode_ended(self) -> bool:
+        """Check if GUI mode has ended since last check."""
+        if self._gui_mode_ended_flag:
+            self._gui_mode_ended_flag = False
+            return True
+        return False
 
     async def _maybe_handle_command(self, message: str) -> bool:
         parts = message.split()
@@ -134,6 +163,12 @@ class TUIInterface:
 
         self._running = True
         logger.debug("Starting Textual TUI interface. Press Ctrl+C to exit.")
+
+        # Set footage callback on agent for GUI mode screen display
+        self._agent._tui_footage_callback = self.push_footage
+        # Also set on existing GUIModule if already created
+        if GUIHandler.gui_module:
+            GUIHandler.gui_module.set_tui_footage_callback(self.push_footage)
 
         await self.chat_updates.put(
             (
@@ -673,6 +708,13 @@ Skills are automatically selected during task creation based on the task descrip
                             if status != self._status_message:
                                 self._status_message = status
                                 await self.status_updates.put(status)
+
+                # Check for GUI mode transitions
+                current_gui_mode = STATE.gui_mode
+                if self._last_gui_mode and not current_gui_mode:
+                    # GUI mode just ended
+                    self.signal_gui_mode_end()
+                self._last_gui_mode = current_gui_mode
 
                 await asyncio.sleep(0.05)
 
