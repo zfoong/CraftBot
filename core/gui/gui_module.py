@@ -2,6 +2,7 @@ import json
 import ast
 import tempfile
 import os
+import hashlib
 from gradio_client import Client, file
 from typing import Dict, Optional, List, Tuple, Any
 from core.action.action import Action
@@ -76,7 +77,7 @@ class GUIModule:
         tui_footage_callback = None,
     ):
         self.llm: LLMInterface = LLMInterface(provider=provider)
-        self.vlm: VLMInterface = VLMInterface(provider="gemini")
+        self.vlm: VLMInterface = VLMInterface(provider=provider)
         self.action_library: ActionLibrary = action_library
         self.action_router: ActionRouter = action_router
         self.context_engine: ContextEngine = context_engine
@@ -97,6 +98,24 @@ class GUIModule:
         else:
             self.gradio_client: Client | None = None
 
+        # ==================================
+        #  ACTION TRACKING FOR LOOP DETECTION
+        # ==================================
+        # Track recent actions to detect repeated failures
+        self._recent_actions: List[Dict[str, Any]] = []
+        self._max_action_history = 10  # Keep last 10 actions
+        self._repetition_threshold = 2  # Warn after 2 similar actions
+        self._coordinate_tolerance = 30  # Pixels within which coordinates are considered "same"
+
+        # ==================================
+        #  OMNIPARSER CACHE
+        # ==================================
+        self._omniparser_cache: Dict[str, Any] = {
+            "screenshot_hash": None,
+            "image_description_list": None,
+            "annotated_image_bytes": None
+        }
+
     def set_tui_footage_callback(self, callback) -> None:
         """Set the TUI footage callback for screen display."""
         self._tui_footage_callback = callback
@@ -115,6 +134,65 @@ class GUIModule:
                 reasoning,
                 severity="DEBUG",
             )
+
+    def _track_action(self, action_name: str, params: Dict[str, Any]) -> None:
+        """Track an action for loop detection."""
+        action_record = {
+            "action_name": action_name,
+            "x": params.get("x"),
+            "y": params.get("y"),
+        }
+        self._recent_actions.append(action_record)
+        # Keep only last N actions
+        if len(self._recent_actions) > self._max_action_history:
+            self._recent_actions = self._recent_actions[-self._max_action_history:]
+
+    def _check_for_repeated_action(self, action_name: str, params: Dict[str, Any]) -> Optional[str]:
+        """
+        Check if the proposed action is a repeat of recent failed actions.
+        Returns a warning message if repetition detected, None otherwise.
+        """
+        if action_name not in ["mouse_click", "mouse_move", "mouse_drag"]:
+            return None
+
+        proposed_x = params.get("x")
+        proposed_y = params.get("y")
+        if proposed_x is None or proposed_y is None:
+            return None
+
+        # Count similar actions in recent history
+        similar_count = 0
+        for past_action in self._recent_actions:
+            if past_action["action_name"] == action_name:
+                past_x = past_action.get("x")
+                past_y = past_action.get("y")
+                if past_x is not None and past_y is not None:
+                    # Check if coordinates are within tolerance
+                    if (abs(proposed_x - past_x) <= self._coordinate_tolerance and
+                        abs(proposed_y - past_y) <= self._coordinate_tolerance):
+                        similar_count += 1
+
+        if similar_count >= self._repetition_threshold:
+            warning = (
+                f"WARNING: Action '{action_name}' at coordinates near ({proposed_x}, {proposed_y}) "
+                f"has been attempted {similar_count} times without apparent success. "
+                f"Try a different approach: adjust coordinates significantly (50+ pixels), "
+                f"use keyboard navigation (Tab/Enter), click a different element, "
+                f"or use send_message to inform the user about the difficulty."
+            )
+            return warning
+
+        return None
+
+    def _inject_warning_to_event_stream(self, warning: str) -> None:
+        """Inject a warning message to the event stream."""
+        if self.event_stream_manager and warning:
+            self.event_stream_manager.log(
+                "loop_detection_warning",
+                warning,
+                severity="WARNING",
+            )
+            logger.warning(f"[GUI LOOP DETECTION] {warning}")
 
     async def perform_gui_task_step(self, step: Optional[TodoItem], session_id: str, next_action_description: str, parent_action_id: str) -> dict:
         """
@@ -161,8 +239,8 @@ class GUIModule:
         New flow:
         1. Take screenshot
         2. Get image description (VLM call)
-        3. Select action with integrated reasoning (LLM call) → reasoning, element_to_find, action_name, parameters
-        4. If element_to_find is provided, get pixel position (VLM call)
+        3. Select action with integrated reasoning (LLM call) → reasoning, element_index_to_find, action_name, parameters
+        4. If element_index_to_find is provided, get pixel position (VLM call)
         5. Inject pixel position into parameters if needed
         6. Execute action
 
@@ -207,63 +285,40 @@ class GUIModule:
             # 3. Get Image Description + Prepare Image for VLM
             # ===================================
             if self.can_use_omniparser:
-                image_description_list, annotated_image_bytes = await self._get_image_description_omniparser(png_bytes)
-                # Convert to compact format for token efficiency (~50% reduction)
-                gui_state = self._format_gui_state_compact(image_description_list)
-                # Use annotated image for action selection (has labeled elements)
-                vlm_image_bytes = annotated_image_bytes
+                reasoning_result, action_query = await self.omniparser_flow(query=query, png_bytes=png_bytes)
             else:
-                gui_state = await self._get_image_description_vlm(png_bytes=png_bytes, query=query)
-                # Use raw screenshot for action selection
-                vlm_image_bytes = png_bytes
+                reasoning_result, action_query = await self.vlm_flow(query=query, png_bytes=png_bytes)
+
+            vlm_reasoning: str = reasoning_result.reasoning
+            vlm_action_query: str = action_query
+
+            # Log VLM reasoning to event stream (before action selection)
+            if self.event_stream_manager and vlm_reasoning:
+                self.log_gui_reasoning(vlm_reasoning + " | " + vlm_action_query)
 
             # ===================================
             # 4. Select Action (with integrated reasoning via VLM)
             # ===================================
-            action_decision = await self.action_router.select_action_in_GUI(
-                query=query,
-                gui_state=gui_state,
-                image_bytes=vlm_image_bytes,
-                GUI_mode=True
-            )
+            action_decision = await self.action_router.select_action_in_GUI(query=action_query, reasoning=vlm_reasoning, GUI_mode=True)
 
             if not action_decision:
                 raise ValueError("Action router returned no decision.")
 
             action_name = action_decision.get("action_name")
             action_params = action_decision.get("parameters", {})
-            reasoning = action_decision.get("reasoning", "")
-            element_to_find = action_decision.get("element_to_find", "")
 
-            logger.debug(f"[GUI REASONING] {reasoning}")
-            logger.debug(f"[GUI ELEMENT TO FIND] {element_to_find}")
+            logger.info(f"[GUI VLM REASONING] {vlm_reasoning}")
+            logger.info(f"[GUI ACTION QUERY] {vlm_action_query}")
 
             if not action_name:
                 raise ValueError("No valid action selected by the router.")
 
-            # Log reasoning to main event stream
-            if self.event_stream_manager and reasoning:
-                self.log_gui_reasoning(reasoning)
-
             # ===================================
-            # 5. Get Pixel Position (if needed)
+            # 5. Check for Repeated Actions (Loop Detection)
             # ===================================
-            if element_to_find and element_to_find.strip():
-                # Get pixel position for the element using VLM
-                pixel_positions = await self._get_pixel_position_vlm(
-                    image_bytes=png_bytes,
-                    element_to_find=element_to_find
-                )
-
-                # Inject pixel position into parameters for mouse actions
-                if pixel_positions and len(pixel_positions) > 0:
-                    first_position = pixel_positions[0]
-                    if "x" in first_position and "y" in first_position:
-                        # Only inject if action needs coordinates
-                        if action_name in ["mouse_click", "mouse_move", "mouse_drag"]:
-                            action_params["x"] = first_position["x"]
-                            action_params["y"] = first_position["y"]
-                            logger.debug(f"[GUI PIXEL] Injected coordinates: x={first_position['x']}, y={first_position['y']}")
+            warning = self._check_for_repeated_action(action_name, action_params)
+            if warning:
+                self._inject_warning_to_event_stream(warning)
 
             # Retrieve action
             action: Optional[Action] = self.action_library.retrieve_action(action_name)
@@ -278,7 +333,7 @@ class GUIModule:
             # ===================================
             action_output = await self.action_manager.execute_action(
                 action=action,
-                context=element_to_find if element_to_find else query,
+                context=vlm_action_query if vlm_action_query else query,
                 event_stream=self.context_engine.get_event_stream(),
                 parent_id=parent_id,
                 session_id=session_id,
@@ -286,6 +341,11 @@ class GUIModule:
                 is_gui_task=True,
                 input_data=action_params,
             )
+
+            # ===================================
+            # 7. Track Action for Loop Detection
+            # ===================================
+            self._track_action(action_name, action_params)
 
             return {
                 "status": "ok",
@@ -300,6 +360,82 @@ class GUIModule:
                 "message": str(e),
             }
 
+    async def vlm_flow(self, query: str, png_bytes: bytes) -> Tuple[ReasoningResult, str]:
+        """
+        Perform the VLM flow.
+        """
+        # ==================================
+        # 1. Get Image Description
+        # ==================================
+        image_description: str = await self._get_image_description_vlm(png_bytes=png_bytes, query=query)
+
+        # ==================================
+        # 2. Perform Reasoning
+        # ==================================
+        reasoning_result: ReasoningResult = await self._perform_reasoning_GUI_vlm(query=image_description)
+        action_query: str = reasoning_result.action_query
+
+        # ==================================
+        # 3. Get Pixel Position
+        # ==================================
+        pixel_position: List[int] = await self._get_pixel_position_vlm(image_bytes=png_bytes, element_to_find=action_query)
+
+        # ==================================
+        # 4. Construct Action Search Query
+        # ==================================
+        action_search_query: str = action_query + " " + json.dumps(pixel_position)
+
+        return reasoning_result, action_search_query
+
+    async def omniparser_flow(self, query: str, png_bytes: bytes) -> Tuple[ReasoningResult, str]:
+        """
+        Perform the omniparser flow.
+        """
+        # ==================================
+        # 1. OmniParser Image Analysis
+        # ==================================
+        # Check OmniParser cache - reuse if screenshot unchanged
+        current_hash = hashlib.md5(png_bytes).hexdigest()
+        if current_hash == self._omniparser_cache["screenshot_hash"]:
+            # Cache hit - reuse previous results
+            image_description_list = self._omniparser_cache["image_description_list"]
+            annotated_image_bytes = self._omniparser_cache["annotated_image_bytes"]
+            logger.info("[GUI] Using cached OmniParser results (screenshot unchanged)")
+        else:
+            # Cache miss - call OmniParser and update cache
+            image_description_list, annotated_image_bytes = await self._get_image_description_omniparser(png_bytes)
+            self._omniparser_cache = {
+                "screenshot_hash": current_hash,
+                "image_description_list": image_description_list,
+                "annotated_image_bytes": annotated_image_bytes
+            }
+            logger.debug("[GUI] OmniParser cache updated with new screenshot")
+
+        image_description_list, annotated_image_bytes = await self._get_image_description_omniparser(png_bytes)
+
+        # ==================================
+        # 2. Reasoning
+        # ==================================
+        reasoning_result, item_index = await self._perform_reasoning_GUI_omniparser(png_bytes=annotated_image_bytes)
+        action_query: str = reasoning_result.action_query
+
+        # ==================================
+        # 3. Get Pixel Position
+        # ==================================
+        if len(image_description_list) > item_index:
+            item = image_description_list[item_index]
+            bbox: List[float] = self.extract_bbox_from_line(item)
+            pixel_position: List[int] = self.convert_bbox_to_pixels(bbox, 1064, 1064)
+        else:
+            pixel_position = "No UI element needed for action"
+
+        # ==================================
+        # 4. Construct Action Search Query
+        # ==================================
+        action_search_query: str = action_query + " | The element involved has a position of [ymin_px, xmin_px, ymax_px, xmax_px] = " + json.dumps(pixel_position)
+
+        return reasoning_result, action_search_query
+
     # ==================================
     # VLM Helper Methods
     # ==================================
@@ -312,9 +448,13 @@ class GUIModule:
         system_prompt, _ = self.context_engine.make_prompt(
             user_flags={"query": False, "expected_output": False},
             system_flags={
-                "policy": False,
-                "agent_info": False,
-                "role_info": False,
+                "policy": False, 
+                "event_stream": False, 
+                "task_state": False, 
+                "conversation_history": False, 
+                "agent_info": False, 
+                "role_info": False, 
+                "agent_state": False, 
                 "base_instruction": False,
                 "environment": False,
             }
@@ -348,37 +488,26 @@ class GUIModule:
                 - reasoning: The model's reasoning output
                 - action_query: A refined query used for action selection
         """
-        # KV CACHING: System prompt is now STATIC only
+        # Build the system prompt using the current context configuration
         system_prompt, _ = self.context_engine.make_prompt(
             user_flags={"query": False, "expected_output": False},
-            system_flags={"policy": False},
+            system_flags={"policy": False, "event_stream": False, "task_state": False, "agent_state": False},
         )
-        # KV CACHING: Inject dynamic context into user prompt
+        # Format the user prompt with context for proper reasoning
+        # GUI_REASONING_PROMPT requires: gui_event_stream, task_state, agent_state, gui_state
         prompt = GUI_REASONING_PROMPT.format(
-            agent_state=self.context_engine.get_agent_state(),
-            task_state=self.context_engine.get_task_state(),
             gui_event_stream=self.context_engine.get_event_stream(),
+            task_state=self.context_engine.get_task_state(),
+            agent_state=self.context_engine.get_agent_state(),
             gui_state=query,
         )
 
-        # Get current task_id for session cache (if running in a task)
-        current_task_id = STATE.get_agent_property("current_task_id", "")
-
         # Attempt the LLM call and parsing up to (retries + 1) times
-        for attempt in range(retries + 1):
-            # Use session cache if we're in a task context and session exists
-            if current_task_id and self.llm.has_session_cache(current_task_id, LLMCallType.GUI_REASONING):
-                response = await self.llm.generate_response_with_session_async(
-                    task_id=current_task_id,
-                    call_type=LLMCallType.GUI_REASONING,
-                    user_prompt=prompt,
-                    system_prompt_for_new_session=system_prompt,
-                )
-            else:
-                response = await self.llm.generate_response_async(
-                    system_prompt=system_prompt,
-                    user_prompt=prompt,
-                )
+        for attempt in range(retries + 1):            
+            response = await self.llm.generate_response_async(
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+            )
 
             try:
                 # Parse and validate the structured JSON response
@@ -388,7 +517,7 @@ class GUIModule:
                     self.log_gui_reasoning(reasoning_result.reasoning)
 
                 return reasoning_result
-            except ValueError as e:
+            except ValueError as e:                
                 raise RuntimeError("Failed to obtain valid reasoning from VLM") from e
 
     @profile("gui_get_pixel_position_vlm", OperationCategory.LLM)
@@ -400,10 +529,14 @@ class GUIModule:
         system_prompt, _ = self.context_engine.make_prompt(
             user_flags={"query": False, "expected_output": False},
             system_flags={
-                "policy": False,
-                "agent_info": False,
-                "role_info": False,
-                "base_instruction": False,
+                "policy": False, 
+                "event_stream": False, 
+                "task_state": False, 
+                "conversation_history": False, 
+                "agent_info": False, 
+                "role_info": False, 
+                "agent_state": False, 
+                "base_instruction": False, 
                 "environment": False,
             }
         )
@@ -417,7 +550,7 @@ class GUIModule:
     # ==================================
     # OmniParser Helper Methods
     # ==================================
-
+    
     @profile("gui_get_image_description_omniparser", OperationCategory.LLM)
     async def _get_image_description_omniparser(self, image_bytes: bytes) -> Tuple[List[str], bytes]:
         """
@@ -478,82 +611,6 @@ class GUIModule:
         except (IndexError, TypeError, IOError, OSError) as e:
              raise ValueError(f"Failed to parse Gradio client response format: {e}") from e
 
-    def _parse_omniparser_line(self, line: str) -> Optional[Dict[str, Any]]:
-        """
-        Parse a single OmniParser line into structured data.
-
-        Input format: "icon N: {'type': 'text', 'bbox': [...], 'interactivity': False, 'content': 'Hello', 'source': '...'}"
-        Output: {'index': N, 'type': 'text', 'bbox': [...], 'interactivity': False, 'content': 'Hello'}
-
-        Returns None if parsing fails.
-        """
-        try:
-            # Split "icon N: {...}" into ["icon N", "{...}"]
-            parts = line.split(': ', 1)
-            if len(parts) < 2:
-                logger.warning(f"[OmniParser] Invalid line format: {line[:50]}...")
-                return None
-
-            # Extract index from "icon N"
-            prefix = parts[0].strip()
-            if not prefix.startswith("icon "):
-                logger.warning(f"[OmniParser] Missing 'icon' prefix: {prefix}")
-                return None
-
-            try:
-                index = int(prefix[5:])
-            except ValueError:
-                logger.warning(f"[OmniParser] Invalid index in: {prefix}")
-                return None
-
-            # Parse the dictionary part
-            dict_str = parts[1].strip()
-            elem_dict = ast.literal_eval(dict_str)
-
-            return {
-                'index': index,
-                'type': elem_dict.get('type', 'unknown'),
-                'bbox': elem_dict.get('bbox', [0, 0, 0, 0]),
-                'interactivity': elem_dict.get('interactivity', False),
-                'content': elem_dict.get('content', ''),
-            }
-
-        except (ValueError, SyntaxError) as e:
-            logger.warning(f"[OmniParser] Failed to parse line: {e}")
-            return None
-
-    def _format_element_compact(self, elem: Dict[str, Any]) -> str:
-        """
-        Format a single parsed element into compact key-value format.
-
-        Output format: [N] type=text bbox=(0.916,0.003,0.958,0.014) content="Hello" click=no
-        """
-        idx = elem['index']
-        elem_type = elem['type']
-        bbox = elem['bbox']
-        # Round to 3 decimal places
-        bbox_str = f"({bbox[0]:.3f},{bbox[1]:.3f},{bbox[2]:.3f},{bbox[3]:.3f})"
-        content = elem.get('content', '') or ''
-        click = 'yes' if elem.get('interactivity', False) else 'no'
-        return f'[{idx}] type={elem_type} bbox={bbox_str} content="{content}" click={click}'
-
-    @profile("gui_format_state_compact", OperationCategory.CONTEXT)
-    def _format_gui_state_compact(self, parsed_text_list: List[str]) -> str:
-        """
-        Convert verbose OmniParser output to compact VLM-friendly format.
-
-        Input: ['icon 0: {...}', 'icon 1: {...}', ...]
-        Output: '[0] type=text bbox=(0.916,0.003,0.958,0.014) content="Hello" click=no\n...'
-
-        This reduces token usage by ~50% while preserving all essential information.
-        """
-        compact_lines = []
-        for line in parsed_text_list:
-            parsed = self._parse_omniparser_line(line)
-            if parsed:
-                compact_lines.append(self._format_element_compact(parsed))
-        return "\n".join(compact_lines)
-
     @profile("gui_perform_reasoning_omniparser", OperationCategory.REASONING)
     async def _perform_reasoning_GUI_omniparser(self, png_bytes: bytes, retries: int = 2, log_reasoning_event = False) -> Tuple[ReasoningResult, int]:
         """
@@ -568,16 +625,17 @@ class GUIModule:
             - reasoning_result: The reasoning result.
             - item_index: The index of the item in the image.
         """
-        # KV CACHING: System prompt is now STATIC only
+        # Build the system prompt using the current context configuration
         system_prompt, _ = self.context_engine.make_prompt(
             user_flags={"query": False, "expected_output": False},
-            system_flags={"policy": False},
+            system_flags={"policy": False, "event_stream": False, "task_state": False, "agent_state": False},
         )
-        # KV CACHING: Inject dynamic context into user prompt
+        # Format the user prompt with context for proper reasoning
+        # GUI_REASONING_PROMPT_OMNIPARSER requires: event_stream, task_state, agent_state
         prompt = GUI_REASONING_PROMPT_OMNIPARSER.format(
-            agent_state=self.context_engine.get_agent_state(),
+            event_stream=self.context_engine.get_event_stream(),
             task_state=self.context_engine.get_task_state(),
-            gui_event_stream=self.context_engine.get_event_stream(),
+            agent_state=self.context_engine.get_agent_state(),
         )
 
         # Attempt the LLM call and parsing up to (retries + 1) times
@@ -596,7 +654,7 @@ class GUIModule:
                     self.log_gui_reasoning(reasoning_result.reasoning)
 
                 return reasoning_result, item_index
-            except ValueError as e:
+            except ValueError as e:                
                 raise RuntimeError("Failed to obtain valid reasoning from VLM") from e
 
     def extract_bbox_from_line(self, data_line: str) -> Optional[List[float]]:
