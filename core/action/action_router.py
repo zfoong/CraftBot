@@ -350,8 +350,6 @@ class ActionRouter:
             task_state=task_state,
             event_stream="",  # Empty for static prompt
             memory_context=memory_context,
-            reasoning=reasoning,
-            query=query,
             gui_action_space=GUI_ACTION_SPACE_PROMPT,
         )
         full_prompt = SELECT_ACTION_IN_GUI_PROMPT.format(
@@ -359,8 +357,6 @@ class ActionRouter:
             task_state=task_state,
             event_stream=self.context_engine.get_event_stream(),
             memory_context=memory_context,
-            reasoning=reasoning,
-            query=query,
             gui_action_space=GUI_ACTION_SPACE_PROMPT,
         )
 
