@@ -618,12 +618,21 @@ class InternalActionInterface:
         cls.state_manager.bump_event_stream()
 
     @classmethod
-    async def mark_task_completed(cls, message: Optional[str] = None) -> Dict[str, Any]:
+    async def mark_task_completed(
+        cls,
+        message: Optional[str] = None,
+        summary: Optional[str] = None,
+        errors: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         """Mark the current session task as completed."""
         try:
             # Get task_id before marking as completed (task will be cleared)
             task_id = cls._get_current_task_id()
-            ok = await cls.task_manager.mark_task_completed(message=message)
+            ok = await cls.task_manager.mark_task_completed(
+                message=message,
+                summary=summary,
+                errors=errors or []
+            )
             # End session cache if task was successfully completed
             if ok and task_id:
                 cls._end_task_session_cache(task_id)
@@ -633,12 +642,21 @@ class InternalActionInterface:
             return {"status": "error", "error": str(e)}
 
     @classmethod
-    async def mark_task_cancel(cls, reason: Optional[str] = None) -> Dict[str, Any]:
+    async def mark_task_cancel(
+        cls,
+        reason: Optional[str] = None,
+        summary: Optional[str] = None,
+        errors: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         """Cancel the current session task."""
         try:
             # Get task_id before marking as cancelled (task will be cleared)
             task_id = cls._get_current_task_id()
-            ok = await cls.task_manager.mark_task_cancel(reason=reason)
+            ok = await cls.task_manager.mark_task_cancel(
+                reason=reason,
+                summary=summary,
+                errors=errors or []
+            )
             # End session cache if task was successfully cancelled
             if ok and task_id:
                 cls._end_task_session_cache(task_id)

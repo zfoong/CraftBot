@@ -17,7 +17,7 @@ from core.todo.todo import TodoItem
 from core.logger import logger
 from core.database_interface import DatabaseInterface
 from core.event_stream.event_stream_manager import EventStreamManager
-from core.config import AGENT_WORKSPACE_ROOT
+from core.config import AGENT_WORKSPACE_ROOT, AGENT_FILE_SYSTEM_PATH
 from core.state.state_manager import StateManager
 from core.state.agent_state import STATE
 from core.llm import LLMCallType
@@ -201,25 +201,40 @@ class TaskManager:
 
     # ─────────────────────── Task Completion ─────────────────────────────────
 
-    async def mark_task_completed(self, message: Optional[str] = None) -> bool:
+    async def mark_task_completed(
+        self,
+        message: Optional[str] = None,
+        summary: Optional[str] = None,
+        errors: Optional[List[str]] = None
+    ) -> bool:
         """Mark the current task as completed."""
         if not self.active:
             return False
-        await self._end_task(self.active, "completed", message)
+        await self._end_task(self.active, "completed", message, summary, errors)
         return True
 
-    async def mark_task_error(self, message: Optional[str] = None) -> bool:
+    async def mark_task_error(
+        self,
+        message: Optional[str] = None,
+        summary: Optional[str] = None,
+        errors: Optional[List[str]] = None
+    ) -> bool:
         """Mark the current task as failed with an error."""
         if not self.active:
             return False
-        await self._end_task(self.active, "error", message)
+        await self._end_task(self.active, "error", message, summary, errors)
         return True
 
-    async def mark_task_cancel(self, reason: Optional[str] = None) -> bool:
+    async def mark_task_cancel(
+        self,
+        reason: Optional[str] = None,
+        summary: Optional[str] = None,
+        errors: Optional[List[str]] = None
+    ) -> bool:
         """Cancel the current task."""
         if not self.active:
             return False
-        await self._end_task(self.active, "cancelled", reason)
+        await self._end_task(self.active, "cancelled", reason, summary, errors)
         return True
 
     def get_task(self) -> Optional[Task]:
@@ -325,9 +340,22 @@ class TaskManager:
 
     # ─────────────────────── Internal Helpers ────────────────────────────────
 
-    async def _end_task(self, task: Task, status: str, note: Optional[str]) -> None:
+    async def _end_task(
+        self,
+        task: Task,
+        status: str,
+        note: Optional[str],
+        summary: Optional[str] = None,
+        errors: Optional[List[str]] = None
+    ) -> None:
         """Finalize a task with the given status."""
+        from datetime import datetime
+
         task.status = status
+        task.ended_at = datetime.utcnow().isoformat()
+        task.final_summary = summary
+        task.errors = errors or []
+
         self.db_interface.log_task(task)
         self._sync_state_manager(task)
 
@@ -336,6 +364,9 @@ class TaskManager:
             f"Task ended with status '{status}'. {note or ''}",
             display_message=task.name,
         )
+
+        # Log to TASK_HISTORY.md
+        self._log_to_task_history(task, note)
 
         # Reset skip_unprocessed_logging flag (may have been set during memory processing)
         if hasattr(self.event_stream_manager, 'set_skip_unprocessed_logging'):
@@ -358,6 +389,68 @@ class TaskManager:
         """Sync task state to the state manager."""
         if self.state_manager:
             self.state_manager.add_to_active_task(task=task)
+
+    def _log_to_task_history(self, task: Task, note: Optional[str] = None) -> None:
+        """
+        Log completed task to TASK_HISTORY.md.
+
+        Appends task information including ID, status, timestamps, errors, and summary
+        to the agent file system's TASK_HISTORY.md file.
+
+        Args:
+            task: The completed task to log.
+            note: Optional note/reason for task completion.
+        """
+        try:
+            task_history_path = AGENT_FILE_SYSTEM_PATH / "TASK_HISTORY.md"
+
+            if not task_history_path.exists():
+                logger.warning(f"[TaskManager] TASK_HISTORY.md not found at {task_history_path}")
+                return
+
+            # Format the task history entry
+            entry_lines = [
+                f"### Task: {task.name}",
+                f"- **Task ID:** `{task.id}`",
+                f"- **Status:** {task.status}",
+                f"- **Created:** {task.created_at}",
+                f"- **Ended:** {task.ended_at}",
+            ]
+
+            # Add errors if any
+            if task.errors:
+                entry_lines.append("- **Errors:**")
+                for error in task.errors:
+                    entry_lines.append(f"  - {error}")
+
+            # Add summary
+            if task.final_summary:
+                entry_lines.append(f"- **Summary:** {task.final_summary}")
+            elif note:
+                entry_lines.append(f"- **Summary:** {note}")
+
+            # Add instruction for context
+            if task.instruction:
+                entry_lines.append(f"- **Instruction:** {task.instruction}")
+
+            # Add skills used
+            if task.selected_skills:
+                entry_lines.append(f"- **Skills:** {', '.join(task.selected_skills)}")
+
+            # Add action sets used
+            if task.action_sets:
+                entry_lines.append(f"- **Action Sets:** {', '.join(task.action_sets)}")
+
+            entry_lines.append("")  # Empty line separator
+
+            # Append to file
+            with open(task_history_path, "a", encoding="utf-8") as f:
+                f.write("\n".join(entry_lines) + "\n")
+
+            logger.debug(f"[TaskManager] Logged task {task.id} to TASK_HISTORY.md")
+
+        except Exception as e:
+            logger.warning(f"[TaskManager] Failed to log task to TASK_HISTORY.md: {e}")
 
     def _prepare_task_temp_dir(self, task_id: str) -> Path:
         """Create a temporary directory for the task."""

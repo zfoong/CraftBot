@@ -959,7 +959,8 @@ class AgentBase:
                         payload={
                             "gui_mode": STATE.gui_mode,
                         },
-                    )
+                    ),
+                    skip_merge=True,  # Session is already explicitly set, no LLM merge check needed
                 )
             except Exception as e:
                 logger.error(f"[TRIGGER] Failed to enqueue trigger for session {new_session_id}: {e}", exc_info=True)

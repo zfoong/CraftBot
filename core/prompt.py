@@ -236,9 +236,9 @@ Here is your goal:
 Your job is to choose the best action from the action library and prepare the input parameters needed to run it immediately.
 </objective>
 
----
-
 {memory_context}
+
+---
 
 {event_stream}
 """
@@ -340,9 +340,9 @@ Here is your goal:
 Your job is to reason about the current state, then select the next action and provide the input parameters so it can be executed immediately.
 </objective>
 
----
-
 {memory_context}
+
+---
 
 {event_stream}
 """
@@ -367,6 +367,11 @@ task_update_todos(todos=[{content, status}, ...]) # Update todo list. status: 'p
 
 # KV CACHING OPTIMIZED: Static content FIRST, session-static in MIDDLE, dynamic (event_stream) LAST
 SELECT_ACTION_IN_GUI_PROMPT = """
+<objective>
+You are a GUI agent. You are given a goal, reasoning and event stream of your past actions. You need perform the next action to complete the task.
+Your job is to select the best next GUI action based on the latest reasoning, and provide the input parameters so it can be executed immediately.
+</objective>
+
 <rules>
 GUI Action Selection Rules:
 - Select the appropriate action according to the given task.
@@ -410,19 +415,6 @@ Return ONLY a valid JSON object with this structure and no extra commentary:
 ---
 
 {event_stream}
-
-<objective>
-You are a GUI agent. You are given a goal and your event stream, with screenshots. You need to reason about the current state and perform the next action to complete the task.
-Here is your goal:
-{query}
-
-Your job is to reason about the screen, select the next GUI action, and provide the input parameters so it can be executed immediately.
-</objective>
-
-<reasoning>
-Here is your reasoning of the current step:
-{reasoning}
-</reasoning>
 """
 
 # Used for simple task mode - streamlined action selection without todo workflow

@@ -37,7 +37,7 @@ SKIP_UNPROCESSED_EVENT_TYPES = {
     "GUI action start",
     "GUI action end",
     # Reasoning and observation
-    "reasoning",
+    "agent reasoning",
     "screen_description",
     # Task lifecycle events
     # "task_start",

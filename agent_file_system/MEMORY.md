@@ -9,13 +9,5 @@ DO NOT copy and paste events here: This memory file only stores distilled memory
 
 ## Memory
 
-[2026-01-20 00:00:00] [fact] Agent created with name "BotA"
-[2026-01-27 00:55:57] [preference] Tham Yik Foong's favorite food: Ramen
-[2026-02-09 06:33:42] [fact] Tham Yik Foong is an AI researcher at CraftOS
-[2026-02-09 09:21:16] [preference] Tham Yik Foong wants to go to Vietnam in April
-[2026-02-09 09:31:30] [preference] Tham Yik Foong likes white chocolate
-[2026-02-09 09:36:01] [event] Tham Yik Foong asked about April travel plans
-[2026-02-09 14:54:19] [fact] Tham Yik Foong lives in Fukuoka
-[2026-02-09 14:59:26] [event] Tham Yik Foong is traveling to Vietnam from April 20-23
-
+[2026-02-09 22:00:19] [preference] User requested weather information for Fukuoka, Japan
 
