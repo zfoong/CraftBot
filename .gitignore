@@ -29,3 +29,8 @@ debug_images
 .vscode/
 .idea/
 *.spec
+**/.whatsapp_web_sessions/
+**/build
+**/build_*
+**/dist
+**/release
