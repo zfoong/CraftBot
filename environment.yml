@@ -45,3 +45,4 @@ dependencies:
       - gradio_client
       - python-dotenv
       - watchdog
+      - telethon

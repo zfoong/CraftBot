@@ -41,3 +41,4 @@ gradio_client
 python-dotenv
 scikit-learn
 watchdog
+telethon
