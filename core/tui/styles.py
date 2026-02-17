@@ -229,12 +229,12 @@ TextLog {
 }
 
 /* Settings sections */
-#section-models, #section-mcp, #section-skills {
+#section-models, #section-mcp, #section-skills, #section-integrations {
     height: auto;
     padding: 1 0;
 }
 
-#section-models.-hidden, #section-mcp.-hidden, #section-skills.-hidden {
+#section-models.-hidden, #section-mcp.-hidden, #section-skills.-hidden, #section-integrations.-hidden {
     display: none;
 }
 
@@ -431,12 +431,57 @@ TextLog {
 }
 
 /* Overlay layer for modals */
-#mcp-env-overlay, #skill-detail-overlay {
+#mcp-env-overlay, #skill-detail-overlay, #integ-connect-overlay, #integ-detail-overlay, #oauth-waiting-overlay {
     layer: overlay;
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.8);
     align: center middle;
+}
+
+/* OAuth Waiting Modal */
+#oauth-waiting-modal {
+    width: 50;
+    max-width: 90%;
+    border: solid #ff4f18;
+    background: #0a0a0a;
+    padding: 2 3;
+}
+
+#oauth-waiting-title {
+    color: #ffffff;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.oauth-waiting-desc {
+    color: #a0a0a0;
+    margin-bottom: 1;
+}
+
+.oauth-waiting-hint {
+    color: #666666;
+    text-style: italic;
+    margin-bottom: 1;
+}
+
+#oauth-waiting-actions {
+    height: auto;
+    margin-top: 1;
+}
+
+.oauth-waiting-btn {
+    width: auto;
+    min-width: 10;
+    height: 3;
+    background: #333333;
+    color: #ff4f18;
+    border: solid #2a2a2a;
+}
+
+.oauth-waiting-btn:hover {
+    background: #ff4f18;
+    color: #ffffff;
 }
 
 /* Skills section */
@@ -610,6 +655,252 @@ TextLog {
 
 .skill-detail-btn.-copy:hover {
     background: #0088ff;
+    color: #ffffff;
+}
+
+/* =========================================================================
+   Integrations Section
+   ========================================================================= */
+
+#integrations-list {
+    height: auto;
+    max-height: 18;
+    margin: 1 0;
+    border: solid #2a2a2a;
+    background: #0a0a0a;
+    padding: 1;
+}
+
+.integration-row {
+    height: 1;
+    margin-bottom: 1;
+}
+
+.integration-name {
+    width: 22;
+    color: #ff4f18;
+}
+
+.integration-desc {
+    width: 1fr;
+    color: #666666;
+    padding-left: 1;
+}
+
+.integration-connect-btn {
+    width: auto;
+    min-width: 10;
+    height: 1;
+    background: #1a1a1a;
+    color: #00cc00;
+    border: none;
+}
+
+.integration-connect-btn:hover {
+    background: #00cc00;
+    color: #000000;
+}
+
+.integration-view-btn {
+    width: auto;
+    min-width: 6;
+    height: 1;
+    background: #1a1a1a;
+    color: #0088ff;
+    border: none;
+    margin-right: 1;
+}
+
+.integration-view-btn:hover {
+    background: #0088ff;
+    color: #ffffff;
+}
+
+.integration-disconnect-btn {
+    width: 3;
+    min-width: 3;
+    height: 1;
+    background: #333333;
+    color: #ff4f18;
+    border: none;
+}
+
+.integration-disconnect-btn:hover {
+    background: #ff4f18;
+    color: #ffffff;
+}
+
+.integration-empty {
+    color: #666666;
+    text-style: italic;
+}
+
+#integrations-title {
+    color: #ffffff;
+    text-style: bold;
+    margin-top: 1;
+}
+
+#integrations-hint {
+    color: #666666;
+    text-style: italic;
+    margin-top: 1;
+}
+
+/* Integration Connect Modal */
+#integ-connect-modal {
+    width: 60;
+    max-width: 90%;
+    border: solid #ff4f18;
+    background: #0a0a0a;
+    padding: 2 3;
+}
+
+#integ-modal-title {
+    color: #ffffff;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.integ-modal-desc {
+    color: #a0a0a0;
+    margin-bottom: 1;
+}
+
+.integ-modal-hint {
+    color: #666666;
+    text-style: italic;
+}
+
+#integ-modal-fields {
+    height: auto;
+    margin: 1 0;
+}
+
+.integ-field-label {
+    color: #ff4f18;
+    margin-top: 1;
+}
+
+.integ-field-input {
+    width: 100%;
+    border: solid #2a2a2a;
+    background: #000000;
+    color: #e5e5e5;
+}
+
+.integ-field-input:focus {
+    border: solid #ff4f18;
+}
+
+#integ-modal-actions {
+    height: auto;
+    margin-top: 1;
+}
+
+.integ-modal-btn {
+    width: auto;
+    min-width: 10;
+    height: 3;
+    background: #333333;
+    color: #a0a0a0;
+    border: solid #2a2a2a;
+    margin-right: 1;
+}
+
+.integ-modal-btn:hover {
+    background: #ff4f18;
+    color: #ffffff;
+}
+
+.integ-modal-btn.-primary {
+    background: #00cc00;
+    color: #000000;
+}
+
+.integ-modal-btn.-primary:hover {
+    background: #00ff00;
+}
+
+/* Integration Detail Viewer */
+#integ-detail-viewer {
+    width: 70;
+    max-width: 95%;
+    height: auto;
+    max-height: 80%;
+    border: solid #ff4f18;
+    background: #0a0a0a;
+    padding: 2 3;
+    layout: vertical;
+}
+
+#integ-detail-title {
+    color: #ff4f18;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#integ-detail-desc {
+    color: #a0a0a0;
+    margin-bottom: 1;
+}
+
+#integ-detail-accounts {
+    height: auto;
+    min-height: 3;
+    max-height: 15;
+    margin: 1 0;
+    border: solid #2a2a2a;
+    background: #000000;
+    padding: 1;
+}
+
+.integ-account-row {
+    height: 1;
+    margin-bottom: 1;
+}
+
+.integ-account-info {
+    width: 1fr;
+    color: #e5e5e5;
+}
+
+.integ-account-disconnect-btn {
+    width: 3;
+    min-width: 3;
+    height: 1;
+    background: #333333;
+    color: #ff4f18;
+    border: none;
+}
+
+.integ-account-disconnect-btn:hover {
+    background: #ff4f18;
+    color: #ffffff;
+}
+
+.integ-account-empty {
+    color: #666666;
+    text-style: italic;
+}
+
+#integ-detail-actions {
+    height: auto;
+    margin-top: 1;
+}
+
+.integ-detail-btn {
+    width: auto;
+    min-width: 10;
+    height: 1;
+    background: #333333;
+    color: #a0a0a0;
+    border: none;
+    margin-right: 1;
+}
+
+.integ-detail-btn:hover {
+    background: #ff4f18;
     color: #ffffff;
 }
 """

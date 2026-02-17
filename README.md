@@ -4,7 +4,7 @@
 </div>
 <br>
 <div align="center">
-    <img src="assets/white_collar_agent_icons_text.png" alt="CraftOS Logo" width="480"/>
+    <img src="assets/craftbot_logo_text_small.png" alt="CraftBot Logo" width="480"/>
 </div>
 <br>
 
@@ -36,29 +36,82 @@
 CraftBot is your Personal AI Assistant that lives inside your machine and works 24/7 for you. 
 </h3>
 
-It can autonomously interpret tasks, plan actions, and execute actions to achieve complex goals. <br/>	
-This is an open-source project and is still in development, so we welcome any suggestions, contributions, and feedback! You are free to use, host, and monetize this project (with credit given in case of distribution and monetization).
+It autonomously interprets tasks, plans actions, and executes them to achieve your goals.
+
+Set up CraftBot on your machine or a separate environment. Interact with it via the TUI or from anywhere through your favorite messaging apps. Extend the agent's capabilities with MCPs and Skills, and connect to tools like Google Workspace, Slack, Notion, and Telegram to expand its reach. CraftBot intelligently switches between CLI mode for standard tasks and GUI mode when screen interaction is required (GUI mode runs in an isolated environment so it won't disturb your work).
+
+CraftBot awaits your orders, set up your own CraftBot now.
 
 ---
 
 ## ✨ Features
 
-- 🧠 **Single Base Agent Architecture** — Simple, extendable core that handles reasoning, planning, and execution.  
-- ⚙️ **CLI/GUI mode** — Agent can switch between CLI and GUI mode according to the complexity of the task. GUI mode is still in experimental phase 🧪.
-- 🧩 **Subclass & Extend** — Build your own agents by inheriting from the base class.  
-- 🔍 **Task Document Interface** — Define structured tasks for the agent to perform in-context learning.  
-- 🧰 **Actions Library** — Reusable tools (web search, code execution, I/O, etc.).  
-- ⚡ **Lightweight & Cross-Platform** — Works seamlessly across Linux and Windows.
-- 💻 **Support multiple LLM providers** — Bring your own API keys (Anthropic, OpenAI, Gemini, BytePlus, or even running your own Ollama endpoint).
+- **CLI/GUI Mode** — Agent intelligently switches between CLI and GUI mode based on task complexity. GUI mode enables full desktop automation with screen capture, mouse/keyboard control, and window management.
+- **Multi-LLM Support** — Flexible LLM provider system supporting OpenAI, Google Gemini, Anthropic Claude, BytePlus, and local Ollama models. Easily switch between providers.
+- **37+ Built-in Actions** — Comprehensive action library including:
+  - **File Operations**: Find, read, write, grep, and convert files
+  - **Web Capabilities**: HTTP requests, web search, PDF generation, image generation
+  - **GUI Automation**: Mouse clicks, keyboard input, screenshots, window control
+  - **Application Control**: Open apps, manage windows, clipboard operations
+- **Persistent Memory** — RAG-based semantic memory system powered by ChromaDB. The agent remembers context across sessions with intelligent retrieval and incremental updates.
+- **External tools integration** — Connect to Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord, and Telegram (more to come!) with embedded credentials and OAuth support.
+- **MCP** — Model Context Protocol integration for extending agent capabilities with external tools and services.
+- **Skills** — Extensible skill framework with built-in skills for task planning, research, code review, git operations, and more.
+- **Cross-Platform** — Full support for Windows and Linux with platform-specific code variants and Docker containerization.
 
 > [!IMPORTANT]
-> **Note for GUI mode:** The GUI mode is still in experimental phase. This means you will encounter a lot of issues when the agent decides to switch to GUI mode. We are still working on it.
+> **Note for GUI mode:** The GUI mode is still in experimental phase. This means you may encounter issues when the agent switches to GUI mode. We are actively improving this feature.
+
+---
+
+## 🧩 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    User Interface Layer                      │
+│  ┌──────────────────┐  ┌──────────────────────────────────┐ │
+│  │  TUI (Textual)   │  │  GUI Module (Docker + Gradio)    │ │
+│  └──────────────────┘  └──────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Agent Base                              │
+│           (Task orchestration & lifecycle management)        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────┬──────────┼──────────┬─────────┐
+        ▼         ▼          ▼          ▼         ▼
+   ┌─────────┐ ┌────────┐ ┌────────┐ ┌───────┐ ┌────────┐
+   │   LLM   │ │Context │ │ Action │ │ Event │ │ Memory │
+   │Interface│ │ Engine │ │  Mgmt  │ │Stream │ │  (RAG) │
+   └─────────┘ └────────┘ └────────┘ └───────┘ └────────┘
+```
+
+| Component | Description |
+|-----------|-------------|
+| **Agent Base** | Core orchestration layer that manages task lifecycle, coordinates between components, and handles the main agentic loop. |
+| **LLM Interface** | Unified interface supporting multiple LLM providers (OpenAI, Gemini, Anthropic, BytePlus, Ollama). |
+| **Context Engine** | Generates optimized prompts with KV-cache support. |
+| **Action Manager** | Retrieves and executes actions from the library. Custom action is easy to extend |
+| **Action Router** | Intelligently selects the best matching action based on task requirements and resolves input parameters via LLM when needed. |
+| **Event Stream** | Real-time event publishing system for task progress tracking, UI updates, and execution monitoring. |
+| **Memory Manager** | RAG-based semantic memory using ChromaDB. Handles memory chunking, embedding, retrieval, and incremental updates. |
+| **State Manager** | Global state management for tracking agent execution context, conversation history, and runtime configuration. |
+| **Task Manager** | Manages task definitions, enable simple and complex tasks bode, create todos, and multi-step workflow tracking. |
+| **Skill Manager** | Loads and injects pluggable skills into the agent context. |
+| **MCP Adapter** | Model Context Protocol integration that converts MCP tools into native actions. |
+| **TUI Interface** | Terminal user interface built with Textual framework for interactive command-line operation. |
+| **GUI Module** | Experimental GUI automation using Docker containers, OmniParser for UI element detection, and Gradio client. |
+
+---
 
 ## 🔜 Roadmap
 
-- [ ] **Memory Module** — Coming next!
-- [ ] **External Tool integration** — Pending
-- [ ] **MCP Layer** — Pending
+- [X] **Memory Module** — Done.
+- [>] **External Tool integration** — Still adding more!
+- [X] **MCP Layer** — Done.
+- [X] **Skill Layer** — Done.
 - [ ] **Proactive Behaviour** — Pending
 
 ---
@@ -111,6 +164,9 @@ This executes the built-in **CraftBot**, that you can communicate to:
 ```bash
 python start.py --only-cpu --fast
 ```
+
+> [!HINT]
+> **Onboarding:** Launching CraftBot for the first time will trigger an onboarding sequence where you set up API keys, the agent's name, MCPs, and Skills. Then, chatting with your CraftBot for the first time will prompt an interview session so it can update its USER.md and AGENT.md for future reference.
 
 ---
 
@@ -243,61 +299,6 @@ GUI actions (mouse/keyboard events, screenshots) require an X11 server. You can 
   ```
 
 By default the image uses Python 3.10 and bundles the Python dependencies from `environment.yml`/`requirements.txt`, so `python -m core.main` works out of the box.
-
----
-
-## 🧠 Example: Build a Custom Agent
-
-You can easily create your own specialized agent by extending the base agent:
-
-```python
-import asyncio
-from core.agent_base import AgentBase
-
-class MyCustomAgent(AgentBase):
-    def __init__(
-        self,
-        *,
-        data_dir: str = "core/data",
-        chroma_path: str = "./chroma_db",
-    ):
-        super().__init__(
-            data_dir=data_dir,
-            chroma_path=chroma_path,
-        )
-        # Your implementation
-        def _generate_role_info_prompt(self) -> str:
-            """
-            Defines this agent's role, behaviour, and purpose.
-            """
-            return (
-                "You are MyCustomAgent — an intelligent research assistant. "
-                "Your role is to find, summarize, and synthesize information from multiple sources. "
-                "You respond concisely, prioritize factual accuracy, and cite sources when relevant. "
-                "If you cannot find something, you explain why and suggest alternatives."
-            )
-
-agent = MyCustomAgent(
-    data_dir=os.getenv("DATA_DIR", "core/data"),
-    chroma_path=os.getenv("CHROMA_PATH", "./chroma_db"),
-)
-asyncio.run(agent.run())
-```
-
-Here, you’re reusing all the core planning, reasoning, and execution logic —  
-just plugging in your own **personality, actions, and task documents**.
-
----
-
-## 🧩 Architecture Overview
-
-| Component | Description |
-|------------|-------------|
-| **BaseAgent** | The core reasoning and execution engine — can be subclassed or used directly. |
-| **Action / Tool** | Reusable atomic functions (e.g., web search, API calls, file ops). |
-| **Task Document** | Describes what the agent must achieve and how. |
-| **Planner / Executor** | Handles goal decomposition, script generation, and execution. |
-| **LLM Wrapper** | Unified layer for model interactions (OpenAI, Gemini, etc.). |
 
 ---
 

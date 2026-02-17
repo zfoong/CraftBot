@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import time
-from asyncio import QueueEmpty
+from asyncio import QueueEmpty, create_task
 from typing import TYPE_CHECKING
 
 from textual import events
@@ -36,6 +36,16 @@ from core.tui.skill_settings import (
     get_skill_info,
     toggle_skill,
     get_skill_raw_content,
+)
+from core.tui.integration_settings import (
+    list_integrations,
+    get_integration_info,
+    get_integration_fields,
+    get_integration_auth_type,
+    connect_integration_token,
+    connect_integration_oauth,
+    disconnect_integration,
+    INTEGRATION_REGISTRY,
 )
 from core.onboarding.manager import onboarding_manager
 from core.logger import logger
@@ -295,11 +305,15 @@ class CraftApp(App):
         # Build Skills list items
         skill_items = self._build_skill_list_items()
 
+        # Build Integrations list items
+        integration_items = self._build_integration_list_items()
+
         # Build tab buttons
         tab_buttons = Horizontal(
             Button("Models", id="tab-btn-models", classes="settings-tab -active"),
             Button("MCP Servers", id="tab-btn-mcp", classes="settings-tab"),
             Button("Skills", id="tab-btn-skills", classes="settings-tab"),
+            Button("Integrations", id="tab-btn-integrations", classes="settings-tab"),
             id="settings-tab-bar",
         )
 
@@ -355,12 +369,25 @@ class CraftApp(App):
             classes="-hidden",  # Hidden by default
         )
 
+        # Build Integrations section content
+        integrations_section = Container(
+            Static("3rd Party Integrations", id="integrations-title"),
+            VerticalScroll(
+                *integration_items,
+                id="integrations-list",
+            ),
+            Static("Connect to external services like Slack, Notion, Google, etc.", id="integrations-hint"),
+            id="section-integrations",
+            classes="-hidden",  # Hidden by default
+        )
+
         settings = Container(
             Static("Settings", id="settings-title"),
             tab_buttons,
             models_section,
             mcp_section,
             skills_section,
+            integrations_section,
             ListView(
                 ListItem(Label("save", classes="menu-item"), id="settings-save"),
                 ListItem(Label("cancel", classes="menu-item"), id="settings-cancel"),
@@ -471,6 +498,61 @@ class CraftApp(App):
         items = self._build_skill_list_items()
         for item in items:
             skill_list.mount(item)
+
+    def _build_integration_list_items(self) -> list:
+        """Build list items for integrations."""
+        integrations = list_integrations()
+        items = []
+
+        if not integrations:
+            items.append(Static("No integrations available", classes="integration-empty"))
+        else:
+            for integ in integrations:
+                status = "[+]" if integ["connected"] else "[-]"
+                name = integ["name"]
+                integ_id = integ["id"]
+
+                # Truncate description if too long
+                desc = integ["description"][:25] + "..." if len(integ["description"]) > 25 else integ["description"]
+
+                if integ["connected"]:
+                    # Show view and disconnect buttons for connected integrations
+                    account_count = len(integ.get("accounts", []))
+                    account_text = f"({account_count})" if account_count > 0 else ""
+
+                    items.append(
+                        Horizontal(
+                            Static(f"{status} {name} {account_text}", classes="integration-name"),
+                            Static(desc, classes="integration-desc"),
+                            Button("View", id=f"integ-view-{integ_id}", classes="integration-view-btn"),
+                            Button("x", id=f"integ-disconnect-{integ_id}", classes="integration-disconnect-btn"),
+                            classes="integration-row",
+                        )
+                    )
+                else:
+                    # Show connect button for disconnected integrations
+                    items.append(
+                        Horizontal(
+                            Static(f"{status} {name}", classes="integration-name"),
+                            Static(desc, classes="integration-desc"),
+                            Button("Connect", id=f"integ-connect-{integ_id}", classes="integration-connect-btn"),
+                            classes="integration-row",
+                        )
+                    )
+
+        return items
+
+    def _refresh_integration_list(self) -> None:
+        """Refresh the integration list in settings."""
+        if not self.query("#integrations-list"):
+            return
+
+        integration_list = self.query_one("#integrations-list", VerticalScroll)
+        integration_list.remove_children()
+
+        items = self._build_integration_list_items()
+        for item in items:
+            integration_list.mount(item)
 
     def _close_settings(self) -> None:
         for card in self.query("#settings-card"):
@@ -1084,6 +1166,9 @@ class CraftApp(App):
         elif button_id == "tab-btn-skills":
             self._switch_settings_section("skills")
             return
+        elif button_id == "tab-btn-integrations":
+            self._switch_settings_section("integrations")
+            return
 
         # Handle MCP server remove buttons
         if button_id and button_id.startswith("mcp-remove-"):
@@ -1129,17 +1214,61 @@ class CraftApp(App):
         elif button_id == "skill-detail-status-btn":
             self._toggle_skill_from_detail_viewer()
 
+        # Handle Integration connect buttons
+        if button_id and button_id.startswith("integ-connect-"):
+            integration_id = button_id[14:]  # Remove "integ-connect-" prefix
+            self._open_integration_connect_modal(integration_id)
+
+        # Handle Integration view buttons
+        if button_id and button_id.startswith("integ-view-"):
+            integration_id = button_id[11:]  # Remove "integ-view-" prefix
+            self._open_integration_detail_viewer(integration_id)
+
+        # Handle Integration disconnect buttons
+        if button_id and button_id.startswith("integ-disconnect-"):
+            integration_id = button_id[17:]  # Remove "integ-disconnect-" prefix
+            self._disconnect_integration(integration_id)
+
+        # Handle Integration modal buttons
+        if button_id == "integ-modal-save":
+            self._save_integration_connect()
+        elif button_id == "integ-modal-cancel":
+            self._close_integration_connect_modal()
+        elif button_id == "integ-modal-oauth":
+            self._start_oauth_connect()
+        elif button_id == "oauth-waiting-cancel":
+            self._cancel_oauth_connect()
+
+        # Handle Integration detail viewer buttons
+        if button_id == "integ-detail-close":
+            self._close_integration_detail_viewer()
+        elif button_id == "integ-detail-add":
+            # Get the integration ID from the stored state
+            if hasattr(self, "_integ_detail_current_id"):
+                self._open_integration_connect_modal(self._integ_detail_current_id)
+                self._close_integration_detail_viewer()
+
+        # Handle per-account disconnect buttons in detail viewer
+        if button_id and button_id.startswith("integ-account-disconnect-"):
+            # Format: integ-account-disconnect-{integration_id}-{account_id}
+            parts = button_id[25:].split("-", 1)  # Remove prefix and split
+            if len(parts) == 2:
+                integration_id, account_id = parts
+                self._disconnect_integration_account(integration_id, account_id)
+
     def _switch_settings_section(self, section: str) -> None:
-        """Switch between Models, MCP, and Skills sections in settings."""
+        """Switch between Models, MCP, Skills, and Integrations sections in settings."""
         # Update button styles
         models_btn = self.query_one("#tab-btn-models", Button)
         mcp_btn = self.query_one("#tab-btn-mcp", Button)
         skills_btn = self.query_one("#tab-btn-skills", Button)
+        integrations_btn = self.query_one("#tab-btn-integrations", Button)
 
         # Reset all buttons
         models_btn.remove_class("-active")
         mcp_btn.remove_class("-active")
         skills_btn.remove_class("-active")
+        integrations_btn.remove_class("-active")
 
         # Activate the selected tab
         if section == "models":
@@ -1148,16 +1277,20 @@ class CraftApp(App):
             mcp_btn.add_class("-active")
         elif section == "skills":
             skills_btn.add_class("-active")
+        elif section == "integrations":
+            integrations_btn.add_class("-active")
 
         # Show/hide sections
         models_section = self.query_one("#section-models", Container)
         mcp_section = self.query_one("#section-mcp", Container)
         skills_section = self.query_one("#section-skills", Container)
+        integrations_section = self.query_one("#section-integrations", Container)
 
         # Hide all sections first
         models_section.add_class("-hidden")
         mcp_section.add_class("-hidden")
         skills_section.add_class("-hidden")
+        integrations_section.add_class("-hidden")
 
         # Show the selected section
         if section == "models":
@@ -1166,6 +1299,8 @@ class CraftApp(App):
             mcp_section.remove_class("-hidden")
         elif section == "skills":
             skills_section.remove_class("-hidden")
+        elif section == "integrations":
+            integrations_section.remove_class("-hidden")
 
     def _open_mcp_env_editor(self, server_name: str) -> None:
         """Open a modal to edit environment variables for an MCP server."""
@@ -1367,3 +1502,322 @@ class CraftApp(App):
                         self.notify("Copied to clipboard!", severity="information", timeout=2)
             except Exception as e:
                 self.notify(f"Could not copy: {e}", severity="error", timeout=3)
+
+    # =========================================================================
+    # Integration Settings Methods
+    # =========================================================================
+
+    def _open_integration_connect_modal(self, integration_id: str) -> None:
+        """Open a modal to connect an integration."""
+        info = get_integration_info(integration_id)
+        if not info:
+            self.notify(f"Integration '{integration_id}' not found", severity="error", timeout=2)
+            return
+
+        # Remove any existing modal
+        for overlay in self.query("#integ-connect-overlay"):
+            overlay.remove()
+
+        # Store current integration ID for later
+        self._integ_connect_current_id = integration_id
+
+        auth_type = info["auth_type"]
+        fields = info.get("fields", [])
+
+        # Build modal content based on auth type
+        if auth_type == "oauth":
+            # OAuth-only: show browser button
+            modal_content = Container(
+                Static(f"Connect {info['name']}", id="integ-modal-title"),
+                Static("This will open a browser window for authentication.", classes="integ-modal-desc"),
+                Horizontal(
+                    Button("Open Browser", id="integ-modal-oauth", classes="integ-modal-btn -primary"),
+                    Button("Cancel", id="integ-modal-cancel", classes="integ-modal-btn"),
+                    id="integ-modal-actions",
+                ),
+                id="integ-connect-modal",
+            )
+        elif auth_type == "interactive":
+            # Interactive (like WhatsApp): show instructions
+            modal_content = Container(
+                Static(f"Connect {info['name']}", id="integ-modal-title"),
+                Static(f"Use the /{integration_id} login command to connect.", classes="integ-modal-desc"),
+                Static("This integration requires an interactive session.", classes="integ-modal-hint"),
+                Horizontal(
+                    Button("Close", id="integ-modal-cancel", classes="integ-modal-btn"),
+                    id="integ-modal-actions",
+                ),
+                id="integ-connect-modal",
+            )
+        elif auth_type == "both":
+            # Has both OAuth and token: show choice or token input
+            field_inputs = []
+            for field in fields:
+                field_inputs.append(Static(field["label"], classes="integ-field-label"))
+                field_inputs.append(
+                    PasteableInput(
+                        placeholder=field.get("placeholder", f"Enter {field['label']}"),
+                        password=field.get("password", False),
+                        id=f"integ-field-{field['key']}",
+                        classes="integ-field-input",
+                    )
+                )
+
+            modal_content = Container(
+                Static(f"Connect {info['name']}", id="integ-modal-title"),
+                Static("Enter credentials or use OAuth:", classes="integ-modal-desc"),
+                Vertical(*field_inputs, id="integ-modal-fields"),
+                Horizontal(
+                    Button("Save", id="integ-modal-save", classes="integ-modal-btn -primary"),
+                    Button("Use OAuth", id="integ-modal-oauth", classes="integ-modal-btn"),
+                    Button("Cancel", id="integ-modal-cancel", classes="integ-modal-btn"),
+                    id="integ-modal-actions",
+                ),
+                id="integ-connect-modal",
+            )
+        else:
+            # Token-only: show input fields
+            field_inputs = []
+            for field in fields:
+                field_inputs.append(Static(field["label"], classes="integ-field-label"))
+                field_inputs.append(
+                    PasteableInput(
+                        placeholder=field.get("placeholder", f"Enter {field['label']}"),
+                        password=field.get("password", False),
+                        id=f"integ-field-{field['key']}",
+                        classes="integ-field-input",
+                    )
+                )
+
+            modal_content = Container(
+                Static(f"Connect {info['name']}", id="integ-modal-title"),
+                Vertical(*field_inputs, id="integ-modal-fields"),
+                Horizontal(
+                    Button("Save", id="integ-modal-save", classes="integ-modal-btn -primary"),
+                    Button("Cancel", id="integ-modal-cancel", classes="integ-modal-btn"),
+                    id="integ-modal-actions",
+                ),
+                id="integ-connect-modal",
+            )
+
+        overlay = Container(modal_content, id="integ-connect-overlay")
+        self.mount(overlay)
+
+    async def _save_integration_connect_async(self, integration_id: str, credentials: dict) -> None:
+        """Async helper to save integration credentials."""
+        try:
+            success, message = await connect_integration_token(integration_id, credentials)
+            if success:
+                self.notify(message, severity="information", timeout=3)
+                self._close_integration_connect_modal()
+                self._refresh_integration_list()
+            else:
+                self.notify(message, severity="error", timeout=4)
+        except Exception as e:
+            self.notify(f"Connection failed: {e}", severity="error", timeout=4)
+
+    def _save_integration_connect(self) -> None:
+        """Save the credentials from the connect modal."""
+        if not hasattr(self, "_integ_connect_current_id"):
+            return
+
+        integration_id = self._integ_connect_current_id
+        fields = get_integration_fields(integration_id)
+
+        # Collect field values
+        credentials = {}
+        for field in fields:
+            input_id = f"#integ-field-{field['key']}"
+            if self.query(input_id):
+                input_widget = self.query_one(input_id, PasteableInput)
+                credentials[field["key"]] = input_widget.value
+
+        # Run the connection asynchronously
+        create_task(self._save_integration_connect_async(integration_id, credentials))
+
+    def _close_integration_connect_modal(self) -> None:
+        """Close the integration connect modal."""
+        for overlay in self.query("#integ-connect-overlay"):
+            overlay.remove()
+        if hasattr(self, "_integ_connect_current_id"):
+            del self._integ_connect_current_id
+
+    async def _start_oauth_connect_async(self, integration_id: str) -> None:
+        """Async helper to start OAuth flow in a background thread."""
+        import asyncio
+        import concurrent.futures
+
+        # Run the blocking OAuth flow in a thread pool to not block the UI
+        loop = asyncio.get_event_loop()
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+        try:
+            # Run the blocking OAuth call in a thread
+            success, message = await loop.run_in_executor(
+                executor,
+                self._run_oauth_sync,
+                integration_id
+            )
+
+            # Check if cancelled
+            if hasattr(self, "_oauth_cancelled") and self._oauth_cancelled:
+                self._oauth_cancelled = False
+                return
+
+            if success:
+                self.notify(message, severity="information", timeout=3)
+                self._refresh_integration_list()
+            else:
+                self.notify(message, severity="error", timeout=4)
+        except concurrent.futures.CancelledError:
+            self.notify("OAuth cancelled", severity="information", timeout=2)
+        except Exception as e:
+            self.notify(f"OAuth failed: {e}", severity="error", timeout=4)
+        finally:
+            executor.shutdown(wait=False)
+            self._close_oauth_waiting_modal()
+
+    def _run_oauth_sync(self, integration_id: str):
+        """Synchronous wrapper to run OAuth flow in a thread."""
+        import asyncio
+
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(connect_integration_oauth(integration_id))
+        finally:
+            loop.close()
+
+    def _start_oauth_connect(self) -> None:
+        """Start OAuth flow for the current integration."""
+        if not hasattr(self, "_integ_connect_current_id"):
+            return
+
+        integration_id = self._integ_connect_current_id
+
+        # Close the connect modal
+        self._close_integration_connect_modal()
+
+        # Show a waiting modal with cancel button
+        self._show_oauth_waiting_modal(integration_id)
+
+        # Run OAuth asynchronously in background thread
+        self._oauth_cancelled = False
+        create_task(self._start_oauth_connect_async(integration_id))
+
+    def _show_oauth_waiting_modal(self, integration_id: str) -> None:
+        """Show a modal while OAuth is in progress with cancel option."""
+        # Remove any existing waiting modal
+        for overlay in self.query("#oauth-waiting-overlay"):
+            overlay.remove()
+
+        info = get_integration_info(integration_id)
+        name = info["name"] if info else integration_id
+
+        modal = Container(
+            Container(
+                Static(f"Connecting to {name}...", id="oauth-waiting-title"),
+                Static("Complete the authentication in your browser.", classes="oauth-waiting-desc"),
+                Static("This window will update automatically when done.", classes="oauth-waiting-hint"),
+                Horizontal(
+                    Button("Cancel", id="oauth-waiting-cancel", classes="oauth-waiting-btn"),
+                    id="oauth-waiting-actions",
+                ),
+                id="oauth-waiting-modal",
+            ),
+            id="oauth-waiting-overlay",
+        )
+        self.mount(modal)
+
+    def _close_oauth_waiting_modal(self) -> None:
+        """Close the OAuth waiting modal."""
+        for overlay in self.query("#oauth-waiting-overlay"):
+            overlay.remove()
+
+    def _cancel_oauth_connect(self) -> None:
+        """Cancel the ongoing OAuth flow."""
+        self._oauth_cancelled = True
+        self._close_oauth_waiting_modal()
+        self.notify("OAuth cancelled", severity="information", timeout=2)
+
+    async def _disconnect_integration_async(self, integration_id: str, account_id: str = None) -> None:
+        """Async helper to disconnect an integration."""
+        try:
+            success, message = await disconnect_integration(integration_id, account_id)
+            if success:
+                self.notify(message, severity="information", timeout=2)
+                self._refresh_integration_list()
+                # Close and reopen detail viewer to update if viewing
+                if account_id and hasattr(self, "_integ_detail_current_id"):
+                    self._close_integration_detail_viewer()
+                    self.call_after_refresh(lambda: self._open_integration_detail_viewer(integration_id))
+            else:
+                self.notify(message, severity="error", timeout=3)
+        except Exception as e:
+            self.notify(f"Disconnect failed: {e}", severity="error", timeout=3)
+
+    def _disconnect_integration(self, integration_id: str) -> None:
+        """Disconnect the first account from an integration."""
+        create_task(self._disconnect_integration_async(integration_id))
+
+    def _disconnect_integration_account(self, integration_id: str, account_id: str) -> None:
+        """Disconnect a specific account from an integration."""
+        create_task(self._disconnect_integration_async(integration_id, account_id))
+
+    def _open_integration_detail_viewer(self, integration_id: str) -> None:
+        """Open a modal to view integration details and connected accounts."""
+        info = get_integration_info(integration_id)
+        if not info:
+            self.notify(f"Integration '{integration_id}' not found", severity="error", timeout=2)
+            return
+
+        # Remove any existing detail overlay
+        for overlay in self.query("#integ-detail-overlay"):
+            overlay.remove()
+
+        # Store current integration ID
+        self._integ_detail_current_id = integration_id
+
+        accounts = info.get("accounts", [])
+
+        # Build account list
+        account_items = []
+        if accounts:
+            for account in accounts:
+                display = account.get("display", "Unknown")
+                acc_id = account.get("id", "")
+                account_items.append(
+                    Horizontal(
+                        Static(f"  {display}", classes="integ-account-info"),
+                        Button("x", id=f"integ-account-disconnect-{integration_id}-{acc_id}", classes="integ-account-disconnect-btn"),
+                        classes="integ-account-row",
+                    )
+                )
+        else:
+            account_items.append(Static("  No accounts connected", classes="integ-account-empty"))
+
+        # Build the detail viewer
+        overlay = Container(
+            Container(
+                Static(f"{info['name']} - Connected Accounts", id="integ-detail-title"),
+                Static(info["description"], id="integ-detail-desc"),
+                VerticalScroll(*account_items, id="integ-detail-accounts"),
+                Horizontal(
+                    Button("Add Another", id="integ-detail-add", classes="integ-detail-btn"),
+                    Button("Close", id="integ-detail-close", classes="integ-detail-btn"),
+                    id="integ-detail-actions",
+                ),
+                id="integ-detail-viewer",
+            ),
+            id="integ-detail-overlay",
+        )
+
+        self.mount(overlay)
+
+    def _close_integration_detail_viewer(self) -> None:
+        """Close the integration detail viewer modal."""
+        for overlay in self.query("#integ-detail-overlay"):
+            overlay.remove()
+        if hasattr(self, "_integ_detail_current_id"):
+            del self._integ_detail_current_id
