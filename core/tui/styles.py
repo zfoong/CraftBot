@@ -120,21 +120,10 @@ TextLog {
 }
 
 #menu-header {
-    align: center middle;
-    height: auto;
-    width: 100%;
-    margin-bottom: 1;
-}
-
-#menu-icon {
-    width: auto;
-    height: auto;
-    margin-right: 0;
-}
-
-#menu-logo {
     text-style: bold;
     content-align: center middle;
+    width: 100%;
+    margin-bottom: 1;
 }
 
 #menu-copy {

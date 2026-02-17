@@ -156,11 +156,7 @@ class CraftApp(App):
     def compose(self) -> ComposeResult:  # pragma: no cover - declarative layout
         yield Container(
             Container(
-                Horizontal(
-                    Static(self._icon_text(), id="menu-icon"),
-                    Static(self._logo_text(), id="menu-logo"),
-                    id="menu-header",
-                ),
+                Static(self._header_text(), id="menu-header"),
                 Vertical(
                     Static("CraftBot V1.2.0. Your Personal AI Assistant that lives inside your machine.", id="provider-hint"),
                     Static(
@@ -213,44 +209,26 @@ class CraftApp(App):
 
     # ────────────────────────────── menu helpers ─────────────────────────────
 
-    def _icon_text(self) -> Text:
-        """Generate the colored robot icon ASCII art (small version)."""
+    def _header_text(self) -> Text:
+        """Generate combined icon and logo as a single Text object for proper centering."""
         orange = "#ff4f18"
         white = "#ffffff"
 
         b = "█"  # block character
         s = " "  # space
 
-        # Small icon: 9 chars wide, 6 rows (no trailing spaces)
-        w = 9  # icon width
-
-        # Format: (row_string, [(start, end, color), ...])
-        # Antenna rows padded with leading spaces only, no trailing spaces
-        icon_data = [
-            # Antenna (2 rows): 3 spaces + 2 orange (no trailing spaces)
-            (s * 3 + b * 2, [(3, 5, orange)]),
-            (s * 3 + b * 2, [(3, 5, orange)]),
-            # Face top - all white
-            (b * w, [(0, w, white)]),
-            # Eye rows (2 rows): white with orange eyes
-            (b * w, [(0, 3, white), (3, 5, orange), (5, 6, white), (6, 8, orange), (8, w, white)]),
-            (b * w, [(0, 3, white), (3, 5, orange), (5, 6, white), (6, 8, orange), (8, w, white)]),
-            # Face bottom - all white
-            (b * w, [(0, w, white)]),
+        # Icon: 9 chars wide, 6 rows
+        icon_w = 9
+        icon_lines = [
+            (s * 2 + b * 2 + s * 5, [(2, 4, orange)]),  # Antenna
+            (s * 2 + b * 2 + s * 5, [(2, 4, orange)]),  # Antenna
+            (b * icon_w, [(0, icon_w, white)]),  # Face top
+            (b * icon_w, [(0, 3, white), (3, 5, orange), (5, 6, white), (6, 8, orange), (8, icon_w, white)]),  # Eyes
+            (b * icon_w, [(0, 3, white), (3, 5, orange), (5, 6, white), (6, 8, orange), (8, icon_w, white)]),  # Eyes
+            (b * icon_w, [(0, icon_w, white)]),  # Face bottom
         ]
 
-        full_text = "\n".join(row for row, _ in icon_data)
-        text = Text(full_text)
-
-        offset = 0
-        for row_str, spans in icon_data:
-            for start, end, color in spans:
-                text.stylize(color, offset + start, offset + end)
-            offset += len(row_str) + 1  # +1 for newline
-
-        return text
-
-    def _logo_text(self) -> Text:
+        # Logo: 67 chars wide, 6 rows
         logo_lines = [
             " ██████╗██████╗  █████╗ ███████╗████████╗██████╗  ██████╗ ████████╗",
             "██╔════╝██╔══██╗██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔═══██╗╚══██╔══╝",
@@ -259,16 +237,38 @@ class CraftApp(App):
             "╚██████╗██║  ██║██║  ██║██║        ██║   ██████╔╝╚██████╔╝   ██║   ",
             " ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝        ╚═╝   ╚═════╝  ╚═════╝    ╚═╝   ",
         ]
-        text = Text("\n".join(logo_lines))
-        # CRAFT = positions 0-40 (41 chars), BOT = positions 41+ (26 chars)
-        craft_len = 41
-        white_style = "#ffffff"
-        orange_style = "#FF4F18"
+
+        # Combine icon and logo side by side with 3 space gap
+        gap = "   "
+        combined_lines = []
+        craft_len = 41  # CRAFT portion length in logo
+
+        for i in range(6):
+            icon_str = icon_lines[i][0]
+            logo_str = logo_lines[i]
+            combined_lines.append(icon_str + gap + logo_str)
+
+        full_text = "\n".join(combined_lines)
+        text = Text(full_text, justify="center")
+
+        # Apply styles
         offset = 0
-        for line in logo_lines:
-            text.stylize(white_style, offset, offset + craft_len)
-            text.stylize(orange_style, offset + craft_len, offset + len(line))
-            offset += len(line) + 1
+        for i in range(6):
+            icon_str, icon_spans = icon_lines[i]
+            logo_str = logo_lines[i]
+            line_len = len(icon_str) + len(gap) + len(logo_str)
+
+            # Style icon parts
+            for start, end, color in icon_spans:
+                text.stylize(color, offset + start, offset + end)
+
+            # Style logo parts (offset by icon width + gap)
+            logo_offset = len(icon_str) + len(gap)
+            text.stylize(white, offset + logo_offset, offset + logo_offset + craft_len)
+            text.stylize(orange, offset + logo_offset + craft_len, offset + logo_offset + len(logo_str))
+
+            offset += line_len + 1  # +1 for newline
+
         return text
 
     def _open_settings(self) -> None:
