@@ -105,7 +105,7 @@ TextLog {
 }
 
 #menu-panel {
-    width: 90;
+    width: 95;
     max-width: 100%;
     max-height: 95%;
     border: none;
@@ -119,9 +119,21 @@ TextLog {
     display: none;
 }
 
+#menu-header {
+    align: center middle;
+    height: auto;
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#menu-icon {
+    width: auto;
+    height: auto;
+    margin-right: 0;
+}
+
 #menu-logo {
     text-style: bold;
-    margin-bottom: 1;
     content-align: center middle;
 }
 
