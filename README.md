@@ -109,7 +109,7 @@ CraftBot awaits your orders, set up your own CraftBot now.
 ## 🔜 Roadmap
 
 - [X] **Memory Module** — Done.
-- [>] **External Tool integration** — Still adding more!
+- [ ] **External Tool integration** — Still adding more!
 - [X] **MCP Layer** — Done.
 - [X] **Skill Layer** — Done.
 - [ ] **Proactive Behaviour** — Pending
