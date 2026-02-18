@@ -3,11 +3,12 @@ apps/controlpanel/.vs/
 apps/chatserver/uploads/
 chroma_db_actions/
 chroma_db_taskdocs/
+chroma_db_memory/
 core/chroma_db_actions/
 **/logs/
 workspace/
-white_collar_agent/external_tools/
-white_collar_agent/generated_task_document/
+craftbot/external_tools/
+craftbot/generated_task_document/
 **/__pycache__/
 **/rag_docs_actions/
 **/rag_docs_taskdocs/
@@ -15,6 +16,7 @@ ollama_data/
 config.json
 node_modules
 .env
+.credentials/
 **/agent_logs.txt
 **/memory.txt
 **/gui/config
@@ -28,3 +30,8 @@ debug_images
 .vscode/
 .idea/
 *.spec
+**/.whatsapp_web_sessions/
+**/build
+**/build_*
+**/dist
+**/release

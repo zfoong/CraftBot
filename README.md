@@ -4,7 +4,7 @@
 </div>
 <br>
 <div align="center">
-    <img src="assets/white_collar_agent_icons_text.png" alt="CraftOS Logo" width="480"/>
+    <img src="assets/craftbot_logo_text_small.png" alt="CraftBot Logo" width="480"/>
 </div>
 <br>
 
@@ -12,11 +12,11 @@
   <img src="https://img.shields.io/badge/OS-Windows-blue?logo=windows&logoColor=white" alt="Windows">
   <img src="https://img.shields.io/badge/OS-Linux-yellow?logo=linux&logoColor=black" alt="Linux">
   
-  <a href="https://github.com/zfoong/WhiteCollarAgent">
-    <img src="https://img.shields.io/github/stars/zfoong/WhiteCollarAgent?style=social" alt="GitHub Repo stars">
+  <a href="https://github.com/zfoong/CraftBot">
+    <img src="https://img.shields.io/github/stars/zfoong/CraftBot?style=social" alt="GitHub Repo stars">
   </a>
 
-  <img src="https://img.shields.io/github/license/zfoong/WhiteCollarAgent" alt="License">
+  <img src="https://img.shields.io/github/license/zfoong/CraftBot" alt="License">
 
   <a href="https://discord.gg/ZN9YHc37HG">
     <img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Discord">
@@ -33,32 +33,85 @@
 
 ## 🚀 Overview
 <h3 align="center">
-White Collar Agent is your Personal AI Assistant that lives inside your machine and works 24/7 for you. 
+CraftBot is your Personal AI Assistant that lives inside your machine and works 24/7 for you. 
 </h3>
 
-It can autonomously interpret tasks, plan actions, and execute actions to achieve complex goals. <br/>	
-This is an open-source project and is still in development, so we welcome any suggestions, contributions, and feedback! You are free to use, host, and monetize this project (with credit given in case of distribution and monetization).
+It autonomously interprets tasks, plans actions, and executes them to achieve your goals.
+
+Set up CraftBot on your machine or a separate environment. Interact with it via the TUI or from anywhere through your favorite messaging apps. Extend the agent's capabilities with MCPs and Skills, and connect to tools like Google Workspace, Slack, Notion, and Telegram to expand its reach. CraftBot intelligently switches between CLI mode for standard tasks and GUI mode when screen interaction is required (GUI mode runs in an isolated environment so it won't disturb your work).
+
+CraftBot awaits your orders, set up your own CraftBot now.
 
 ---
 
 ## ✨ Features
 
-- 🧠 **Single Base Agent Architecture** — Simple, extendable core that handles reasoning, planning, and execution.  
-- ⚙️ **CLI/GUI mode** — Agent can switch between CLI and GUI mode according to the complexity of the task. GUI mode is still in experimental phase 🧪.
-- 🧩 **Subclass & Extend** — Build your own agents by inheriting from the base class.  
-- 🔍 **Task Document Interface** — Define structured tasks for the agent to perform in-context learning.  
-- 🧰 **Actions Library** — Reusable tools (web search, code execution, I/O, etc.).  
-- ⚡ **Lightweight & Cross-Platform** — Works seamlessly across Linux and Windows.
-- 💻 **Support multiple LLM providers** — Bring your own API keys (Anthropic, OpenAI, Gemini, BytePlus, or even running your own Ollama endpoint).
+- **CLI/GUI Mode** — Agent intelligently switches between CLI and GUI mode based on task complexity. GUI mode enables full desktop automation with screen capture, mouse/keyboard control, and window management.
+- **Multi-LLM Support** — Flexible LLM provider system supporting OpenAI, Google Gemini, Anthropic Claude, BytePlus, and local Ollama models. Easily switch between providers.
+- **37+ Built-in Actions** — Comprehensive action library including:
+  - **File Operations**: Find, read, write, grep, and convert files
+  - **Web Capabilities**: HTTP requests, web search, PDF generation, image generation
+  - **GUI Automation**: Mouse clicks, keyboard input, screenshots, window control
+  - **Application Control**: Open apps, manage windows, clipboard operations
+- **Persistent Memory** — RAG-based semantic memory system powered by ChromaDB. The agent remembers context across sessions with intelligent retrieval and incremental updates.
+- **External tools integration** — Connect to Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord, and Telegram (more to come!) with embedded credentials and OAuth support.
+- **MCP** — Model Context Protocol integration for extending agent capabilities with external tools and services.
+- **Skills** — Extensible skill framework with built-in skills for task planning, research, code review, git operations, and more.
+- **Cross-Platform** — Full support for Windows and Linux with platform-specific code variants and Docker containerization.
 
 > [!IMPORTANT]
-> **Note for GUI mode:** The GUI mode is still in experimental phase. This means you will encounter a lot of issues when the agent decides to switch to GUI mode. We are still working on it.
+> **Note for GUI mode:** The GUI mode is still in experimental phase. This means you may encounter issues when the agent switches to GUI mode. We are actively improving this feature.
+
+---
+
+## 🧩 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    User Interface Layer                      │
+│  ┌──────────────────┐  ┌──────────────────────────────────┐ │
+│  │  TUI (Textual)   │  │  GUI Module (Docker + Gradio)    │ │
+│  └──────────────────┘  └──────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Agent Base                              │
+│           (Task orchestration & lifecycle management)        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────┬──────────┼──────────┬─────────┐
+        ▼         ▼          ▼          ▼         ▼
+   ┌─────────┐ ┌────────┐ ┌────────┐ ┌───────┐ ┌────────┐
+   │   LLM   │ │Context │ │ Action │ │ Event │ │ Memory │
+   │Interface│ │ Engine │ │  Mgmt  │ │Stream │ │  (RAG) │
+   └─────────┘ └────────┘ └────────┘ └───────┘ └────────┘
+```
+
+| Component | Description |
+|-----------|-------------|
+| **Agent Base** | Core orchestration layer that manages task lifecycle, coordinates between components, and handles the main agentic loop. |
+| **LLM Interface** | Unified interface supporting multiple LLM providers (OpenAI, Gemini, Anthropic, BytePlus, Ollama). |
+| **Context Engine** | Generates optimized prompts with KV-cache support. |
+| **Action Manager** | Retrieves and executes actions from the library. Custom action is easy to extend |
+| **Action Router** | Intelligently selects the best matching action based on task requirements and resolves input parameters via LLM when needed. |
+| **Event Stream** | Real-time event publishing system for task progress tracking, UI updates, and execution monitoring. |
+| **Memory Manager** | RAG-based semantic memory using ChromaDB. Handles memory chunking, embedding, retrieval, and incremental updates. |
+| **State Manager** | Global state management for tracking agent execution context, conversation history, and runtime configuration. |
+| **Task Manager** | Manages task definitions, enable simple and complex tasks bode, create todos, and multi-step workflow tracking. |
+| **Skill Manager** | Loads and injects pluggable skills into the agent context. |
+| **MCP Adapter** | Model Context Protocol integration that converts MCP tools into native actions. |
+| **TUI Interface** | Terminal user interface built with Textual framework for interactive command-line operation. |
+| **GUI Module** | Experimental GUI automation using Docker containers, OmniParser for UI element detection, and Gradio client. |
+
+---
 
 ## 🔜 Roadmap
 
-- [ ] **Memory Module** — Coming next!
-- [ ] **External Tool integration** — Pending
-- [ ] **MCP Layer** — Pending
+- [X] **Memory Module** — Done.
+- [ ] **External Tool integration** — Still adding more!
+- [X] **MCP Layer** — Done.
+- [X] **Skill Layer** — Done.
 - [ ] **Proactive Behaviour** — Pending
 
 ---
@@ -72,8 +125,8 @@ This is an open-source project and is still in development, so we welcome any su
 
 ### Installation
 ```bash
-git clone https://github.com/zfoong/WhiteCollarAgent.git
-cd WhiteCollarAgent
+git clone https://github.com/zfoong/CraftBot.git
+cd CraftBot
 conda env create -f environment.yml
 ```
 
@@ -92,7 +145,7 @@ Run:
 python start.py
 ```
 
-This executes the built-in **White Collar Agent**, that you can communicate to:
+This executes the built-in **CraftBot**, that you can communicate to:
 1. Talk to the agent  
 2. Ask it to perform complex series of tasks  
 3. Run command /help to seek help
@@ -106,11 +159,93 @@ This executes the built-in **White Collar Agent**, that you can communicate to:
 | `--fast` | Skip unecessary update checks and launch agent faster. <br> <u><b>NOTE:</b></u> You have to run without `--fast` the first time you launch |
 | `--no-omniparser` | Disable the use of microsoft omniparser to analyse UI - will greatly reduce GUI action accuracy. It is highly encouraged to use omniparser |
 | `--no-conda` | Installs all packages globally instead of inside a conda environment |
+| `--no-gui` | Disable GUI mode. The agent will run in CLI-only mode and cannot switch to GUI mode. This setting is persisted across restarts. OmniParser is also automatically disabled |
+| `--enable-gui` | Re-enable GUI mode if it was previously disabled with `--no-gui`. This setting is persisted across restarts |
 
 **EXAMPLE**
 ```bash
 python start.py --only-cpu --fast
 ```
+
+> [!HINT]
+> **Onboarding:** Launching CraftBot for the first time will trigger an onboarding sequence where you set up API keys, the agent's name, MCPs, and Skills. Then, chatting with your CraftBot for the first time will prompt an interview session so it can update its USER.md and AGENT.md for future reference.
+
+---
+
+## 🔐 OAuth Setup (Optional)
+
+The agent can connect to various services using OAuth. Release builds come with embedded credentials, but you can also use your own.
+
+### Quick Start
+
+For release builds with embedded credentials:
+```
+/google login    # Connect Google Workspace
+/zoom login      # Connect Zoom
+/slack invite    # Connect Slack
+/notion invite   # Connect Notion
+/linkedin login  # Connect LinkedIn
+```
+
+### Service Details
+
+| Service | Auth Type | Command | Requires Secret? |
+|---------|-----------|---------|------------------|
+| Google | PKCE | `/google login` | No (PKCE) |
+| Zoom | PKCE | `/zoom login` | No (PKCE) |
+| Slack | OAuth 2.0 | `/slack invite` | Yes |
+| Notion | OAuth 2.0 | `/notion invite` | Yes |
+| LinkedIn | OAuth 2.0 | `/linkedin login` | Yes |
+
+### Using Your Own Credentials
+
+If you prefer to use your own OAuth credentials, add them to your `.env` file:
+
+#### Google (PKCE - only Client ID needed)
+```bash
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+```
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable Gmail, Calendar, Drive, and People APIs
+3. Create OAuth credentials as **Desktop app** type
+4. Copy the Client ID (secret not required for PKCE)
+
+#### Zoom (PKCE - only Client ID needed)
+```bash
+ZOOM_CLIENT_ID=your-zoom-client-id
+```
+1. Go to [Zoom Marketplace](https://marketplace.zoom.us/)
+2. Create an OAuth app
+3. Copy the Client ID
+
+#### Slack (Requires both)
+```bash
+SLACK_SHARED_CLIENT_ID=your-slack-client-id
+SLACK_SHARED_CLIENT_SECRET=your-slack-client-secret
+```
+1. Go to [Slack API](https://api.slack.com/apps)
+2. Create a new app
+3. Add OAuth scopes: `chat:write`, `channels:read`, `users:read`, etc.
+4. Copy Client ID and Client Secret
+
+#### Notion (Requires both)
+```bash
+NOTION_SHARED_CLIENT_ID=your-notion-client-id
+NOTION_SHARED_CLIENT_SECRET=your-notion-client-secret
+```
+1. Go to [Notion Developers](https://developers.notion.com/)
+2. Create a new integration (Public integration)
+3. Copy OAuth Client ID and Secret
+
+#### LinkedIn (Requires both)
+```bash
+LINKEDIN_CLIENT_ID=your-linkedin-client-id
+LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
+```
+1. Go to [LinkedIn Developers](https://developer.linkedin.com/)
+2. Create an app
+3. Add OAuth 2.0 scopes
+4. Copy Client ID and Client Secret
 
 ---
 ## Run with container
@@ -124,7 +259,7 @@ Below are the setup instruction of running our agent with container.
 From the repository root:
 
 ```bash
-docker build -t white-collar-agent .
+docker build -t craftbot .
 ```
 
 ### Run the container
@@ -132,13 +267,13 @@ docker build -t white-collar-agent .
 The image is configured to launch the agent with `python -m core.main` by default. To run it interactively:
 
 ```bash
-docker run --rm -it white-collar-agent
+docker run --rm -it craftbot
 ```
 
 If you need to supply environment variables, pass an env file (for example, based on `.env.example`):
 
 ```bash
-docker run --rm -it --env-file .env white-collar-agent
+docker run --rm -it --env-file .env craftbot
 ```
 
 Mount any directories that should persist outside the container (such as data or cache folders) using `-v`, and adjust ports or additional flags as needed for your deployment. The container ships with system dependencies for OCR (`tesseract`), screen automation (`pyautogui`, `mss`, X11 utilities, and a virtual framebuffer), and common HTTP clients so the agent can work with files, network APIs, and GUI automation inside the container.
@@ -154,7 +289,7 @@ GUI actions (mouse/keyboard events, screenshots) require an X11 server. You can 
     -e DISPLAY=$DISPLAY \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $(pwd)/data:/app/core/data \
-    white-collar-agent
+    craftbot
   ```
 
   Add extra `-v` mounts for any folders the agent should read/write.
@@ -162,65 +297,10 @@ GUI actions (mouse/keyboard events, screenshots) require an X11 server. You can 
 * Run headlessly with a virtual display:
 
   ```bash
-	docker run --rm -it --env-file .env white-collar-agent bash -lc "Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99 && exec python -m core.main"
+	docker run --rm -it --env-file .env craftbot bash -lc "Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99 && exec python -m core.main"
   ```
 
 By default the image uses Python 3.10 and bundles the Python dependencies from `environment.yml`/`requirements.txt`, so `python -m core.main` works out of the box.
-
----
-
-## 🧠 Example: Build a Custom Agent
-
-You can easily create your own specialized agent by extending the base agent:
-
-```python
-import asyncio
-from core.agent_base import AgentBase
-
-class MyCustomAgent(AgentBase):
-    def __init__(
-        self,
-        *,
-        data_dir: str = "core/data",
-        chroma_path: str = "./chroma_db",
-    ):
-        super().__init__(
-            data_dir=data_dir,
-            chroma_path=chroma_path,
-        )
-        # Your implementation
-        def _generate_role_info_prompt(self) -> str:
-            """
-            Defines this agent's role, behaviour, and purpose.
-            """
-            return (
-                "You are MyCustomAgent — an intelligent research assistant. "
-                "Your role is to find, summarize, and synthesize information from multiple sources. "
-                "You respond concisely, prioritize factual accuracy, and cite sources when relevant. "
-                "If you cannot find something, you explain why and suggest alternatives."
-            )
-
-agent = MyCustomAgent(
-    data_dir=os.getenv("DATA_DIR", "core/data"),
-    chroma_path=os.getenv("CHROMA_PATH", "./chroma_db"),
-)
-asyncio.run(agent.run())
-```
-
-Here, you’re reusing all the core planning, reasoning, and execution logic —  
-just plugging in your own **personality, actions, and task documents**.
-
----
-
-## 🧩 Architecture Overview
-
-| Component | Description |
-|------------|-------------|
-| **BaseAgent** | The core reasoning and execution engine — can be subclassed or used directly. |
-| **Action / Tool** | Reusable atomic functions (e.g., web search, API calls, file ops). |
-| **Task Document** | Describes what the agent must achieve and how. |
-| **Planner / Executor** | Handles goal decomposition, script generation, and execution. |
-| **LLM Wrapper** | Unified layer for model interactions (OpenAI, Gemini, etc.). |
 
 ---
 
@@ -237,4 +317,4 @@ This project is licensed under the [MIT License](LICENSE). You are free to use, 
 ## ⭐ Acknowledgements
 
 Developed and maintained by [CraftOS](https://craftos.net/) and contributors [@zfoong](https://github.com/zfoong) and [@ahmad-ajmal](https://github.com/ahmad-ajmal).  
-If you find **White Collar Agent** useful, please ⭐ the repository and share it with others!
+If you find **CraftBot** useful, please ⭐ the repository and share it with others!

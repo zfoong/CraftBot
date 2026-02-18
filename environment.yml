@@ -1,4 +1,4 @@
-name: white-collar-agent
+name: craftbot
 channels:
   - conda-forge
   - defaults
@@ -40,6 +40,9 @@ dependencies:
       - python3-xlib
       - tenacity
       - docling
-      - textual>=0.58.0
+      - textual>=7.0.0
+      - textual-image>=0.8.0
       - gradio_client
       - python-dotenv
+      - watchdog
+      - telethon

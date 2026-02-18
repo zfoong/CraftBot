@@ -4,14 +4,14 @@ from tzlocal import get_localzone
 import json
 
 from core.config import AGENT_WORKSPACE_ROOT
-from core.gui.handler import GUIHandler
 from core.logger import logger
 from core.prompt import (
     AGENT_ROLE_PROMPT,
     AGENT_INFO_PROMPT,
-    AGENT_STATE_PROMPT,
     ENVIRONMENTAL_CONTEXT_PROMPT,
+    AGENT_FILE_SYSTEM_CONTEXT_PROMPT,
     POLICY_PROMPT,
+    USER_PROFILE_PROMPT,
 )
 from core.state.state_manager import StateManager
 from core.state.agent_state import STATE
@@ -24,6 +24,11 @@ core.context_engine
 The main context engine that constructs
 system prompt and user prompt. System prompt for agent roles are overwrite
 by specialise agent.
+
+KV CACHING OPTIMIZATION:
+- System prompts are now COMPLETELY STATIC (no dynamic content)
+- All dynamic content (event_stream, task_state, agent_state) moved to user prompts
+- This maximizes KV cache hit rate for LLM inference
 """
 
 class ContextEngine:
@@ -32,6 +37,10 @@ class ContextEngine:
     The engine centralizes all context-building logic so callers can request a
     ready-to-send pair of system and user messages without worrying about where
     the information originates (conversation history, event stream, etc.).
+
+    KV Caching Strategy:
+    - System prompt: STATIC only (agent_info, policy, role_info, environment basics)
+    - User prompt: Static template first, then dynamic content, then output format
     """
 
     def __init__(self, state_manager: StateManager, agent_identity="General AI Assistant"):
@@ -47,138 +56,346 @@ class ContextEngine:
         self.user_messages = []
         self._role_info_func = None  # injected by AgentBase or subclass
         self.state_manager = state_manager
+        self._memory_manager = None  # injected by AgentBase after creation
+
+    def set_memory_manager(self, memory_manager) -> None:
+        """
+        Set the memory manager for context retrieval.
+
+        Called by AgentBase after initialization to enable memory context
+        in prompts.
+        """
+        self._memory_manager = memory_manager
         
-    # ─────────────── SYSTEM MESSAGE COMPONENTS ───────────────
+    # ─────────────── SYSTEM MESSAGE COMPONENTS (STATIC ONLY) ───────────────
+    # These components are STATIC and contribute to KV cache hits
 
     def create_system_agent_info(self):
         """
         Create a system message block describing the CraftOS, agent's identity and mechanism.
+        SEMI-STATIC - agent name from onboarding config, suitable for KV caching per session.
         """
-        # prompt = RESOLVE_ACTION_INPUT_PROMPT.format()
-        prompt = AGENT_INFO_PROMPT
+        from core.onboarding.manager import onboarding_manager
+        agent_name = onboarding_manager.state.agent_name or "Agent"
+        prompt = AGENT_INFO_PROMPT.format(agent_name=agent_name)
         return prompt
-    
+
     def set_role_info_hook(self, hook_fn):
         """
         Injects a role-specific system prompt generator.
-    
+
         This should be a callable that returns a string.
         """
         self._role_info_func = hook_fn
-    
+
     def create_system_role_info(self):
         """
         Calls the injected role-specific prompt function, if any.
+        SEMI-STATIC - changes only when agent role changes (rare).
         """
         if self._role_info_func:
             role = self._role_info_func()
             return AGENT_ROLE_PROMPT.format(role=role)
         return ""
 
-    def create_system_agent_state(self):
-        """Return formatted agent properties for the current session."""
-        agent_properties = STATE.get_agent_properties()
-
-        if agent_properties:
-            prompt = AGENT_STATE_PROMPT.format(
-                current_task_id=agent_properties.get("current_task_id"),
-                action_count=agent_properties.get("action_count", 0),
-                max_actions_per_task=agent_properties.get("max_actions_per_task"),
-                token_count=agent_properties.get("token_count", 0),
-                max_tokens_per_task=agent_properties.get("max_tokens_per_task"),
-            )
-            # Add GUI mode status
-            gui_mode_status = "GUI mode" if STATE.gui_mode else "CLI mode"
-            return (
-                "\nThe current agent state is as follows:"
-                f"\n{prompt}"
-                f"\n- Current Mode: {gui_mode_status}"
-            )
-        else:
-            # Even if no task, show mode
-            gui_mode_status = "GUI mode" if STATE.gui_mode else "CLI mode"
-            return f"\nThe current agent state:\n- Current Mode: {gui_mode_status}"
-
-    def create_system_conversation_history(self):
-        """Return formatted conversation history for the current session."""
-
-        conversation_state = STATE.conversation_state
-
-        if conversation_state:
-            return (
-                "\nThis is the conversation history (from oldest to newest messages):"
-                f"\n{conversation_state}"
-            )
-        return "There is no stored conversation history for the current session yet."
-
-    def create_system_event_stream_state(self):
-        """Return formatted event stream context for the current session."""
-
-        event_stream = STATE.event_stream
-
-        if event_stream:
-            return (
-                "\nUse the event stream to understand the current situation, past agent actions to craft the input parameters:\nEvent stream (oldest to newest):"
-                f"\n{event_stream}"
-            )
-        return ""
-
-    def create_system_gui_event_stream_state(self):
-        """Return formatted GUI event stream context for the current session."""
-        gui_event_stream: str = GUIHandler.gui_module.get_gui_event_stream()
-        if gui_event_stream:
-            return (
-                "\nUse the GUI event stream to understand the current situation, past agent actions to craft the input parameters:\nGUI Event stream (oldest to newest):"
-                f"\n{gui_event_stream}"
-            )
-        return ""
-
-    def create_system_task_state(self):
-        """Return formatted task/plan state for the current session."""
-
-        current_task: Optional[Task] = STATE.current_task
-
-        if current_task:
-            current_task_dict: Dict[str, Any] = current_task.to_dict(fold=True, current_step_index=STATE.agent_properties.get_property("current_step_index"))
-            return "\nThe plan of the current on-going task:" + f"\n{json.dumps(current_task_dict, indent=4)}"
-        return ""
-
     def create_system_policy(self):
         """
         Create a system message block with constraints: safety, compliance, privacy, do/don't lists, etc.
+        STATIC - suitable for KV caching.
         """
         prompt = POLICY_PROMPT
         return prompt
 
     def create_system_environmental_context(self):
         """
-        Create a system message block with environmental & temporal context
+        Create a system message block with environmental context.
+        STATIC version - no timestamp to maximize KV cache hits.
         """
         import platform
         local_timezone = get_localzone()
-        now = datetime.now(local_timezone)
-        current_time = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat().replace("+00:00","Z")
         prompt = ENVIRONMENTAL_CONTEXT_PROMPT.format(
-            current_time=current_time, 
-            timezone=now.strftime('%Z'),
-            user_location=local_timezone, # TODO Not accurate! 
+            user_location=local_timezone,
             working_directory=AGENT_WORKSPACE_ROOT,
             operating_system=platform.system(),
             os_version=platform.release(),
             os_platform=platform.platform(),
-            vm_operating_system="Linux", # TODO hard coded value to match the current VM setting
-            vm_os_version="6.12.13", # TODO hard coded value to match the current VM setting
-            vm_os_platform="Linux a5e39e32118c 6.12.13 #1 SMP Thu Mar 13 11:34:50 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux", # TODO hard coded value to match the current VM setting
+            vm_operating_system="Linux",
+            vm_os_version="6.12.13",
+            vm_os_platform="Linux a5e39e32118c 6.12.13 #1 SMP Thu Mar 13 11:34:50 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux",
             vm_resolution="1064 x 1064"
-            )
+        )
         return prompt
-    
+
+    def create_system_file_system_context(self):
+        """
+        Create a system message block with agent file system context.
+        STATIC - describes the agent's persistent file system structure.
+        """
+        from core.config import AGENT_FILE_SYSTEM_PATH
+        prompt = AGENT_FILE_SYSTEM_CONTEXT_PROMPT.format(
+            agent_file_system_path=AGENT_FILE_SYSTEM_PATH,
+        )
+        return prompt
+
+    def create_system_user_profile(self):
+        """
+        Create a system message block with user profile from USER.md.
+        SEMI-STATIC - reads user profile from file, suitable for KV caching per session.
+        """
+        from core.config import AGENT_FILE_SYSTEM_PATH
+        user_md_path = AGENT_FILE_SYSTEM_PATH / "USER.md"
+
+        try:
+            if user_md_path.exists():
+                content = user_md_path.read_text(encoding="utf-8").strip()
+                if content:
+                    return USER_PROFILE_PROMPT.format(user_profile_content=content)
+        except Exception as e:
+            logger.warning(f"[CONTEXT] Failed to read USER.md: {e}")
+
+        return ""  # Return empty if no user profile available
+
     def create_system_base_instruction(self):
         """
         Create a system message of instruction.
+        STATIC - suitable for KV caching.
         """
-        return "Please assist the user using the context given in the conversation or event stream"
+        return "Please assist the user using the context given in the conversation or event stream."
 
+    # ─────────────── USER PROMPT DYNAMIC COMPONENTS ───────────────
+    # These components are DYNAMIC and should be included in user prompts
+    # They are placed AFTER static template content but BEFORE output format
+
+    def get_event_stream(self) -> str:
+        """
+        Get the event stream content for inclusion in user prompts.
+        """
+        event_stream = STATE.event_stream
+        if event_stream:
+            return (
+                "<event_stream>\n"
+                "Use the event stream to understand the current situation and past agent actions:\n"
+                f"{event_stream}\n"
+                "</event_stream>"
+            )
+        return "<event_stream>\n(no events yet)\n</event_stream>"
+
+    def get_event_stream_delta(self, call_type: str) -> tuple[str, bool]:
+        """
+        Get only new events since the last session sync for session caching.
+
+        For BytePlus session caching, we only want to send new events
+        instead of the full event stream on subsequent calls.
+
+        Args:
+            call_type: The type of LLM call (e.g., "action_selection")
+
+        Returns:
+            Tuple of (delta_events_wrapped, has_delta).
+            - delta_events_wrapped: The new events wrapped in event_stream tags, or empty string
+            - has_delta: True if there are new events to send
+        """
+        from core.event_stream.event_stream_manager import EventStreamManager
+
+        event_stream_manager: EventStreamManager = self.state_manager.event_stream_manager
+        stream = event_stream_manager.get_stream()
+
+        if not stream:
+            return "", False
+
+        delta_str, has_delta = stream.get_delta_events(call_type)
+
+        if not has_delta:
+            return "", False
+
+        # Wrap delta events in the expected format
+        # Note: No closing tag - this is continuation of the event stream
+        return delta_str, True
+
+    def mark_event_stream_synced(self, call_type: str) -> None:
+        """
+        Mark that the event stream has been synced to a session cache.
+
+        Called after sending events to a session cache.
+
+        Args:
+            call_type: The type of LLM call
+        """
+        from core.event_stream.event_stream_manager import EventStreamManager
+
+        event_stream_manager: EventStreamManager = self.state_manager.event_stream_manager
+        stream = event_stream_manager.get_stream()
+
+        if stream:
+            stream.mark_session_synced(call_type)
+
+    def reset_event_stream_sync(self, call_type: str) -> None:
+        """
+        Reset the session sync point for the event stream.
+
+        Called when a session cache is invalidated/recreated.
+
+        Args:
+            call_type: The type of LLM call
+        """
+        from core.event_stream.event_stream_manager import EventStreamManager
+
+        event_stream_manager: EventStreamManager = self.state_manager.event_stream_manager
+        stream = event_stream_manager.get_stream()
+
+        if stream:
+            stream.reset_session_sync(call_type)
+
+    def get_task_state(self) -> str:
+        """
+        Get the current task state for inclusion in user prompts.
+
+        KV CACHING OPTIMIZATION:
+        - This method returns STATIC content only (task name, instruction, mode, skills)
+        - Todos are NOT included here - they are in the event stream via _emit_todos_event()
+        - This ensures KV cache hits since task state doesn't change during execution
+        """
+        current_task: Optional[Task] = STATE.current_task
+
+        if current_task:
+            # Check if this is a simple task
+            is_simple = getattr(current_task, "mode", "complex") == "simple"
+
+            if is_simple:
+                # Simple task - streamlined output
+                return (
+                    "<current_task>\n"
+                    f"Task: {current_task.name} [SIMPLE MODE]\n"
+                    f"Instruction: {current_task.instruction}\n"
+                    "Mode: Simple task - execute directly, no todos required\n"
+                    "</current_task>"
+                )
+
+            # Complex task - static info only (todos are in event stream)
+            lines = [
+                "<current_task>",
+                f"Task: {current_task.name}",
+                f"Instruction: {current_task.instruction}",
+                "Mode: Complex task - use todos in event stream to track progress",
+            ]
+
+            # Add skill instructions if present (static for task duration)
+            skill_instructions = self.get_skill_instructions()
+            if skill_instructions:
+                lines.append("")
+                lines.append(skill_instructions)
+
+            lines.append("</current_task>")
+            return "\n".join(lines)
+        return "<current_task>\n(no active task)\n</current_task>"
+
+    def get_skill_instructions(self) -> str:
+        """
+        Get instructions from skills selected for the current task.
+
+        Returns:
+            Formatted skill instructions string, or empty string if no skills.
+        """
+        current_task: Optional[Task] = STATE.current_task
+
+        if not current_task:
+            return ""
+
+        selected_skills = getattr(current_task, "selected_skills", [])
+        if not selected_skills:
+            return ""
+
+        try:
+            from core.skill.skill_manager import skill_manager
+            instructions = skill_manager.get_skill_instructions(selected_skills)
+
+            if not instructions:
+                return ""
+
+            return (
+                "<active_skills>\n"
+                "Follow these skill instructions for this task:\n\n"
+                f"{instructions}\n"
+                "</active_skills>"
+            )
+        except ImportError:
+            return ""
+        except Exception as e:
+            logger.warning(f"[SKILLS] Failed to get skill instructions: {e}")
+            return ""
+
+    def get_agent_state(self) -> str:
+        """
+        Get the current agent state for inclusion in user prompts.
+        """
+        agent_properties = STATE.get_agent_properties()
+        gui_mode_status = "GUI mode" if STATE.gui_mode else "CLI mode"
+
+        if agent_properties:
+            return (
+                "<agent_state>\n"
+                f"- Active Task ID: {agent_properties.get('current_task_id')}\n"
+                f"- Current Mode: {gui_mode_status}\n"
+                "</agent_state>"
+            )
+        return f"<agent_state>\n- Current Mode: {gui_mode_status}\n</agent_state>"
+
+    def get_memory_context(self, query: Optional[str] = None, top_k: int = 5) -> str:
+        """
+        Get relevant memories for inclusion in prompts.
+
+        Uses the MemoryManager to retrieve semantically relevant memories
+        based on the current query or task context.
+
+        Args:
+            query: Optional query to search memories. If not provided,
+                   uses the current task instruction or returns empty.
+            top_k: Maximum number of memory pointers to retrieve.
+
+        Returns:
+            Formatted memory context string, or empty string if no memories.
+        """
+        if not self._memory_manager:
+            return ""
+
+        # Determine query from context if not provided
+        if not query:
+            current_task: Optional[Task] = STATE.current_task
+            if current_task:
+                query = current_task.instruction
+            else:
+                # No query and no task - skip memory retrieval
+                return ""
+
+        try:
+            # Retrieve relevant memory pointers
+            pointers = self._memory_manager.retrieve(query, top_k=top_k, min_relevance=0.3)
+
+            if not pointers:
+                return ""
+
+            # Format memory pointers for prompt
+            lines = ["<relevant_memories>"]
+            lines.append("Historical context from previous interactions (verify against current event stream):")
+            lines.append("")
+
+            for ptr in pointers:
+                # Format: [file] section - summary (relevance: X.XX)
+                lines.append(
+                    f"- [{ptr.file_path}] {ptr.section_path}: {ptr.summary} "
+                    f"(relevance: {ptr.relevance_score:.2f})"
+                )
+
+            lines.append("")
+            lines.append("Note: Memories may be outdated. Trust current event stream over memories if they conflict.")
+            lines.append("Use memory_search action to retrieve full content if needed.")
+            lines.append("</relevant_memories>")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.warning(f"[MEMORY] Failed to retrieve memory context: {e}")
+            return ""
 
     # ──────────────────────── USER MESSAGE COMPONENTS ────────────────────────
 
@@ -196,7 +413,7 @@ class ContextEngine:
             return "No specific format requested."
         return f"Expected Output Format:\n{expected_format}"
 
-    # ──────────────────────── MAKE PROMPT ────────────────────────
+    # ──────────────────────── MAKE PROMPT (STATIC SYSTEM ONLY) ────────────────────────
     def make_prompt(
         self,
         query=None,
@@ -207,25 +424,27 @@ class ContextEngine:
         """
         Assembles the system and user messages for the LLM with configurable sections.
 
+        KV CACHING OPTIMIZATION:
+        - System prompt contains ONLY STATIC content (agent_info, user_profile, role_info, policy, environment, file_system, base_instruction)
+        - Dynamic content (event_stream, task_state, agent_state) must be added to user prompts by callers
+        - Use get_event_stream(), get_task_state(), get_agent_state() for user prompts
+
         :param system_flags: Optional dict of booleans to enable/disable system sections.
-            Supported keys: ``agent_info``, ``role_info``, ``conversation_history``,
-            ``event_stream``, ``task_state``, ``policy``, ``environment`` and
-            ``base_instruction``. Defaults to all enabled except ``policy``.
+            Supported keys (STATIC ONLY): ``agent_info``, ``user_profile``, ``role_info``, ``policy``,
+            ``environment``, ``file_system``, and ``base_instruction``.
         :param user_flags: Optional dict of booleans to enable/disable user sections.
             Supported keys: ``query`` and ``expected_output``. Defaults to ``query``
             enabled and ``expected_output`` disabled.
         """
 
+        # System prompt: STATIC ONLY for KV caching
         system_default_flags = {
             "role_info": True,
             "agent_info": True,
-            "agent_state": self.state_manager.is_running_task(),
-            "conversation_history": True,
-            "event_stream": True,
-            "gui_event_stream": False,
-            "task_state": True,
+            "user_profile": True,  # inject USER.md content for personalization
             "policy": False,  # default off to save tokens
             "environment": True,
+            "file_system": True,
             "base_instruction": True,
         }
         user_default_flags = {
@@ -236,16 +455,14 @@ class ContextEngine:
         system_flags = {**system_default_flags, **(system_flags or {})}
         user_flags = {**user_default_flags, **(user_flags or {})}
 
+        # STATIC system sections only - ordered for maximum KV cache benefit
         system_sections = [
-            ("role_info", self.create_system_role_info),
             ("agent_info", self.create_system_agent_info),
-            ("agent_state", self.create_system_agent_state),
-            ("conversation_history", self.create_system_conversation_history),
-            ("event_stream", self.create_system_event_stream_state),
-            ("gui_event_stream", self.create_system_gui_event_stream_state),
-            ("task_state", self.create_system_task_state),
+            ("user_profile", self.create_system_user_profile),
             ("policy", self.create_system_policy),
+            ("role_info", self.create_system_role_info),
             ("environment", self.create_system_environmental_context),
+            ("file_system", self.create_system_file_system_context),
             ("base_instruction", self.create_system_base_instruction),
         ]
 
