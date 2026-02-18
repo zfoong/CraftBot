@@ -159,6 +159,8 @@ This executes the built-in **CraftBot**, that you can communicate to:
 | `--fast` | Skip unecessary update checks and launch agent faster. <br> <u><b>NOTE:</b></u> You have to run without `--fast` the first time you launch |
 | `--no-omniparser` | Disable the use of microsoft omniparser to analyse UI - will greatly reduce GUI action accuracy. It is highly encouraged to use omniparser |
 | `--no-conda` | Installs all packages globally instead of inside a conda environment |
+| `--no-gui` | Disable GUI mode. The agent will run in CLI-only mode and cannot switch to GUI mode. This setting is persisted across restarts. OmniParser is also automatically disabled |
+| `--enable-gui` | Re-enable GUI mode if it was previously disabled with `--no-gui`. This setting is persisted across restarts |
 
 **EXAMPLE**
 ```bash

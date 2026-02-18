@@ -159,6 +159,8 @@ python start.py
 | `--fast` | 跳过不必要的更新检查，更快启动代理。<br> <u><b>注意：</b></u> 首次启动时必须不使用 `--fast` |
 | `--no-omniparser` | 禁用 Microsoft OmniParser 分析 UI - 这会大幅降低 GUI 动作准确度。强烈建议使用 OmniParser |
 | `--no-conda` | 将所有包安装到全局环境而非 conda 环境中 |
+| `--no-gui` | 禁用 GUI 模式。代理将以纯 CLI 模式运行，无法切换到 GUI 模式。此设置在重启后仍然保留。OmniParser 也会自动禁用 |
+| `--enable-gui` | 重新启用之前通过 `--no-gui` 禁用的 GUI 模式。此设置在重启后仍然保留 |
 
 **示例**
 ```bash

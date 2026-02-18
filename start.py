@@ -213,10 +213,35 @@ def wait_for_server_health(url: str, timeout_seconds: int = 180) -> bool:
 # ==========================================
 def initialize_environment(args: set[str]) -> Tuple[bool, bool]:
     """Parses flags. Returns (force_cpu, fast_mode)."""
+    # Handle GUI mode flags first (--enable-gui takes precedence to allow re-enabling)
+    flag_enable_gui = "--enable-gui" in args
+    flag_no_gui = "--no-gui" in args
+
+    if flag_enable_gui:
+        save_config_value("gui_mode_enabled", True)
+        os.environ["GUI_MODE_ENABLED"] = "True"
+        print("[*] GUI mode RE-ENABLED (persisted to config)")
+    elif flag_no_gui:
+        save_config_value("gui_mode_enabled", False)
+        os.environ["GUI_MODE_ENABLED"] = "False"
+        print("[*] GUI mode DISABLED (persisted to config)")
+    else:
+        # Load from config or default to True
+        config = load_config()
+        gui_enabled = config.get("gui_mode_enabled", True)
+        os.environ["GUI_MODE_ENABLED"] = str(gui_enabled)
+        print(f"[*] GUI mode enabled: {gui_enabled}")
+
+    # Handle OmniParser flag
     flag_ignore_omniparse = "--no-omniparser" in args
-    os.environ["USE_OMNIPARSER"] = str(not flag_ignore_omniparse)
+    # When GUI is disabled, also disable OmniParser (it's only needed for GUI)
+    if os.getenv("GUI_MODE_ENABLED") == "False":
+        os.environ["USE_OMNIPARSER"] = "False"
+        print("[*] OmniParser auto-disabled (GUI mode disabled)")
+    else:
+        os.environ["USE_OMNIPARSER"] = str(not flag_ignore_omniparse)
     print(f"[*] Using Omniparser: {os.getenv('USE_OMNIPARSER')}")
-    
+
     flag_ignore_conda = "--no-conda" in args
     os.environ["USE_CONDA"] = str(not flag_ignore_conda)
     print(f"[*] Using Conda base env: {os.getenv('USE_CONDA')}")
@@ -229,7 +254,7 @@ def initialize_environment(args: set[str]) -> Tuple[bool, bool]:
     fast_mode = "--fast" in args
     if fast_mode:
         print("[*] FAST MODE ENABLED: Skipping heavy update checks.")
-    
+
     return force_cpu, fast_mode
 
 def is_conda_installed_robust() -> Tuple[bool, str, Optional[str]]:
@@ -503,8 +528,8 @@ def launch_in_new_terminal(conda_env_name: Optional[str] = None, conda_base_path
         print(f"❌ Error: The main application script was not found at: {abs_main_script_path}")
         sys.exit(1)
 
-    # Add --cpu-only and --fast to flags to ignore when passing to main.py
-    setup_flags = {"--no-conda", "--no-omniparser", "--cpu-only", "--fast"}
+    # Add setup flags to ignore when passing to main.py
+    setup_flags = {"--no-conda", "--no-omniparser", "--cpu-only", "--fast", "--no-gui", "--enable-gui"}
     pass_through_args = [arg for arg in sys.argv[1:] if arg not in setup_flags]
     current_os = sys.platform
 

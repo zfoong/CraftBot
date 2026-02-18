@@ -46,6 +46,8 @@ class Task:
     action_sets: List[str] = field(default_factory=list)
     # Compiled action names from action_sets - cached for performance
     compiled_actions: List[str] = field(default_factory=list)
+    # Backup of CLI actions when in GUI mode (internal use only)
+    _saved_cli_actions: List[str] = field(default_factory=list)
     # Skills selected for this task - instructions injected into context
     selected_skills: List[str] = field(default_factory=list)
     # ISO timestamp when the task ended (None if still running)

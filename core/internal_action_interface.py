@@ -149,18 +149,43 @@ class InternalActionInterface:
 
     # ───────────────── CLI and GUI mode ─────────────────
 
-    @staticmethod
-    def switch_to_CLI_mode():
+    @classmethod
+    def switch_to_CLI_mode(cls):
+        """Switch to CLI mode and restore saved CLI actions."""
         STATE.update_gui_mode(False)
+
+        # Restore saved CLI actions if available
+        if cls.task_manager and cls.task_manager.active:
+            task = cls.task_manager.active
+
+            if task._saved_cli_actions:
+                task.compiled_actions = task._saved_cli_actions.copy()
+                task._saved_cli_actions = []  # Clear backup after restoration
+                logger.info(f"[CLI MODE] Restored {len(task.compiled_actions)} CLI actions")
+            else:
+                logger.debug("[CLI MODE] No saved CLI actions to restore")
 
     @classmethod
     def switch_to_GUI_mode(cls):
         """Switch to GUI mode with hardcoded action list."""
+        # Check if GUI mode is globally enabled
+        gui_globally_enabled = os.getenv("GUI_MODE_ENABLED", "True") == "True"
+        if not gui_globally_enabled:
+            logger.warning("[GUI MODE] Cannot switch - GUI mode is globally disabled")
+            raise RuntimeError("GUI mode is disabled. Restart with --enable-gui to enable.")
+
         STATE.update_gui_mode(True)
 
         # Replace compiled_actions with hardcoded GUI mode actions
         if cls.task_manager and cls.task_manager.active:
-            cls.task_manager.active.compiled_actions = GUI_MODE_ACTIONS.copy()
+            task = cls.task_manager.active
+
+            # Save current CLI actions before switching (only if not already saved)
+            if not task._saved_cli_actions:
+                task._saved_cli_actions = task.compiled_actions.copy()
+                logger.info(f"[GUI MODE] Saved {len(task._saved_cli_actions)} CLI actions for restoration")
+
+            task.compiled_actions = GUI_MODE_ACTIONS.copy()
             logger.info(f"[GUI MODE] Set compiled_actions to {len(GUI_MODE_ACTIONS)} hardcoded GUI actions")
 
     # ───────────────── Task Management ─────────────────

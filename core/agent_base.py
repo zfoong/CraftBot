@@ -23,6 +23,7 @@ Main agent cycle:
 
 from __future__ import annotations
 
+import os
 import traceback
 import time
 import uuid
@@ -192,18 +193,24 @@ class AgentBase:
         # Initialize footage callback (will be set by TUI interface later)
         self._tui_footage_callback = None
 
-        GUIHandler.gui_module: GUIModule = GUIModule(
-            provider=llm_provider,
-            action_library=self.action_library,
-            action_router=self.action_router,
-            context_engine=self.context_engine,
-            action_manager=self.action_manager,
-            event_stream_manager=self.event_stream_manager,
-            tui_footage_callback=self._tui_footage_callback,
-        )
-
-        # Set gui_module reference in InternalActionInterface for GUI event stream integration
-        InternalActionInterface.gui_module = GUIHandler.gui_module
+        # Only initialize GUIModule if GUI mode is globally enabled
+        gui_globally_enabled = os.getenv("GUI_MODE_ENABLED", "True") == "True"
+        if gui_globally_enabled:
+            GUIHandler.gui_module: GUIModule = GUIModule(
+                provider=llm_provider,
+                action_library=self.action_library,
+                action_router=self.action_router,
+                context_engine=self.context_engine,
+                action_manager=self.action_manager,
+                event_stream_manager=self.event_stream_manager,
+                tui_footage_callback=self._tui_footage_callback,
+            )
+            # Set gui_module reference in InternalActionInterface for GUI event stream integration
+            InternalActionInterface.gui_module = GUIHandler.gui_module
+        else:
+            GUIHandler.gui_module = None
+            InternalActionInterface.gui_module = None
+            logger.info("[AGENT] GUI mode disabled - skipping GUIModule initialization")
 
         # ── misc ──
         self.is_running: bool = True
@@ -1127,8 +1134,9 @@ class AgentBase:
 
         if llm_ok and vlm_ok:
             logger.info(f"[AGENT] LLM and VLM reinitialized with provider: {self.llm.provider}")
-            # Update GUI module provider if needed
-            if hasattr(self, 'action_library') and hasattr(GUIHandler, 'gui_module'):
+            # Update GUI module provider if needed (only if GUI mode is enabled)
+            gui_globally_enabled = os.getenv("GUI_MODE_ENABLED", "True") == "True"
+            if gui_globally_enabled and hasattr(self, 'action_library') and hasattr(GUIHandler, 'gui_module'):
                 GUIHandler.gui_module = GUIModule(
                     provider=self.llm.provider,
                     action_library=self.action_library,

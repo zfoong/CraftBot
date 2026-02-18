@@ -41,6 +41,7 @@ from core.action.action_framework.registry import action
     }
 )
 def set_mode(input_data: dict) -> dict:
+    import os
     import core.internal_action_interface as iai
     from core.state.agent_state import STATE
 
@@ -56,6 +57,18 @@ def set_mode(input_data: dict) -> dict:
 
     try:
         target_gui_mode = (target_mode == 'gui')
+
+        # Check if GUI mode is globally disabled
+        if target_gui_mode:
+            gui_globally_enabled = os.getenv("GUI_MODE_ENABLED", "True") == "True"
+            if not gui_globally_enabled:
+                return {
+                    "status": "error",
+                    "error": "GUI mode is disabled. The application was started with --no-gui flag. "
+                             "To enable GUI mode, restart with --enable-gui flag.",
+                    "gui_mode": STATE.gui_mode,
+                    "message": "Cannot switch to GUI mode - it has been disabled at startup."
+                }
 
         # Check if already in target mode
         if STATE.gui_mode == target_gui_mode:
