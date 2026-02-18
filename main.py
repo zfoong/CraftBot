@@ -11,8 +11,8 @@ import shutil # Needed for lsof check on Linux/macOS
 # --- CONFIGURATION ---
 # Path to the directory containing the docker-compose.yml file
 VM_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "core", "gui"))
-# The main python command to run after setup
-PYTHON_APP_CMD = [sys.executable, "-m", "core.main"]
+# The main python command to run after setup (args added at runtime)
+PYTHON_APP_BASE_CMD = [sys.executable, "-m", "core.main"]
 # Service readiness check
 READY_HOST = "localhost"
 READY_PORT = 3001
@@ -148,15 +148,17 @@ def main():
         print("Type '/exit' or use your defined quit hotkey to stop.")
         print("Ctrl+C is handled by the app logic (ignored by wrapper).")
         print("--------------------------------")
-        
+
         # Run the main Python app in the foreground.
         # This call BLOCKS until the app exits.
         # Because we are ignoring signals, this wrapper will just sit here
         # until the child process decides to exit on its own.
+        # Pass through command-line arguments (e.g., --cli, --provider)
+        python_app_cmd = PYTHON_APP_BASE_CMD + sys.argv[1:]
         result = subprocess.run(
-            PYTHON_APP_CMD,
-            stdin=sys.stdin, 
-            stdout=sys.stdout, 
+            python_app_cmd,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
             stderr=sys.stderr,
             check=False # We handle exit code manually
         )

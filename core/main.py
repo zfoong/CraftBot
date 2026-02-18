@@ -9,14 +9,50 @@ changes, making this usable inside Docker containers.
 Run this before the core directory, using 'python -m core.main'
 """
 
+import argparse
 import asyncio
 import os
+import sys
 
 from dotenv import load_dotenv
 
 from core.agent_base import AgentBase
 
 load_dotenv()
+
+
+def _parse_cli_args() -> dict:
+    """Parse CLI-specific arguments.
+
+    Returns:
+        Dictionary with parsed arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description="CraftBot Agent",
+        add_help=False,  # Don't conflict with other parsers
+    )
+    parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Run in CLI mode instead of TUI",
+    )
+    parser.add_argument(
+        "--provider",
+        type=str,
+        default=None,
+        choices=["openai", "gemini", "byteplus", "anthropic", "remote"],
+        help="LLM provider to use",
+    )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=None,
+        help="API key for the provider",
+    )
+
+    # Parse known args only, ignore unknown ones
+    args, _ = parser.parse_known_args()
+    return vars(args)
 
 
 def _initial_settings() -> tuple[str, str, bool]:
@@ -77,11 +113,31 @@ def _apply_api_key(provider: str, api_key: str) -> None:
 
 
 async def main_async() -> None:
+    # Parse CLI arguments
+    cli_args = _parse_cli_args()
+    cli_mode = cli_args.get("cli", False)
+
+    # CLI args override environment variables if provided
+    if cli_args.get("provider"):
+        os.environ["LLM_PROVIDER"] = cli_args["provider"]
+    if cli_args.get("api_key"):
+        # Apply to appropriate env var based on provider
+        arg_provider = cli_args.get("provider") or os.getenv("LLM_PROVIDER", "openai")
+        key_lookup = {
+            "openai": "OPENAI_API_KEY",
+            "gemini": "GOOGLE_API_KEY",
+            "byteplus": "BYTEPLUS_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+        }
+        key_name = key_lookup.get(arg_provider)
+        if key_name:
+            os.environ[key_name] = cli_args["api_key"]
+
     provider, api_key, has_valid_key = _initial_settings()
     _apply_api_key(provider, api_key)
 
     # Use deferred initialization if no valid API key is configured yet
-    # This allows the TUI to start so first-time users can configure settings
+    # This allows the TUI/CLI to start so first-time users can configure settings
     agent = AgentBase(
         data_dir=os.getenv("DATA_DIR", "core/data"),
         chroma_path=os.getenv("CHROMA_PATH", "./chroma_db"),
@@ -93,7 +149,9 @@ async def main_async() -> None:
     from core.onboarding.manager import onboarding_manager
     onboarding_manager.set_agent(agent)
 
-    await agent.run(provider=provider, api_key=api_key)
+    # Pass interface mode to agent.run()
+    interface_mode = "cli" if cli_mode else "tui"
+    await agent.run(provider=provider, api_key=api_key, interface_mode=interface_mode)
 
 
 def main() -> None:

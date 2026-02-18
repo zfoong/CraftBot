@@ -1315,15 +1315,22 @@ class AgentBase:
     # Lifecycle
     # =====================================
 
-    async def run(self, *, provider: str | None = None, api_key: str = "") -> None:
+    async def run(
+        self,
+        *,
+        provider: str | None = None,
+        api_key: str = "",
+        interface_mode: str = "tui",
+    ) -> None:
         """
-        Launch the interactive TUI loop for the agent.
+        Launch the interactive loop for the agent.
 
         Args:
-            provider: Optional provider override passed to the TUI before chat
-                starts; defaults to the provider configured during
+            provider: Optional provider override passed to the interface before
+                chat starts; defaults to the provider configured during
                 initialization.
-            api_key: Optional API key presented in the TUI for convenience.
+            api_key: Optional API key presented in the interface for convenience.
+            interface_mode: "tui" for Textual interface, "cli" for command line.
         """
         # Initialize MCP client and register tools
         await self._initialize_mcp()
@@ -1342,13 +1349,22 @@ class AgentBase:
         await self._schedule_daily_memory_processing()
 
         try:
-            # Allow the TUI to present provider/api-key configuration before chat starts.
-            cli = TUIInterface(
-                self,
-                default_provider=provider or self.llm.provider,
-                default_api_key=api_key,
-            )
-            await cli.start()
+            # Select interface based on mode
+            if interface_mode == "cli":
+                from core.cli import CLIInterface
+                interface = CLIInterface(
+                    self,
+                    default_provider=provider or self.llm.provider,
+                    default_api_key=api_key,
+                )
+            else:
+                interface = TUIInterface(
+                    self,
+                    default_provider=provider or self.llm.provider,
+                    default_api_key=api_key,
+                )
+
+            await interface.start()
         finally:
             # Gracefully shutdown MCP connections
             await self._shutdown_mcp()

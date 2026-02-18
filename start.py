@@ -220,15 +220,15 @@ def initialize_environment(args: set[str]) -> Tuple[bool, bool]:
     if flag_enable_gui:
         save_config_value("gui_mode_enabled", True)
         os.environ["GUI_MODE_ENABLED"] = "True"
-        print("[*] GUI mode RE-ENABLED (persisted to config)")
+        print("[*] GUI mode ENABLED (persisted to config)")
     elif flag_no_gui:
         save_config_value("gui_mode_enabled", False)
         os.environ["GUI_MODE_ENABLED"] = "False"
         print("[*] GUI mode DISABLED (persisted to config)")
     else:
-        # Load from config or default to True
+        # Load from config or default to False (GUI is experimental)
         config = load_config()
-        gui_enabled = config.get("gui_mode_enabled", True)
+        gui_enabled = config.get("gui_mode_enabled", False)
         os.environ["GUI_MODE_ENABLED"] = str(gui_enabled)
         print(f"[*] GUI mode enabled: {gui_enabled}")
 
