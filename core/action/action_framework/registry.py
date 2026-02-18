@@ -74,6 +74,20 @@ class ActionMetadata:
     output_schema: Dict[str, Any] = field(default_factory=dict)
     requirements: List[str] = field(default_factory=list)
     test_payload: Optional[Dict[str, Any]] = None
+    # Action sets this action belongs to (e.g., ["file_operations", "core"])
+    # Used for static action list compilation instead of RAG retrieval
+    action_sets: List[str] = field(default_factory=list)
+
+    @property
+    def display_name(self) -> str:
+        """Returns a user-friendly display name from the snake_case name.
+
+        Examples:
+            'grep_files' -> 'Grep files'
+            'mouse_click' -> 'Mouse click'
+            'web_search' -> 'Web search'
+        """
+        return self.name.replace('_', ' ').capitalize()
 
 @dataclass
 class RegisteredAction:
@@ -213,16 +227,20 @@ class ActionRegistry:
         logical_name = meta.name
 
         # 1. Extract source code for the main implementation
-        try:
-            # getsource returns the raw code, including indentation
-            raw_code = inspect.getsource(main_impl.handler)
-            # dedent removes leading common whitespace to make it clean
-            dedented_code = textwrap.dedent(raw_code)
-            # Strip decorator from the code
-            main_code_str = _strip_decorator(dedented_code)
-        except Exception as e:
-            logger.error(f"Could not extract source for action '{logical_name}': {e}")
-            main_code_str = f"# Error extracting source code: {e}"
+        # Check for stored source code first (used by MCP handlers which are dynamically created)
+        if hasattr(main_impl.handler, '_mcp_source_code'):
+            main_code_str = main_impl.handler._mcp_source_code
+        else:
+            try:
+                # getsource returns the raw code, including indentation
+                raw_code = inspect.getsource(main_impl.handler)
+                # dedent removes leading common whitespace to make it clean
+                dedented_code = textwrap.dedent(raw_code)
+                # Strip decorator from the code
+                main_code_str = _strip_decorator(dedented_code)
+            except Exception as e:
+                logger.error(f"Could not extract source for action '{logical_name}': {e}")
+                main_code_str = f"# Error extracting source code: {e}"
 
 
         # 2. Build the base JSON structure with required hardcoded fields
@@ -251,18 +269,23 @@ class ActionRegistry:
             # Skip the implementation we used for the main code block so it's not redundant
             if impl == main_impl:
                 continue
-            
-            try:
-                override_raw = inspect.getsource(impl.handler)
-                override_dedented = textwrap.dedent(override_raw)
-                # Strip decorator from the override code
-                override_code_str = _strip_decorator(override_dedented)
-                
-                action_json["platform_overrides"][platform_key] = {
-                    "code": override_code_str
-                }
-            except Exception as e:
+
+            # Check for stored source code first (used by MCP handlers)
+            if hasattr(impl.handler, '_mcp_source_code'):
+                override_code_str = impl.handler._mcp_source_code
+            else:
+                try:
+                    override_raw = inspect.getsource(impl.handler)
+                    override_dedented = textwrap.dedent(override_raw)
+                    # Strip decorator from the override code
+                    override_code_str = _strip_decorator(override_dedented)
+                except Exception as e:
                     logger.warning(f"Could not extract override source for {logical_name} on {platform_key}: {e}")
+                    continue
+
+            action_json["platform_overrides"][platform_key] = {
+                "code": override_code_str
+            }
 
         # Clean up empty overrides dict if unused
         if not action_json["platform_overrides"]:
@@ -272,6 +295,80 @@ class ActionRegistry:
 
 # Global singleton instance used by the decorator and the main app
 registry_instance = ActionRegistry()
+
+
+def install_all_action_requirements():
+    """
+    Collect all unique requirements from registered actions and install them.
+    Should be called once after all actions are loaded.
+    """
+    import subprocess
+    import sys
+    from importlib.metadata import distribution, PackageNotFoundError
+
+    # Collect all unique requirements from all registered actions
+    all_requirements: set = set()
+    for logical_name, platform_impls in registry_instance._registry.items():
+        for platform_key, registered_action in platform_impls.items():
+            if registered_action.metadata.requirements:
+                all_requirements.update(registered_action.metadata.requirements)
+
+    if not all_requirements:
+        logger.info("No action requirements to install.")
+        return
+
+    logger.info(f"Checking {len(all_requirements)} unique requirements from registered actions...")
+
+    # Check which packages need to be installed
+    packages_to_install = []
+    for pkg in all_requirements:
+        try:
+            distribution(pkg)
+            logger.debug(f"Package '{pkg}' is already installed.")
+        except PackageNotFoundError:
+            packages_to_install.append(pkg)
+
+    if not packages_to_install:
+        logger.info("All action requirements are already satisfied.")
+        return
+
+    logger.info(f"Installing {len(packages_to_install)} missing packages: {packages_to_install}")
+
+    # Install all missing packages in one pip call for efficiency
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet"] + packages_to_install,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout for all packages
+        )
+        if result.returncode == 0:
+            logger.info(f"Successfully installed packages: {packages_to_install}")
+        else:
+            # Some packages may have failed - try installing individually to identify which
+            logger.warning(f"Batch install had issues, trying individual installs...")
+            for pkg in packages_to_install:
+                try:
+                    pkg_result = subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "--quiet", pkg],
+                        capture_output=True,
+                        text=True,
+                        timeout=120
+                    )
+                    if pkg_result.returncode == 0:
+                        logger.info(f"Installed: {pkg}")
+                    else:
+                        stderr_lower = pkg_result.stderr.lower()
+                        if "no matching distribution" in stderr_lower or "could not find" in stderr_lower:
+                            logger.debug(f"Package '{pkg}' not found on PyPI (may be a class/module name)")
+                        else:
+                            logger.warning(f"Could not install '{pkg}': {pkg_result.stderr.strip()[:100]}")
+                except Exception as e:
+                    logger.warning(f"Error installing '{pkg}': {e}")
+    except subprocess.TimeoutExpired:
+        logger.error("Package installation timed out")
+    except Exception as e:
+        logger.error(f"Error during package installation: {e}")
 
 # ==========================================
 # The Decorator Implementation
@@ -286,11 +383,26 @@ def action(
     input_schema: Optional[Dict[str, Any]] = None,
     output_schema: Optional[Dict[str, Any]] = None,
     requirement: Optional[List[str]] = None,
-    test_payload: Optional[Dict[str, Any]] = None
+    test_payload: Optional[Dict[str, Any]] = None,
+    action_sets: Optional[List[str]] = None
 ):
     """
     Decorator used by developers to register functions as actions.
     This runs at import time, populating the registry.
+
+    Args:
+        name: Unique identifier for the action
+        description: Human-readable description of what the action does
+        mode: Visibility mode - "CLI", "GUI", or "ALL"
+        default: If True, action is always available (legacy, prefer action_sets)
+        execution_mode: "internal" or "sandboxed"
+        platforms: Target platforms - "linux", "windows", "darwin", or "all"
+        input_schema: JSON schema for action parameters
+        output_schema: JSON schema for action output
+        requirement: List of pip packages required
+        test_payload: Test data for simulated execution
+        action_sets: List of action set names this action belongs to
+                     (e.g., ["file_operations", "core"])
     """
     # Normalize platforms input to a list of lowercase strings
     if platforms is None:
@@ -313,7 +425,8 @@ def action(
             input_schema=input_schema or {},
             output_schema=output_schema or {},
             requirements=requirement or [],
-            test_payload=test_payload
+            test_payload=test_payload,
+            action_sets=action_sets or []
         )
         
         # 2. Create the full registration object

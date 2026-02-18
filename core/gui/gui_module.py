@@ -2,12 +2,13 @@ import json
 import ast
 import tempfile
 import os
+import hashlib
 from gradio_client import Client, file
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Any
 from core.action.action import Action
 from core.state.agent_state import STATE
 from core.state.types import ReasoningResult
-from core.task.task import Step
+from core.todo.todo import TodoItem
 from core.gui.handler import GUIHandler
 from core.prompt import GUI_REASONING_PROMPT, GUI_QUERY_FOCUSED_PROMPT, GUI_PIXEL_POSITION_PROMPT, GUI_REASONING_PROMPT_OMNIPARSER
 from core.vlm_interface import VLMInterface
@@ -16,25 +17,73 @@ from core.action.action_library import ActionLibrary
 from core.action.action_router import ActionRouter
 from core.context_engine import ContextEngine
 from core.event_stream.event_stream_manager import EventStreamManager
-from core.llm_interface import LLMInterface
+from core.llm import LLMInterface, LLMCallType
 from core.logger import logger
+from decorators.profiler import profile, OperationCategory
+
+# Hardcoded list of actions available in GUI mode
+GUI_MODE_ACTIONS = [
+    # Core actions (always available)
+    "send_message",
+    "wait",
+    "set_mode",
+    "task_update_todos",
+    # GUI interaction actions
+    "mouse_click",
+    "mouse_move",
+    "mouse_drag",
+    "mouse_trace",
+    "keyboard_type",
+    "keyboard_hotkey",
+    "scroll",
+    "open_browser",
+    "open_application",
+    "window_control",
+    "clipboard_read",
+    "clipboard_write",
+]
+
+# Compact action space prompt for GUI mode 
+# This is a hardcoded prompt that describes all available GUI actions in a compact format
+GUI_ACTION_SPACE_PROMPT = """## Action Space
+
+mouse_click(x=<int>, y=<int>, button='left', click_type='single') # Click at (x,y). button: 'left'|'right'|'middle'. click_type: 'single'|'double'.
+mouse_move(x=<int>, y=<int>, duration=0) # Move cursor to (x,y). Optional duration in seconds for smooth move.
+mouse_drag(start_x=<int>, start_y=<int>, end_x=<int>, end_y=<int>, duration=0.5) # Drag from start to end position.
+mouse_trace(points=[{x, y, duration}, ...], relative=false, easing='linear') # Move through waypoints. easing: 'linear'|'easeInOutQuad'.
+keyboard_type(text='<string>', interval=0) # Type text at current focus. Use \\n for Enter. interval=delay between keystrokes.
+keyboard_hotkey(keys='<combo>') # Send key combo. Examples: 'ctrl+c', 'alt+tab', 'enter'. Use + to combine keys.
+scroll(direction='<up|down>') # Scroll one viewport in direction.
+open_browser(url='<url>') # Open browser, optionally with URL.
+open_application(exe_path='<path>', args=[]) # Launch Windows app at exe_path with optional args.
+window_control(operation='<op>', title='<substring>') # operation: 'focus'|'close'|'maximize'|'minimize'. Matches window by title substring.
+clipboard_read() # Read current clipboard content.
+clipboard_write(content='<string>') # Write text to clipboard.
+send_message(message='<string>', wait_for_user_reply=false) # Send message to user. Set wait_for_user_reply=true to pause for response.
+wait(seconds=<number>) # Pause for seconds (max 60).
+set_mode(target_mode='<cli|gui>') # Switch agent mode. Use 'cli' when GUI task is complete.
+task_update_todos(todos=[{content, status}, ...]) # Update todo list. status: 'pending'|'in_progress'|'completed'.
+"""
 
 class GUIModule:
     def __init__(
-        self, 
-        provider: str = "byteplus", 
+        self,
+        provider: str = "byteplus",
         action_library: ActionLibrary = None,
         action_router: ActionRouter = None,
         context_engine: ContextEngine = None,
         action_manager: ActionManager = None,
+        event_stream_manager: EventStreamManager = None,
+        tui_footage_callback = None,
     ):
         self.llm: LLMInterface = LLMInterface(provider=provider)
-        self.vlm: VLMInterface = VLMInterface(provider="gemini")
+        self.vlm: VLMInterface = VLMInterface(provider=provider)
         self.action_library: ActionLibrary = action_library
         self.action_router: ActionRouter = action_router
         self.context_engine: ContextEngine = context_engine
         self.action_manager: ActionManager = action_manager
-        self.gui_event_stream_manager: EventStreamManager = EventStreamManager(self.llm)
+        self.event_stream_manager: EventStreamManager = event_stream_manager
+        self._tui_footage_callback = tui_footage_callback
 
         # ==================================
         #  CONFIG
@@ -49,30 +98,109 @@ class GUIModule:
         else:
             self.gradio_client: Client | None = None
 
+        # ==================================
+        #  ACTION TRACKING FOR LOOP DETECTION
+        # ==================================
+        # Track recent actions to detect repeated failures
+        self._recent_actions: List[Dict[str, Any]] = []
+        self._max_action_history = 10  # Keep last 10 actions
+        self._repetition_threshold = 2  # Warn after 2 similar actions
+        self._coordinate_tolerance = 30  # Pixels within which coordinates are considered "same"
+
+        # ==================================
+        #  OMNIPARSER CACHE
+        # ==================================
+        self._omniparser_cache: Dict[str, Any] = {
+            "screenshot_hash": None,
+            "image_description_list": None,
+            "annotated_image_bytes": None
+        }
+
+    def set_tui_footage_callback(self, callback) -> None:
+        """Set the TUI footage callback for screen display."""
+        self._tui_footage_callback = callback
+
     def switch_to_gui_mode(self) -> None:
         STATE.update_gui_mode(True)
 
     def switch_to_cli_mode(self) -> None:
         STATE.update_gui_mode(False)
 
-    def set_gui_event_stream(self, event: str) -> None:
-        self.gui_event_stream_manager.log(
-            "agent GUI event",
-            event,
-            severity="DEBUG",
-            display_message=None,
-        )
+    def log_gui_reasoning(self, reasoning: str) -> None:
+        """Log agent reasoning to main event stream."""
+        if self.event_stream_manager:
+            self.event_stream_manager.log(
+                "agent reasoning",
+                reasoning,
+                severity="DEBUG",
+            )
 
-    def get_gui_event_stream(self) -> str:
-        return self.gui_event_stream_manager.get_stream().to_prompt_snapshot(include_summary=True)
+    def _track_action(self, action_name: str, params: Dict[str, Any]) -> None:
+        """Track an action for loop detection."""
+        action_record = {
+            "action_name": action_name,
+            "x": params.get("x"),
+            "y": params.get("y"),
+        }
+        self._recent_actions.append(action_record)
+        # Keep only last N actions
+        if len(self._recent_actions) > self._max_action_history:
+            self._recent_actions = self._recent_actions[-self._max_action_history:]
 
-    async def perform_gui_task_step(self, step: Step, session_id: str, next_action_description: str, parent_action_id: str) -> dict:
+    def _check_for_repeated_action(self, action_name: str, params: Dict[str, Any]) -> Optional[str]:
+        """
+        Check if the proposed action is a repeat of recent failed actions.
+        Returns a warning message if repetition detected, None otherwise.
+        """
+        if action_name not in ["mouse_click", "mouse_move", "mouse_drag"]:
+            return None
+
+        proposed_x = params.get("x")
+        proposed_y = params.get("y")
+        if proposed_x is None or proposed_y is None:
+            return None
+
+        # Count similar actions in recent history
+        similar_count = 0
+        for past_action in self._recent_actions:
+            if past_action["action_name"] == action_name:
+                past_x = past_action.get("x")
+                past_y = past_action.get("y")
+                if past_x is not None and past_y is not None:
+                    # Check if coordinates are within tolerance
+                    if (abs(proposed_x - past_x) <= self._coordinate_tolerance and
+                        abs(proposed_y - past_y) <= self._coordinate_tolerance):
+                        similar_count += 1
+
+        if similar_count >= self._repetition_threshold:
+            warning = (
+                f"WARNING: Action '{action_name}' at coordinates near ({proposed_x}, {proposed_y}) "
+                f"has been attempted {similar_count} times without apparent success. "
+                f"Try a different approach: adjust coordinates significantly (50+ pixels), "
+                f"use keyboard navigation (Tab/Enter), click a different element, "
+                f"or use send_message to inform the user about the difficulty."
+            )
+            return warning
+
+        return None
+
+    def _inject_warning_to_event_stream(self, warning: str) -> None:
+        """Inject a warning message to the event stream."""
+        if self.event_stream_manager and warning:
+            self.event_stream_manager.log(
+                "loop_detection_warning",
+                warning,
+                severity="WARNING",
+            )
+            logger.warning(f"[GUI LOOP DETECTION] {warning}")
+
+    async def perform_gui_task_step(self, step: Optional[TodoItem], session_id: str, next_action_description: str, parent_action_id: str) -> dict:
         """
         Perform a GUI task step. Keeps calling the action until the next action is not None. When the next action is not None, it returns the response.
         If next action is None, it means the task is complete, and it returns the response.
 
         Args:
-            step: The step to perform.
+            step: The current todo item (optional).
             session_id: The session ID.
             next_action_description: The next action description.
             parent_action_id: The parent action ID.
@@ -91,9 +219,6 @@ class GUIModule:
 
             response: dict = await self._perform_gui_task_step_action(step, session_id, next_action_description, parent_action_id)
             logger.info(f"[GUI TASK STEP ACTION RESPONSE] {response}")
-            
-            event_stream_summary: str | None = self.gui_event_stream_manager.get_stream().head_summary
-            response["event_stream_summary"] = event_stream_summary
 
             return response
 
@@ -105,19 +230,28 @@ class GUIModule:
     # Private Methods
     # ===================================
 
-    async def _perform_gui_task_step_action(self, step: Step, session_id: str, next_action_description: str, parent_action_id: str) -> dict:
+    @profile("gui_perform_task_step_action", OperationCategory.ACTION_EXECUTION)
+    async def _perform_gui_task_step_action(self, step: Optional[TodoItem], session_id: str, next_action_description: str, parent_action_id: str) -> dict:
         """
         Perform a GUI task step action.
 
+        Reasoning is now integrated into action selection, reducing LLM calls.
+        New flow:
+        1. Take screenshot
+        2. Get image description (VLM call)
+        3. Select action with integrated reasoning (LLM call) → reasoning, element_index_to_find, action_name, parameters
+        4. If element_index_to_find is provided, get pixel position (VLM call)
+        5. Inject pixel position into parameters if needed
+        6. Execute action
+
         Args:
-            step: The step to perform.
+            step: The current todo item (optional).
             session_id: The session ID.
             next_action_description: The next action description.
             parent_action_id: The parent action ID.
         """
         try:
             query: str = next_action_description
-            reasoning: str = ""
             parent_id = parent_action_id
 
             # ===================================
@@ -139,21 +273,33 @@ class GUIModule:
                     "status": "error",
                     "message": "Failed to take screenshot"
                 }
-            
+
+            # Push screenshot to TUI for display
+            if self._tui_footage_callback and png_bytes:
+                try:
+                    await self._tui_footage_callback(png_bytes, GUIHandler.TARGET_CONTAINER)
+                except Exception as e:
+                    logger.debug(f"[GUI] Failed to push footage to TUI: {e}")
+
             # ===================================
-            # 3. Perform Reasoning
+            # 3. Get Image Description + Prepare Image for VLM
             # ===================================
             if self.can_use_omniparser:
-                reasoning_result, action_search_query = await self.omniparser_flow(query=query, png_bytes=png_bytes)
+                reasoning_result, action_query = await self.omniparser_flow(query=query, png_bytes=png_bytes)
             else:
-                reasoning_result, action_search_query = await self.vlm_flow(query=query, png_bytes=png_bytes)
+                reasoning_result, action_query = await self.vlm_flow(query=query, png_bytes=png_bytes)
 
-            reasoning: str = reasoning_result.reasoning
+            vlm_reasoning: str = reasoning_result.reasoning
+            vlm_action_query: str = action_query
+
+            # Log VLM reasoning to event stream (before action selection)
+            if self.event_stream_manager and vlm_reasoning:
+                self.log_gui_reasoning(vlm_reasoning + " This is the action I will execute: " + vlm_action_query)
 
             # ===================================
-            # 4. Select Action
+            # 4. Select Action (with integrated reasoning via VLM)
             # ===================================
-            action_decision = await self.action_router.select_action_in_GUI(query=action_search_query, reasoning=reasoning, GUI_mode=True)
+            action_decision = await self.action_router.select_action_in_GUI(query=action_query, reasoning=vlm_reasoning, GUI_mode=True)
 
             if not action_decision:
                 raise ValueError("Action router returned no decision.")
@@ -161,8 +307,18 @@ class GUIModule:
             action_name = action_decision.get("action_name")
             action_params = action_decision.get("parameters", {})
 
+            logger.info(f"[GUI VLM REASONING] {vlm_reasoning}")
+            logger.info(f"[GUI ACTION QUERY] {vlm_action_query}")
+
             if not action_name:
                 raise ValueError("No valid action selected by the router.")
+
+            # ===================================
+            # 5. Check for Repeated Actions (Loop Detection)
+            # ===================================
+            warning = self._check_for_repeated_action(action_name, action_params)
+            if warning:
+                self._inject_warning_to_event_stream(warning)
 
             # Retrieve action
             action: Optional[Action] = self.action_library.retrieve_action(action_name)
@@ -171,24 +327,25 @@ class GUIModule:
                     f"Action '{action_name}' not found in the library. "
                     "Check DB connectivity or ensure the action is registered."
                 )
-            
-            # Determine parent action
-            if not parent_id:
-                parent_id = step.action_id
 
             # ===================================
-            # 5. Execute Action
+            # 6. Execute Action
             # ===================================
             action_output = await self.action_manager.execute_action(
                 action=action,
-                context=reasoning_result.action_query if reasoning_result.action_query else query,
-                event_stream=self.get_gui_event_stream(),
+                context=vlm_action_query if vlm_action_query else query,
+                event_stream=self.context_engine.get_event_stream(),
                 parent_id=parent_id,
                 session_id=session_id,
                 is_running_task=True,
                 is_gui_task=True,
                 input_data=action_params,
             )
+
+            # ===================================
+            # 7. Track Action for Loop Detection
+            # ===================================
+            self._track_action(action_name, action_params)
 
             return {
                 "status": "ok",
@@ -237,7 +394,24 @@ class GUIModule:
         # ==================================
         # 1. OmniParser Image Analysis
         # ==================================
-        image_description, annotated_image_bytes = await self._get_image_description_omniparser(png_bytes)
+        # Check OmniParser cache - reuse if screenshot unchanged
+        current_hash = hashlib.md5(png_bytes).hexdigest()
+        if current_hash == self._omniparser_cache["screenshot_hash"]:
+            # Cache hit - reuse previous results
+            image_description_list = self._omniparser_cache["image_description_list"]
+            annotated_image_bytes = self._omniparser_cache["annotated_image_bytes"]
+            logger.info("[GUI] Using cached OmniParser results (screenshot unchanged)")
+        else:
+            # Cache miss - call OmniParser and update cache
+            image_description_list, annotated_image_bytes = await self._get_image_description_omniparser(png_bytes)
+            self._omniparser_cache = {
+                "screenshot_hash": current_hash,
+                "image_description_list": image_description_list,
+                "annotated_image_bytes": annotated_image_bytes
+            }
+            logger.debug("[GUI] OmniParser cache updated with new screenshot")
+
+        image_description_list, annotated_image_bytes = await self._get_image_description_omniparser(png_bytes)
 
         # ==================================
         # 2. Reasoning
@@ -248,24 +422,26 @@ class GUIModule:
         # ==================================
         # 3. Get Pixel Position
         # ==================================
-        if len(image_description) > item_index:
-            item = image_description[item_index]
+        if len(image_description_list) > item_index:
+            item = image_description_list[item_index]
             bbox: List[float] = self.extract_bbox_from_line(item)
             pixel_position: List[int] = self.convert_bbox_to_pixels(bbox, 1064, 1064)
+            action_query += ". The element involved has a position of [xmin_px, ymin_px, xmax_px, ymax_px] = " + json.dumps(pixel_position)
         else:
-            pixel_position = "No UI element needed for action"
+            pixel_position = ". No UI element needed for action."
+            action_query += pixel_position
 
         # ==================================
         # 4. Construct Action Search Query
         # ==================================
-        action_search_query: str = action_query + " " + json.dumps(pixel_position)
-
-        return reasoning_result, action_search_query
+        
+        return reasoning_result, action_query
 
     # ==================================
     # VLM Helper Methods
     # ==================================
 
+    @profile("gui_get_image_description_vlm", OperationCategory.LLM)
     async def _get_image_description_vlm(self, png_bytes: bytes, query: str) -> str:
         """
         Get the description of the image.
@@ -274,7 +450,6 @@ class GUIModule:
             user_flags={"query": False, "expected_output": False},
             system_flags={
                 "policy": False, 
-                "gui_event_stream": False, 
                 "event_stream": False, 
                 "task_state": False, 
                 "conversation_history": False, 
@@ -297,6 +472,7 @@ class GUIModule:
 
         return image_description
 
+    @profile("gui_perform_reasoning_vlm", OperationCategory.REASONING)
     async def _perform_reasoning_GUI_vlm(self, query: str, retries: int = 2, log_reasoning_event = False) -> ReasoningResult:
         """
         Perform LLM-based reasoning on a user query to guide action selection.
@@ -316,10 +492,16 @@ class GUIModule:
         # Build the system prompt using the current context configuration
         system_prompt, _ = self.context_engine.make_prompt(
             user_flags={"query": False, "expected_output": False},
-            system_flags={"policy": False, "gui_event_stream": True, "event_stream": False},
+            system_flags={"policy": False, "event_stream": False, "task_state": False, "agent_state": False},
         )
-        # Format the user prompt with the incoming query
-        prompt = GUI_REASONING_PROMPT.format(gui_state=query)
+        # Format the user prompt with context for proper reasoning
+        # GUI_REASONING_PROMPT requires: gui_event_stream, task_state, agent_state, gui_state
+        prompt = GUI_REASONING_PROMPT.format(
+            gui_event_stream=self.context_engine.get_event_stream(),
+            task_state=self.context_engine.get_task_state(),
+            agent_state=self.context_engine.get_agent_state(),
+            gui_state=query,
+        )
 
         # Attempt the LLM call and parsing up to (retries + 1) times
         for attempt in range(retries + 1):            
@@ -332,13 +514,14 @@ class GUIModule:
                 # Parse and validate the structured JSON response
                 reasoning_result, _ = self._parse_reasoning_response(response)
 
-                if self.gui_event_stream_manager and log_reasoning_event:
-                    self.set_gui_event_stream(reasoning_result.reasoning)
+                if self.event_stream_manager and log_reasoning_event:
+                    self.log_gui_reasoning(reasoning_result.reasoning)
 
                 return reasoning_result
             except ValueError as e:                
                 raise RuntimeError("Failed to obtain valid reasoning from VLM") from e
 
+    @profile("gui_get_pixel_position_vlm", OperationCategory.LLM)
     async def _get_pixel_position_vlm(self, image_bytes: bytes, element_to_find: str) -> List[Dict]:
         """
         Get the pixel position of the element in the image.
@@ -348,7 +531,6 @@ class GUIModule:
             user_flags={"query": False, "expected_output": False},
             system_flags={
                 "policy": False, 
-                "gui_event_stream": False, 
                 "event_stream": False, 
                 "task_state": False, 
                 "conversation_history": False, 
@@ -369,7 +551,8 @@ class GUIModule:
     # ==================================
     # OmniParser Helper Methods
     # ==================================
-
+    
+    @profile("gui_get_image_description_omniparser", OperationCategory.LLM)
     async def _get_image_description_omniparser(self, image_bytes: bytes) -> Tuple[List[str], bytes]:
         """
         Get the description of the image using OmniParser via Gradio Client.
@@ -429,6 +612,7 @@ class GUIModule:
         except (IndexError, TypeError, IOError, OSError) as e:
              raise ValueError(f"Failed to parse Gradio client response format: {e}") from e
 
+    @profile("gui_perform_reasoning_omniparser", OperationCategory.REASONING)
     async def _perform_reasoning_GUI_omniparser(self, png_bytes: bytes, retries: int = 2, log_reasoning_event = False) -> Tuple[ReasoningResult, int]:
         """
         Perform reasoning on a image to guide action selection.
@@ -445,10 +629,15 @@ class GUIModule:
         # Build the system prompt using the current context configuration
         system_prompt, _ = self.context_engine.make_prompt(
             user_flags={"query": False, "expected_output": False},
-            system_flags={"policy": False, "gui_event_stream": True, "event_stream": False},
+            system_flags={"policy": False, "event_stream": False, "task_state": False, "agent_state": False},
         )
-        # Format the user prompt with the incoming query
-        prompt = GUI_REASONING_PROMPT_OMNIPARSER
+        # Format the user prompt with context for proper reasoning
+        # GUI_REASONING_PROMPT_OMNIPARSER requires: event_stream, task_state, agent_state
+        prompt = GUI_REASONING_PROMPT_OMNIPARSER.format(
+            event_stream=self.context_engine.get_event_stream(),
+            task_state=self.context_engine.get_task_state(),
+            agent_state=self.context_engine.get_agent_state(),
+        )
 
         # Attempt the LLM call and parsing up to (retries + 1) times
         for attempt in range(retries + 1):            
@@ -462,8 +651,8 @@ class GUIModule:
                 # Parse and validate the structured JSON response
                 reasoning_result, item_index = self._parse_reasoning_response(response)
 
-                if self.gui_event_stream_manager and log_reasoning_event:
-                    self.set_gui_event_stream(reasoning_result.reasoning)
+                if self.event_stream_manager and log_reasoning_event:
+                    self.log_gui_reasoning(reasoning_result.reasoning)
 
                 return reasoning_result, item_index
             except ValueError as e:                
@@ -486,7 +675,7 @@ class GUIModule:
             parts = data_line.split(': ', 1)
 
             if len(parts) < 2:
-                print(f"Error: Line format incorrect. Could not find separator ': '")
+                logger.warning(f"Error: Line format incorrect. Could not find separator ': '")
                 return None
 
             # parts[0] is like "icon 0"
@@ -505,14 +694,14 @@ class GUIModule:
             if isinstance(bbox, list) and len(bbox) == 4:
                 return bbox
             else:
-                print(f"Error: 'bbox' found but format is invalid: {bbox}")
+                logger.warning(f"Error: 'bbox' found but format is invalid: {bbox}")
                 return None
 
         except (ValueError, SyntaxError, ast.ASTError) as e:
-            print(f"Error parsing dictionary contents in line: {e}")
+            logger.warning(f"Error parsing dictionary contents in line: {e}")
             return None
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            logger.warning(f"Unexpected error: {e}")
             return None
 
     def convert_bbox_to_pixels(

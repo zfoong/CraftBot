@@ -26,8 +26,7 @@ from core.event_stream.event_stream_manager import EventStreamManager
 from core.context_engine import ContextEngine
 from core.state.state_manager import StateManager
 from core.state.agent_state import STATE
-from core.task.task import Step
-from core.gui.handler import GUIHandler
+from decorators.profiler import profile, OperationCategory
 
 nest_asyncio.apply()
 
@@ -77,6 +76,7 @@ class ActionManager:
     # Public helpers
     # ------------------------------------------------------------------
 
+    @profile("action_manager_execute_action", OperationCategory.ACTION_EXECUTION)
     async def execute_action(
         self,
         action: Action,
@@ -154,16 +154,17 @@ class ActionManager:
         }
 
         logger.info(f"Action {action.name} marked as in-flight.")
-        
-        if is_running_task:
-            self._log_event_stream(
-                is_gui_task=is_gui_task,
-                event_type="action_start",
-                event=f"Running action {action.name} with input: {input_data}.",
-                display_message=f"Running {action.name}",
-                action_name=action.name,
-            )
-            
+
+        # Always log action events (both task and conversation mode)
+        # This enables TUI to track agent state transitions consistently
+        self._log_event_stream(
+            is_gui_task=is_gui_task,
+            event_type="action_start",
+            event=f"Running action {action.name} with input: {input_data}.",
+            display_message=f"Running {action.display_name}",
+            action_name=action.name,
+        )
+
         logger.debug(f"Starting execution of action {action.name}...")
 
         try:
@@ -233,30 +234,29 @@ class ActionManager:
         # ────────────────────────────────────────────────────────────────
 
         logger.debug(f"Action {action.name} completed with status: {status}.")
-        
-        if is_running_task:
-            display_status = "failed" if status == "error" else "completed"
+
+        # Always log action events (both task and conversation mode)
+        # This enables TUI to track agent state transitions consistently
+        # Check if action output indicates error (some actions return error status without raising exceptions)
+        output_has_error = outputs and outputs.get("status") == "error"
+        display_status = "failed" if (status == "error" or output_has_error) else "completed"
+        self._log_event_stream(
+            is_gui_task=is_gui_task,
+            event_type="action_end",
+            event=f"Action {action.name} completed with output: {outputs}.",
+            display_message=f"{action.display_name} → {display_status}",
+            action_name=action.name,
+        )
+
+        # Emit waiting_for_user event if action requested to wait for user reply
+        if outputs and outputs.get("wait_for_user_reply", False):
             self._log_event_stream(
                 is_gui_task=is_gui_task,
-                event_type="action_end",
-                event=f"Action {action.name} completed with output: {outputs}.",
-                display_message=f"{action.name} → {display_status}",
+                event_type="waiting_for_user",
+                event="Agent is waiting for user response.",
+                display_message=None,  # No display message - handled by TUI status bar only
                 action_name=action.name,
             )
-
-            # current_step: Optional[Step] = self.state_manager.get_current_step()
-            # if current_step:
-            #     self._log_event_stream(
-            #         is_gui_task=is_gui_task,
-            #         event_type="task",
-            #         event=f"Running task step: '{current_step.step_name}' – {current_step.description} {context if context else ''}",
-            #         display_message=f"Running task step: '{current_step.step_name}' – {current_step.description}",
-            #         action_name=action.name,
-            #     )
-            #     logger.debug(f"[ActionManager] Step {current_step.step_name} queued ({session_id})")
-                
-        else:
-            logger.warning(f"Action {action.name} completed with status: {status}. But no event stream manager to log to.")
         
         logger.debug(f"Persisting final state for action {action.name}...")
         STATE.set_agent_property("action_count", STATE.get_agent_property("action_count") + 1)
@@ -312,21 +312,36 @@ class ActionManager:
         )
 
     def _log_event_stream(self, is_gui_task: bool, event_type: str, event: str, display_message: str, action_name: str) -> None:
+        """Log action events to the unified event stream.
+
+        Both GUI and CLI actions are logged to the main event stream.
+        GUI actions use prefixed labels (e.g., "GUI action start") for clarity.
+        """
+        if not self.event_stream_manager:
+            logger.warning(f"No event stream manager to log to for event type: {event_type}")
+            return
+
+        # Use GUI-specific labels when in GUI mode, otherwise standard labels
         if is_gui_task:
-            GUIHandler.gui_module.set_gui_event_stream(event)
+            gui_event_labels = {
+                "action_start": "GUI action start",
+                "action_end": "GUI action end",
+            }
+            kind = gui_event_labels.get(event_type, f"GUI {event_type}")
         else:
-            if self.event_stream_manager:
-                self.event_stream_manager.log(
-                    event_type,
-                    event,
-                    display_message=display_message, action_name=action_name,
-                )
-            else:
-                logger.warning(f"No event stream manager to log to for event type: {event_type}")
+            kind = event_type
+
+        self.event_stream_manager.log(
+            kind,
+            event,
+            display_message=display_message,
+            action_name=action_name,
+        )
     # ------------------------------------------------------------------
     # Action execution primitives (unchanged)
     # ------------------------------------------------------------------
 
+    @profile("action_manager_execute_atomic_action", OperationCategory.ACTION_EXECUTION)
     async def execute_atomic_action(self, action: Action, input_data: dict):
         try:
             output = await self.executor.execute_action(action, input_data)
@@ -414,6 +429,7 @@ class ActionManager:
             logger.debug("Recovered JSON payload from action output.")
             return parsed
 
+    @profile("action_manager_execute_divisible_action", OperationCategory.ACTION_EXECUTION)
     async def execute_divisible_action(self, action, input_data, parent_id):
         results = {}
         for sub in action.sub_actions:
@@ -426,6 +442,7 @@ class ActionManager:
             )
         return results
     
+    @profile("action_manager_run_observe_step", OperationCategory.ACTION_EXECUTION)
     async def run_observe_step(self, action: Action, action_output: dict) -> Dict[str, Any]:
         """
         Executes the observation code with retries, to confirm action outcome.
