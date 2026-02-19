@@ -1058,24 +1058,28 @@ class AgentBase:
 
         return "Agent state reset. Starting fresh."
 
-    async def _handle_onboarding_command(self) -> str:
+    async def trigger_soft_onboarding(self, reset: bool = False) -> Optional[str]:
         """
-        Handle the /onboarding command to re-run soft onboarding.
+        Trigger soft onboarding interview task.
 
-        Resets soft onboarding state and creates a new interview task.
+        This method centralizes soft onboarding logic so interfaces don't need
+        to contain agent logic.
+
+        Args:
+            reset: If True, reset soft onboarding state first (for /onboarding command)
 
         Returns:
-            Message indicating the interview is starting.
+            Task ID if created, None if not needed or already in progress
         """
         from core.onboarding.manager import onboarding_manager
         from core.onboarding.soft.task_creator import create_soft_onboarding_task
         from core.trigger import Trigger
         import time
 
-        # Reset soft onboarding state to allow re-run
-        onboarding_manager.reset_soft_onboarding()
+        if reset:
+            onboarding_manager.reset_soft_onboarding()
 
-        # Create new interview task
+        # Create interview task
         task_id = create_soft_onboarding_task(self.task_manager)
 
         # Fire trigger to start the task
@@ -1088,7 +1092,17 @@ class AgentBase:
         )
         await self.triggers.put(trigger)
 
-        logger.info(f"[ONBOARDING] /onboarding command: created task {task_id}")
+        logger.info(f"[ONBOARDING] Triggered soft onboarding task: {task_id}")
+        return task_id
+
+    async def _handle_onboarding_command(self) -> str:
+        """
+        Handle the /onboarding command to re-run soft onboarding.
+
+        Returns:
+            Message indicating the interview is starting.
+        """
+        await self.trigger_soft_onboarding(reset=True)
         return "Starting user profile interview. I'll ask you some questions to personalize your experience."
 
     def _parse_reasoning_response(self, response: str) -> ReasoningResult:
@@ -1347,6 +1361,13 @@ class AgentBase:
 
         # Schedule daily memory processing
         await self._schedule_daily_memory_processing()
+
+        # Trigger soft onboarding if needed (BEFORE starting interface)
+        # This ensures agent handles onboarding logic, not the interfaces
+        from core.onboarding.manager import onboarding_manager
+        if onboarding_manager.needs_soft_onboarding:
+            logger.info("[ONBOARDING] Soft onboarding needed, triggering from agent")
+            await self.trigger_soft_onboarding()
 
         try:
             # Select interface based on mode

@@ -102,12 +102,8 @@ class CLIInterface:
         CLIFormatter.print_logo()
         print("Type /help for commands, /exit to quit.\n")
 
-        # Check if soft onboarding is needed and trigger it
-        if onboarding_manager.needs_soft_onboarding:
-            from core.onboarding.soft.task_creator import create_soft_onboarding_task
-            task_id = create_soft_onboarding_task(self._agent.task_manager)
-            if task_id:
-                logger.info(f"[CLI] Triggered soft onboarding task: {task_id}")
+        # Note: Soft onboarding is triggered by the agent in run() before
+        # the interface starts. Interfaces should not contain agent logic.
 
         # Start background tasks
         trigger_consumer = asyncio.create_task(self._consume_triggers())

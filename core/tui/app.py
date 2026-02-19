@@ -136,8 +136,6 @@ class CraftApp(App):
         self._saved_api_keys: dict[str, str] = {provider: api_key} if api_key else {}
         # Track the provider selected in settings before saving
         self._settings_provider: str = provider
-        # Track if soft onboarding has been triggered this session
-        self._soft_onboarding_triggered: bool = False
         # Flag to block provider change events during settings initialization
         self._settings_init_complete: bool = True
 
@@ -676,11 +674,8 @@ class CraftApp(App):
         self.show_menu = False
         self._interface.notify_provider(self._provider)
 
-        # Check if soft onboarding is needed (first time entering chat after hard onboarding)
-        if onboarding_manager.needs_soft_onboarding and not self._soft_onboarding_triggered:
-            self._soft_onboarding_triggered = True
-            logger.info("[ONBOARDING] Soft onboarding needed, scheduling interview task")
-            self.call_after_refresh(self._trigger_soft_onboarding)
+        # Note: Soft onboarding is triggered by the agent in run() before
+        # the interface starts. See agent_base.py.
 
     async def _launch_hard_onboarding(self) -> None:
         """Launch the hard onboarding wizard screen."""
@@ -691,28 +686,8 @@ class CraftApp(App):
         screen = OnboardingWizardScreen(handler)
         await self.push_screen(screen)
 
-    async def _trigger_soft_onboarding(self) -> None:
-        """Trigger the soft onboarding conversational interview."""
-        from core.onboarding.soft.task_creator import create_soft_onboarding_task
-        from core.trigger import Trigger
-
-        if not self._interface or not self._interface._agent:
-            logger.warning("[ONBOARDING] Cannot trigger soft onboarding: no agent reference")
-            return
-
-        # Create the interview task
-        task_id = create_soft_onboarding_task(self._interface._agent.task_manager)
-
-        # Fire a trigger to start the task
-        trigger = Trigger(
-            fire_at=time.time(),
-            priority=1,
-            next_action_description="Begin user profile interview",
-            session_id=task_id,
-            payload={"onboarding": True},
-        )
-        await self._interface._agent.triggers.put(trigger)
-        logger.info(f"[ONBOARDING] Triggered soft onboarding task: {task_id}")
+    # Note: Soft onboarding is triggered by the agent in run() before
+    # the interface starts. Interfaces should not contain agent logic.
 
     async def on_mount(self) -> None:  # pragma: no cover - UI lifecycle
         self.query_one("#chat-panel").border_title = "Chat"
