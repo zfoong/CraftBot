@@ -5,7 +5,10 @@
     "git-commit",
     "code-review",
     "research-assistant",
-    "self-improvement"
+    "self-improvement",
+    "1password",
+    "agentmail",
+    "ai-news-collector"
   ],
   "project_skills_dir": "skills"
 }

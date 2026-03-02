@@ -87,6 +87,31 @@ class CraftApp(App):
         ("menu-exit", "exit"),
     ]
 
+    @staticmethod
+    def _sanitize_id(name: str) -> str:
+        """Sanitize a name for use as a Textual widget ID.
+
+        Textual widget IDs must contain only letters, numbers, underscores, or hyphens,
+        and must not begin with a number.
+
+        Args:
+            name: The name to sanitize.
+
+        Returns:
+            A sanitized ID string.
+        """
+        import re
+        # Replace spaces and invalid characters with hyphens
+        sanitized = re.sub(r'[^a-zA-Z0-9_-]', '-', name)
+        # Ensure it doesn't start with a number
+        if sanitized and sanitized[0].isdigit():
+            sanitized = '_' + sanitized
+        # Remove consecutive hyphens
+        sanitized = re.sub(r'-+', '-', sanitized)
+        # Remove leading/trailing hyphens
+        sanitized = sanitized.strip('-')
+        return sanitized or 'unknown'
+
     _SETTINGS_PROVIDER_TEXTS = [
         "OpenAI",
         "Google Gemini",
@@ -415,9 +440,16 @@ class CraftApp(App):
         configured_servers = {s["name"]: s for s in list_mcp_servers()}
         items = []
 
+        # Store mapping from sanitized ID to original server name for handlers
+        self._mcp_id_to_name: dict[str, str] = {}
+
         # Show all templates from MCP_SERVER_TEMPLATES
         for template_name, template_info in MCP_SERVER_TEMPLATES.items():
             name = template_info.get("name", template_name)
+            # Sanitize name for use in widget IDs
+            safe_id = self._sanitize_id(name)
+            # Store mapping for reverse lookup
+            self._mcp_id_to_name[safe_id] = name
             # Truncate name if too long (max 18 chars to leave room for status)
             display_name = name[:18] + ".." if len(name) > 18 else name
             desc = template_info.get("description", "")
@@ -440,13 +472,13 @@ class CraftApp(App):
 
                 # Add Configure button only if server has env vars
                 if env_vars:
-                    row_widgets.append(Button("Configure", id=f"mcp-config-{name}", classes="mcp-config-btn"))
+                    row_widgets.append(Button("Configure", id=f"mcp-config-{safe_id}", classes="mcp-config-btn"))
 
                 # Add Enable/Disable toggle button
                 if server["enabled"]:
-                    row_widgets.append(Button("Disable", id=f"mcp-disable-{name}", classes="mcp-toggle-btn -enabled"))
+                    row_widgets.append(Button("Disable", id=f"mcp-disable-{safe_id}", classes="mcp-toggle-btn -enabled"))
                 else:
-                    row_widgets.append(Button("Enable", id=f"mcp-enable-{name}", classes="mcp-toggle-btn -disabled"))
+                    row_widgets.append(Button("Enable", id=f"mcp-enable-{safe_id}", classes="mcp-toggle-btn -disabled"))
 
                 items.append(Horizontal(*row_widgets, classes="mcp-server-row"))
             else:
@@ -454,13 +486,18 @@ class CraftApp(App):
                 row_widgets = [
                     Static(f"[ ] {display_name}", classes="mcp-server-name -unconfigured"),
                     Static(desc, classes="mcp-server-desc"),
-                    Button("Add", id=f"mcp-add-template-{name}", classes="mcp-add-btn"),
+                    Button("Add", id=f"mcp-add-template-{safe_id}", classes="mcp-add-btn"),
                 ]
                 items.append(Horizontal(*row_widgets, classes="mcp-server-row -unconfigured"))
 
         # Also show any custom configured servers not in templates
         for name, server in configured_servers.items():
             if name not in MCP_SERVER_TEMPLATES:
+                # Sanitize name for use in widget IDs
+                safe_id = self._sanitize_id(name)
+                # Store mapping for reverse lookup
+                self._mcp_id_to_name[safe_id] = name
+
                 status = "[+]" if server["enabled"] else "[ ]"
                 # Truncate name if too long
                 display_name = name[:18] + ".." if len(name) > 18 else name
@@ -477,12 +514,12 @@ class CraftApp(App):
                 ]
 
                 if env_vars:
-                    row_widgets.append(Button("Configure", id=f"mcp-config-{name}", classes="mcp-config-btn"))
+                    row_widgets.append(Button("Configure", id=f"mcp-config-{safe_id}", classes="mcp-config-btn"))
 
                 if server["enabled"]:
-                    row_widgets.append(Button("Disable", id=f"mcp-disable-{name}", classes="mcp-toggle-btn -enabled"))
+                    row_widgets.append(Button("Disable", id=f"mcp-disable-{safe_id}", classes="mcp-toggle-btn -enabled"))
                 else:
-                    row_widgets.append(Button("Enable", id=f"mcp-enable-{name}", classes="mcp-toggle-btn -disabled"))
+                    row_widgets.append(Button("Enable", id=f"mcp-enable-{safe_id}", classes="mcp-toggle-btn -disabled"))
 
                 items.append(Horizontal(*row_widgets, classes="mcp-server-row"))
 
@@ -508,12 +545,19 @@ class CraftApp(App):
         skills = list_skills()
         items = []
 
+        # Store mapping from sanitized ID to original skill name for handlers
+        self._skill_id_to_name: dict[str, str] = {}
+
         if not skills:
             items.append(Static("No skills discovered", classes="skill-empty"))
         else:
             for skill in skills:
                 status = "[+]" if skill["enabled"] else "[ ]"
                 name = skill["name"]
+                # Sanitize name for use in widget IDs
+                safe_id = self._sanitize_id(name)
+                # Store mapping for reverse lookup
+                self._skill_id_to_name[safe_id] = name
                 # Truncate name if too long (max 18 chars to leave room for status)
                 display_name = name[:18] + ".." if len(name) > 18 else name
                 desc = skill["description"][:35] + "..." if len(skill["description"]) > 35 else skill["description"]
@@ -522,14 +566,14 @@ class CraftApp(App):
                 row_widgets = [
                     Static(f"{status} {display_name}", classes="skill-name"),
                     Static(desc, classes="skill-desc"),
-                    Button("View", id=f"skill-view-{name}", classes="skill-view-btn"),
+                    Button("View", id=f"skill-view-{safe_id}", classes="skill-view-btn"),
                 ]
 
                 # Add Enable/Disable toggle button
                 if skill["enabled"]:
-                    row_widgets.append(Button("Disable", id=f"skill-disable-{name}", classes="skill-toggle-btn -enabled"))
+                    row_widgets.append(Button("Disable", id=f"skill-disable-{safe_id}", classes="skill-toggle-btn -enabled"))
                 else:
-                    row_widgets.append(Button("Enable", id=f"skill-enable-{name}", classes="skill-toggle-btn -disabled"))
+                    row_widgets.append(Button("Enable", id=f"skill-enable-{safe_id}", classes="skill-toggle-btn -disabled"))
 
                 items.append(Horizontal(*row_widgets, classes="skill-row"))
 
@@ -598,6 +642,9 @@ class CraftApp(App):
         integrations = list_integrations()
         items = []
 
+        # Store mapping from sanitized ID to original integration ID for handlers
+        self._integ_id_to_name: dict[str, str] = {}
+
         if not integrations:
             items.append(Static("No integrations available", classes="integration-empty"))
         else:
@@ -607,6 +654,10 @@ class CraftApp(App):
                 # Truncate name if too long
                 display_name = name[:18] + ".." if len(name) > 18 else name
                 integ_id = integ["id"]
+                # Sanitize ID for use in widget IDs
+                safe_id = self._sanitize_id(integ_id)
+                # Store mapping for reverse lookup
+                self._integ_id_to_name[safe_id] = integ_id
 
                 # Truncate description if too long
                 desc = integ["description"][:35] + "..." if len(integ["description"]) > 35 else integ["description"]
@@ -620,8 +671,8 @@ class CraftApp(App):
                         Horizontal(
                             Static(f"{status} {display_name} {account_text}", classes="integration-name"),
                             Static(desc, classes="integration-desc"),
-                            Button("View", id=f"integ-view-{integ_id}", classes="integration-view-btn"),
-                            Button("x", id=f"integ-disconnect-{integ_id}", classes="integration-disconnect-btn"),
+                            Button("View", id=f"integ-view-{safe_id}", classes="integration-view-btn"),
+                            Button("x", id=f"integ-disconnect-{safe_id}", classes="integration-disconnect-btn"),
                             classes="integration-row",
                         )
                     )
@@ -631,7 +682,7 @@ class CraftApp(App):
                         Horizontal(
                             Static(f"{status} {display_name}", classes="integration-name"),
                             Static(desc, classes="integration-desc"),
-                            Button("Connect", id=f"integ-connect-{integ_id}", classes="integration-connect-btn"),
+                            Button("Connect", id=f"integ-connect-{safe_id}", classes="integration-connect-btn"),
                             classes="integration-row",
                         )
                     )
@@ -1255,7 +1306,8 @@ class CraftApp(App):
 
         # Handle MCP server remove buttons
         if button_id and button_id.startswith("mcp-remove-"):
-            server_name = button_id[11:]  # Remove "mcp-remove-" prefix
+            safe_id = button_id[11:]  # Remove "mcp-remove-" prefix
+            server_name = getattr(self, '_mcp_id_to_name', {}).get(safe_id, safe_id)
             success, message = remove_mcp_server(server_name)
             if success:
                 self.notify(message, severity="information", timeout=2)
@@ -1265,12 +1317,14 @@ class CraftApp(App):
 
         # Handle MCP server config buttons
         if button_id and button_id.startswith("mcp-config-"):
-            server_name = button_id[11:]  # Remove "mcp-config-" prefix
+            safe_id = button_id[11:]  # Remove "mcp-config-" prefix
+            server_name = getattr(self, '_mcp_id_to_name', {}).get(safe_id, safe_id)
             self._open_mcp_env_editor(server_name)
 
         # Handle MCP server enable buttons
         if button_id and button_id.startswith("mcp-enable-"):
-            server_name = button_id[11:]  # Remove "mcp-enable-" prefix
+            safe_id = button_id[11:]  # Remove "mcp-enable-" prefix
+            server_name = getattr(self, '_mcp_id_to_name', {}).get(safe_id, safe_id)
             success, message = enable_mcp_server(server_name)
             if success:
                 self.notify(message, severity="information", timeout=2)
@@ -1280,7 +1334,8 @@ class CraftApp(App):
 
         # Handle MCP server disable buttons
         if button_id and button_id.startswith("mcp-disable-"):
-            server_name = button_id[12:]  # Remove "mcp-disable-" prefix
+            safe_id = button_id[12:]  # Remove "mcp-disable-" prefix
+            server_name = getattr(self, '_mcp_id_to_name', {}).get(safe_id, safe_id)
             success, message = disable_mcp_server(server_name)
             if success:
                 self.notify(message, severity="information", timeout=2)
@@ -1290,7 +1345,8 @@ class CraftApp(App):
 
         # Handle MCP add template buttons (from the list)
         if button_id and button_id.startswith("mcp-add-template-"):
-            template_name = button_id[17:]  # Remove "mcp-add-template-" prefix
+            safe_id = button_id[17:]  # Remove "mcp-add-template-" prefix
+            template_name = getattr(self, '_mcp_id_to_name', {}).get(safe_id, safe_id)
             success, message = add_mcp_server_from_template(template_name)
             if success:
                 self.notify(message, severity="information", timeout=2)
@@ -1310,7 +1366,8 @@ class CraftApp(App):
 
         # Handle Skill enable buttons
         if button_id and button_id.startswith("skill-enable-"):
-            skill_name = button_id[13:]  # Remove "skill-enable-" prefix
+            safe_id = button_id[13:]  # Remove "skill-enable-" prefix
+            skill_name = getattr(self, '_skill_id_to_name', {}).get(safe_id, safe_id)
             success, message = enable_skill(skill_name)
             if success:
                 self.notify(message, severity="information", timeout=2)
@@ -1320,7 +1377,8 @@ class CraftApp(App):
 
         # Handle Skill disable buttons
         if button_id and button_id.startswith("skill-disable-"):
-            skill_name = button_id[14:]  # Remove "skill-disable-" prefix
+            safe_id = button_id[14:]  # Remove "skill-disable-" prefix
+            skill_name = getattr(self, '_skill_id_to_name', {}).get(safe_id, safe_id)
             success, message = disable_skill(skill_name)
             if success:
                 self.notify(message, severity="information", timeout=2)
@@ -1334,7 +1392,8 @@ class CraftApp(App):
 
         # Handle Skill view buttons
         if button_id and button_id.startswith("skill-view-"):
-            skill_name = button_id[11:]  # Remove "skill-view-" prefix
+            safe_id = button_id[11:]  # Remove "skill-view-" prefix
+            skill_name = getattr(self, '_skill_id_to_name', {}).get(safe_id, safe_id)
             self._open_skill_detail_viewer(skill_name)
 
         # Handle Skill detail buttons
@@ -1347,17 +1406,20 @@ class CraftApp(App):
 
         # Handle Integration connect buttons
         if button_id and button_id.startswith("integ-connect-"):
-            integration_id = button_id[14:]  # Remove "integ-connect-" prefix
+            safe_id = button_id[14:]  # Remove "integ-connect-" prefix
+            integration_id = getattr(self, '_integ_id_to_name', {}).get(safe_id, safe_id)
             self._open_integration_connect_modal(integration_id)
 
         # Handle Integration view buttons
         if button_id and button_id.startswith("integ-view-"):
-            integration_id = button_id[11:]  # Remove "integ-view-" prefix
+            safe_id = button_id[11:]  # Remove "integ-view-" prefix
+            integration_id = getattr(self, '_integ_id_to_name', {}).get(safe_id, safe_id)
             self._open_integration_detail_viewer(integration_id)
 
         # Handle Integration disconnect buttons
         if button_id and button_id.startswith("integ-disconnect-"):
-            integration_id = button_id[17:]  # Remove "integ-disconnect-" prefix
+            safe_id = button_id[17:]  # Remove "integ-disconnect-" prefix
+            integration_id = getattr(self, '_integ_id_to_name', {}).get(safe_id, safe_id)
             self._disconnect_integration(integration_id)
 
         # Handle Integration modal buttons
@@ -1381,11 +1443,19 @@ class CraftApp(App):
 
         # Handle per-account disconnect buttons in detail viewer
         if button_id and button_id.startswith("integ-account-disconnect-"):
-            # Format: integ-account-disconnect-{integration_id}-{account_id}
-            parts = button_id[25:].split("-", 1)  # Remove prefix and split
-            if len(parts) == 2:
-                integration_id, account_id = parts
+            # Format: integ-account-disconnect-{safe_integ_id}-{safe_acc_id}
+            safe_key = button_id[25:]  # Remove prefix
+            # Look up the original IDs from the mapping
+            original_ids = getattr(self, '_integ_account_id_to_name', {}).get(safe_key, safe_key)
+            if "|" in original_ids:
+                integration_id, account_id = original_ids.split("|", 1)
                 self._disconnect_integration_account(integration_id, account_id)
+            else:
+                # Fallback to old split logic for compatibility
+                parts = safe_key.split("-", 1)
+                if len(parts) == 2:
+                    integration_id, account_id = parts
+                    self._disconnect_integration_account(integration_id, account_id)
 
     def _switch_settings_section(self, section: str) -> None:
         """Switch between Models, MCP, Skills, and Integrations sections in settings."""
@@ -1981,16 +2051,24 @@ class CraftApp(App):
 
         accounts = info.get("accounts", [])
 
+        # Store mapping from sanitized account ID to original account ID for handlers
+        self._integ_account_id_to_name: dict[str, str] = {}
+
         # Build account list
         account_items = []
         if accounts:
             for account in accounts:
                 display = account.get("display", "Unknown")
                 acc_id = account.get("id", "")
+                # Sanitize IDs for use in widget IDs
+                safe_integ_id = self._sanitize_id(integration_id)
+                safe_acc_id = self._sanitize_id(acc_id)
+                # Store mapping for reverse lookup
+                self._integ_account_id_to_name[f"{safe_integ_id}-{safe_acc_id}"] = f"{integration_id}|{acc_id}"
                 account_items.append(
                     Horizontal(
                         Static(f"  {display}", classes="integ-account-info"),
-                        Button("x", id=f"integ-account-disconnect-{integration_id}-{acc_id}", classes="integ-account-disconnect-btn"),
+                        Button("x", id=f"integ-account-disconnect-{safe_integ_id}-{safe_acc_id}", classes="integ-account-disconnect-btn"),
                         classes="integ-account-row",
                     )
                 )
