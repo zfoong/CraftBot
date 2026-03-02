@@ -12,14 +12,15 @@ from agent_core import action
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def search_notion(input_data: dict) -> dict:
-    from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-    creds = NotionAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Notion credential. Use /notion login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.notion.helpers.notion_helpers import search_notion as _search
-    result = _search(cred.token, input_data["query"], filter_type=input_data.get("filter_type"))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.notion import NotionClient
+        client = NotionClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Notion credential. Use /notion login first."}
+        result = client.search(input_data["query"], filter_type=input_data.get("filter_type"))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -32,14 +33,15 @@ def search_notion(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_notion_page(input_data: dict) -> dict:
-    from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-    creds = NotionAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Notion credential. Use /notion login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.notion.helpers.notion_helpers import get_page
-    result = get_page(cred.token, input_data["page_id"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.notion import NotionClient
+        client = NotionClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Notion credential. Use /notion login first."}
+        result = client.get_page(input_data["page_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -55,15 +57,18 @@ def get_notion_page(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_notion_page(input_data: dict) -> dict:
-    from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-    creds = NotionAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Notion credential. Use /notion login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.notion.helpers.notion_helpers import create_page
-    result = create_page(cred.token, input_data["parent_id"], input_data["parent_type"],
-                         input_data["properties"], children=input_data.get("children"))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.notion import NotionClient
+        client = NotionClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Notion credential. Use /notion login first."}
+        result = client.create_page(
+            input_data["parent_id"], input_data["parent_type"],
+            input_data["properties"], children=input_data.get("children"),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -78,15 +83,19 @@ def create_notion_page(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def query_notion_database(input_data: dict) -> dict:
-    from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-    creds = NotionAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Notion credential. Use /notion login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.notion.helpers.notion_helpers import query_database
-    result = query_database(cred.token, input_data["database_id"],
-                            filter_obj=input_data.get("filter"), sorts=input_data.get("sorts"))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.notion import NotionClient
+        client = NotionClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Notion credential. Use /notion login first."}
+        result = client.query_database(
+            input_data["database_id"],
+            filter_obj=input_data.get("filter"),
+            sorts=input_data.get("sorts"),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -100,14 +109,15 @@ def query_notion_database(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def update_notion_page(input_data: dict) -> dict:
-    from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-    creds = NotionAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Notion credential. Use /notion login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.notion.helpers.notion_helpers import update_page
-    result = update_page(cred.token, input_data["page_id"], input_data["properties"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.notion import NotionClient
+        client = NotionClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Notion credential. Use /notion login first."}
+        result = client.update_page(input_data["page_id"], input_data["properties"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -120,14 +130,15 @@ def update_notion_page(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "database": {"type": "object"}},
 )
 def get_notion_database_schema(input_data: dict) -> dict:
-    from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-    creds = NotionAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Notion credential. Use /notion login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.notion.helpers.notion_helpers import get_database
-    result = get_database(cred.token, input_data["database_id"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.notion import NotionClient
+        client = NotionClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Notion credential. Use /notion login first."}
+        result = client.get_database(input_data["database_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -140,14 +151,15 @@ def get_notion_database_schema(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "content": {"type": "array"}},
 )
 def get_notion_page_content(input_data: dict) -> dict:
-    from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-    creds = NotionAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Notion credential. Use /notion login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.notion.helpers.notion_helpers import get_block_children
-    result = get_block_children(cred.token, input_data["page_id"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.notion import NotionClient
+        client = NotionClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Notion credential. Use /notion login first."}
+        result = client.get_block_children(input_data["page_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -161,11 +173,12 @@ def get_notion_page_content(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def append_notion_page_content(input_data: dict) -> dict:
-    from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-    creds = NotionAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Notion credential. Use /notion login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.notion.helpers.notion_helpers import append_block_children
-    result = append_block_children(cred.token, input_data["page_id"], input_data["children"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.notion import NotionClient
+        client = NotionClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Notion credential. Use /notion login first."}
+        result = client.append_block_children(input_data["page_id"], input_data["children"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

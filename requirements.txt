@@ -42,3 +42,4 @@ scikit-learn
 watchdog
 telethon
 croniter>=2.0.0        # Cron expression parsing for scheduler
+playwright             # WhatsApp Web browser automation

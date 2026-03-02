@@ -47,3 +47,4 @@ dependencies:
       - python-dotenv==1.2.1
       - watchdog==6.0.0
       - telethon==1.42.0
+      - playwright==1.58.0

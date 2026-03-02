@@ -1,6 +1,11 @@
 from agent_core import action
 
 
+# =====================================================================
+# Bot API actions
+# =====================================================================
+
+
 @action(
     name="send_telegram_message",
     description="Send a text message to a Telegram chat via bot.",
@@ -15,17 +20,22 @@ from agent_core import action
         "message": {"type": "string", "example": "Message sent"},
     },
 )
-def send_telegram_message(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    creds = [c for c in TelegramAppLibrary.get_credential_store().get(
-        input_data.get("user_id", "local")) if c.connection_type == "bot_api"]
-    if not creds:
-        return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.telegram.helpers.telegram_helpers import send_message
-    result = send_message(cred.bot_token, input_data["chat_id"], input_data["text"],
-                          parse_mode=input_data.get("parse_mode"))
-    return {"status": "success", "result": result}
+async def send_telegram_message(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.send_message(
+            input_data["chat_id"],
+            input_data["text"],
+            parse_mode=input_data.get("parse_mode"),
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -37,21 +47,24 @@ def send_telegram_message(input_data: dict) -> dict:
         "photo": {"type": "string", "description": "URL or file_id of the photo.", "example": "https://example.com/photo.jpg"},
         "caption": {"type": "string", "description": "Optional photo caption.", "example": "Check this out"},
     },
-    output_schema={
-        "status": {"type": "string", "example": "success"},
-    },
+    output_schema={"status": {"type": "string", "example": "success"}},
 )
-def send_telegram_photo(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    creds = [c for c in TelegramAppLibrary.get_credential_store().get(
-        input_data.get("user_id", "local")) if c.connection_type == "bot_api"]
-    if not creds:
-        return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.telegram.helpers.telegram_helpers import send_photo
-    result = send_photo(cred.bot_token, input_data["chat_id"], input_data["photo"],
-                        caption=input_data.get("caption"))
-    return {"status": "success", "result": result}
+async def send_telegram_photo(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.send_photo(
+            input_data["chat_id"],
+            input_data["photo"],
+            caption=input_data.get("caption"),
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -67,17 +80,21 @@ def send_telegram_photo(input_data: dict) -> dict:
         "updates": {"type": "array", "description": "List of update objects."},
     },
 )
-def get_telegram_updates(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    creds = [c for c in TelegramAppLibrary.get_credential_store().get(
-        input_data.get("user_id", "local")) if c.connection_type == "bot_api"]
-    if not creds:
-        return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.telegram.helpers.telegram_helpers import get_updates
-    result = get_updates(cred.bot_token, limit=input_data.get("limit", 100),
-                         offset=input_data.get("offset"))
-    return {"status": "success", "result": result}
+async def get_telegram_updates(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.get_updates(
+            offset=input_data.get("offset"),
+            limit=input_data.get("limit", 100),
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -87,20 +104,20 @@ def get_telegram_updates(input_data: dict) -> dict:
     input_schema={
         "chat_id": {"type": "string", "description": "Chat ID or @username.", "example": "123456789"},
     },
-    output_schema={
-        "status": {"type": "string", "example": "success"},
-    },
+    output_schema={"status": {"type": "string", "example": "success"}},
 )
-def get_telegram_chat(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    creds = [c for c in TelegramAppLibrary.get_credential_store().get(
-        input_data.get("user_id", "local")) if c.connection_type == "bot_api"]
-    if not creds:
-        return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.telegram.helpers.telegram_helpers import get_chat
-    result = get_chat(cred.bot_token, input_data["chat_id"])
-    return {"status": "success", "result": result}
+async def get_telegram_chat(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.get_chat(input_data["chat_id"])
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -110,20 +127,20 @@ def get_telegram_chat(input_data: dict) -> dict:
     input_schema={
         "name": {"type": "string", "description": "Contact name to search for.", "example": "John"},
     },
-    output_schema={
-        "status": {"type": "string", "example": "success"},
-    },
+    output_schema={"status": {"type": "string", "example": "success"}},
 )
-def search_telegram_contact(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    creds = [c for c in TelegramAppLibrary.get_credential_store().get(
-        input_data.get("user_id", "local")) if c.connection_type == "bot_api"]
-    if not creds:
-        return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.telegram.helpers.telegram_helpers import search_contact
-    result = search_contact(cred.bot_token, input_data["name"])
-    return {"status": "success", "result": result}
+async def search_telegram_contact(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.search_contact(input_data["name"])
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -137,15 +154,22 @@ def search_telegram_contact(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def send_telegram_document(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.send_document(
-        user_id=input_data.get("user_id", "local"),
-        chat_id=input_data.get("chat_id"),
-        document=input_data["document"],
-        caption=input_data.get("caption")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def send_telegram_document(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.send_document(
+            input_data["chat_id"],
+            input_data["document"],
+            caption=input_data.get("caption"),
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -159,15 +183,22 @@ def send_telegram_document(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def forward_telegram_message(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.forward_message(
-        user_id=input_data.get("user_id", "local"),
-        chat_id=input_data.get("chat_id"),
-        from_chat_id=input_data.get("from_chat_id"),
-        message_id=input_data["message_id"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def forward_telegram_message(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.forward_message(
+            input_data["chat_id"],
+            input_data["from_chat_id"],
+            input_data["message_id"],
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -177,12 +208,18 @@ def forward_telegram_message(input_data: dict) -> dict:
     input_schema={},
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def get_telegram_bot_info(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.get_bot_info(
-        user_id=input_data.get("user_id", "local")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def get_telegram_bot_info(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.get_me()
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -194,13 +231,23 @@ def get_telegram_bot_info(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def get_telegram_chat_members_count(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.get_chat_members_count(
-        user_id=input_data.get("user_id", "local"),
-        chat_id=input_data["chat_id"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def get_telegram_chat_members_count(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    try:
+        client = TelegramBotClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        result = await client.get_chat_members_count(input_data["chat_id"])
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# =====================================================================
+# MTProto actions
+# =====================================================================
 
 
 @action(
@@ -212,13 +259,18 @@ def get_telegram_chat_members_count(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def get_telegram_chats(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.get_telegram_chats(
-        user_id=input_data.get("user_id", "local"),
-        limit=input_data.get("limit", 50)
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def get_telegram_chats(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_user import TelegramUserClient
+    try:
+        client = TelegramUserClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram user credential. Use /telegram login first."}
+        result = await client.get_dialogs(limit=input_data.get("limit", 50))
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -231,14 +283,21 @@ def get_telegram_chats(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def read_telegram_messages(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.read_telegram_messages(
-        user_id=input_data.get("user_id", "local"),
-        chat_id=input_data.get("chat_id"),
-        limit=input_data.get("limit", 50)
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def read_telegram_messages(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_user import TelegramUserClient
+    try:
+        client = TelegramUserClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram user credential. Use /telegram login first."}
+        result = await client.get_messages(
+            input_data["chat_id"],
+            limit=input_data.get("limit", 50),
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -251,14 +310,21 @@ def read_telegram_messages(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def send_telegram_user_message(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.send_mtproto_message(
-        user_id=input_data.get("user_id", "local"),
-        chat_id=input_data.get("chat_id"),
-        text=input_data["text"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def send_telegram_user_message(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_user import TelegramUserClient
+    try:
+        client = TelegramUserClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram user credential. Use /telegram login first."}
+        result = await client.send_message(
+            input_data["chat_id"],
+            input_data["text"],
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -271,14 +337,21 @@ def send_telegram_user_message(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def send_telegram_user_file(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.send_mtproto_file(
-        user_id=input_data.get("user_id", "local"),
-        chat_id=input_data.get("chat_id"),
-        file_path=input_data["file_path"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def send_telegram_user_file(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_user import TelegramUserClient
+    try:
+        client = TelegramUserClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram user credential. Use /telegram login first."}
+        result = await client.send_file(
+            input_data["chat_id"],
+            input_data["file_path"],
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -290,13 +363,18 @@ def send_telegram_user_file(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def search_telegram_user_contacts(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.search_mtproto_contacts(
-        user_id=input_data.get("user_id", "local"),
-        query=input_data["query"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def search_telegram_user_contacts(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_user import TelegramUserClient
+    try:
+        client = TelegramUserClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram user credential. Use /telegram login first."}
+        result = await client.search_contacts(input_data["query"])
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -306,9 +384,15 @@ def search_telegram_user_contacts(input_data: dict) -> dict:
     input_schema={},
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def get_telegram_user_account_info(input_data: dict) -> dict:
-    from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-    result = TelegramAppLibrary.get_mtproto_account_info(
-        user_id=input_data.get("user_id", "local")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+async def get_telegram_user_account_info(input_data: dict) -> dict:
+    from app.external_comms.platforms.telegram_user import TelegramUserClient
+    try:
+        client = TelegramUserClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Telegram user credential. Use /telegram login first."}
+        result = await client.get_me()
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

@@ -12,16 +12,15 @@ from agent_core import action
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_recall_bot(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    creds = RecallAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Recall credential. Use /recall login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.recall.helpers.recall_helpers import create_bot
-    result = create_bot(cred.api_key, input_data["meeting_url"],
-                        bot_name=input_data.get("bot_name", "Meeting Assistant"),
-                        region=cred.region)
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.create_bot(input_data["meeting_url"], bot_name=input_data.get("bot_name", "Meeting Assistant"))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -34,14 +33,15 @@ def create_recall_bot(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_recall_bot(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    creds = RecallAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Recall credential. Use /recall login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.recall.helpers.recall_helpers import get_bot
-    result = get_bot(cred.api_key, input_data["bot_id"], region=cred.region)
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.get_bot(input_data["bot_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -54,14 +54,15 @@ def get_recall_bot(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_recall_transcript(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    creds = RecallAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Recall credential. Use /recall login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.recall.helpers.recall_helpers import get_transcript
-    result = get_transcript(cred.api_key, input_data["bot_id"], region=cred.region)
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.get_transcript(input_data["bot_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -74,14 +75,15 @@ def get_recall_transcript(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def recall_leave_meeting(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    creds = RecallAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Recall credential. Use /recall login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.recall.helpers.recall_helpers import leave_meeting
-    result = leave_meeting(cred.api_key, input_data["bot_id"], region=cred.region)
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.leave_meeting(input_data["bot_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -92,12 +94,15 @@ def recall_leave_meeting(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_meeting_bots(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    result = RecallAppLibrary.list_bots(
-        user_id=input_data.get("user_id", "local"),
-        page_size=input_data.get("page_size", 50)
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.list_bots(page_size=input_data.get("page_size", 50))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -108,12 +113,15 @@ def list_meeting_bots(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def delete_meeting_bot(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    result = RecallAppLibrary.delete_bot(
-        user_id=input_data.get("user_id", "local"),
-        bot_id=input_data["bot_id"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.delete_bot(input_data["bot_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -124,12 +132,15 @@ def delete_meeting_bot(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_meeting_recording(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    result = RecallAppLibrary.get_recording(
-        user_id=input_data.get("user_id", "local"),
-        bot_id=input_data["bot_id"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.get_recording(input_data["bot_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -143,13 +154,15 @@ def get_meeting_recording(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_meeting_chat_message(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    result = RecallAppLibrary.send_chat_message(
-        user_id=input_data.get("user_id", "local"),
-        bot_id=input_data["bot_id"],
-        message=input_data["message"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.send_chat_message(input_data["bot_id"], input_data["message"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -164,11 +177,12 @@ def send_meeting_chat_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def speak_in_meeting(input_data: dict) -> dict:
-    from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-    result = RecallAppLibrary.speak_in_meeting(
-        user_id=input_data.get("user_id", "local"),
-        bot_id=input_data["bot_id"],
-        audio_data=input_data["audio_data"],
-        audio_format=input_data.get("audio_format", "wav")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.recall import RecallClient
+        client = RecallClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Recall credential. Use /recall login first."}
+        result = client.output_audio(input_data["bot_id"], input_data["audio_data"], audio_format=input_data.get("audio_format", "wav"))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

@@ -75,6 +75,32 @@ INTEGRATION_REGISTRY: Dict[str, Dict[str, Any]] = {
             {"key": "region", "label": "Region", "placeholder": "us or eu", "password": False},
         ],
     },
+    "github": {
+        "name": "GitHub",
+        "description": "Code hosting & issues",
+        "auth_type": "token",
+        "fields": [
+            {"key": "token", "label": "Personal Access Token", "placeholder": "ghp_...", "password": True},
+        ],
+    },
+    "outlook": {
+        "name": "Outlook",
+        "description": "Email (IMAP/SMTP)",
+        "auth_type": "token",
+        "fields": [
+            {"key": "email_address", "label": "Email Address", "placeholder": "you@outlook.com", "password": False},
+            {"key": "password", "label": "App Password", "placeholder": "App password (not account password)", "password": True},
+        ],
+    },
+    "whatsapp_business": {
+        "name": "WhatsApp Business",
+        "description": "WhatsApp Cloud API",
+        "auth_type": "token",
+        "fields": [
+            {"key": "access_token", "label": "Access Token", "placeholder": "Enter access token", "password": True},
+            {"key": "phone_number_id", "label": "Phone Number ID", "placeholder": "Enter phone number ID", "password": False},
+        ],
+    },
 }
 
 
@@ -260,6 +286,26 @@ async def connect_integration_token(integration_id: str, credentials: Dict[str, 
         if region:
             args.append(region)
 
+    elif integration_id == "github":
+        token = credentials.get("token", "")
+        if not token:
+            return False, "Personal access token is required"
+        args = [token]
+
+    elif integration_id == "outlook":
+        email_address = credentials.get("email_address", "")
+        password = credentials.get("password", "")
+        if not email_address or not password:
+            return False, "Email address and app password are required"
+        args = [email_address, password]
+
+    elif integration_id == "whatsapp_business":
+        access_token = credentials.get("access_token", "")
+        phone_number_id = credentials.get("phone_number_id", "")
+        if not access_token or not phone_number_id:
+            return False, "Access token and phone number ID are required"
+        args = [access_token, phone_number_id]
+
     else:
         return False, f"Token-based login not supported for {integration_id}"
 
@@ -319,6 +365,31 @@ async def disconnect_integration(integration_id: str, account_id: Optional[str] 
     except Exception as e:
         logger.error(f"Failed to disconnect {integration_id}: {e}")
         return False, f"Disconnect failed: {str(e)}"
+
+
+async def connect_integration_interactive(integration_id: str) -> Tuple[bool, str]:
+    """Start interactive connection flow (e.g. WhatsApp QR code scan).
+
+    Args:
+        integration_id: The integration to connect
+
+    Returns:
+        (success, message) tuple
+    """
+    handler = _get_handler(integration_id)
+    if not handler:
+        return False, f"Unknown integration: {integration_id}"
+
+    auth_type = INTEGRATION_REGISTRY.get(integration_id, {}).get("auth_type", "")
+
+    if auth_type != "interactive":
+        return False, f"Interactive login not supported for {integration_id}"
+
+    try:
+        return await handler.login([])
+    except Exception as e:
+        logger.error(f"Interactive login failed for {integration_id}: {e}")
+        return False, f"Connection failed: {str(e)}"
 
 
 def get_integration_auth_type(integration_id: str) -> str:

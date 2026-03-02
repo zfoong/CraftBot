@@ -48,6 +48,7 @@ from app.tui.integration_settings import (
     get_integration_auth_type,
     connect_integration_token,
     connect_integration_oauth,
+    connect_integration_interactive,
     disconnect_integration,
     INTEGRATION_REGISTRY,
 )
@@ -1429,6 +1430,8 @@ class CraftApp(App):
             self._close_integration_connect_modal()
         elif button_id == "integ-modal-oauth":
             self._start_oauth_connect()
+        elif button_id == "integ-modal-interactive-connect":
+            self._start_interactive_connect()
         elif button_id == "oauth-waiting-cancel":
             self._cancel_oauth_connect()
 
@@ -1808,13 +1811,13 @@ class CraftApp(App):
                 id="integ-connect-modal",
             )
         elif auth_type == "interactive":
-            # Interactive (like WhatsApp): show instructions
+            # Interactive (like WhatsApp): show connect button that starts login flow
             modal_content = Container(
                 Static(f"Connect {info['name']}", id="integ-modal-title"),
-                Static(f"Use the /{integration_id} login command to connect.", classes="integ-modal-desc"),
-                Static("This integration requires an interactive session.", classes="integ-modal-hint"),
+                Static("A browser window will open for you to scan the QR code.", classes="integ-modal-desc"),
                 Horizontal(
-                    Button("Close", id="integ-modal-cancel", classes="integ-modal-btn"),
+                    Button("Connect", id="integ-modal-interactive-connect", classes="integ-modal-btn -primary"),
+                    Button("Cancel", id="integ-modal-cancel", classes="integ-modal-btn"),
                     id="integ-modal-actions",
                 ),
                 id="integ-connect-modal",
@@ -1873,6 +1876,23 @@ class CraftApp(App):
         overlay = Container(modal_content, id="integ-connect-overlay")
         self.mount(overlay)
 
+    async def _start_platform_listener(self, integration_id: str) -> None:
+        """Start the external comms listener for a newly connected platform."""
+        try:
+            from app.external_comms.manager import get_external_comms_manager
+            manager = get_external_comms_manager()
+            if manager:
+                # Map integration IDs to platform IDs used in the registry
+                platform_map = {
+                    "whatsapp": "whatsapp_web",
+                    "telegram": "telegram_bot",
+                    "google": "google_workspace",
+                }
+                platform_id = platform_map.get(integration_id, integration_id)
+                await manager.start_platform(platform_id)
+        except Exception as e:
+            logger.warning(f"[TUI] Failed to start listener for {integration_id}: {e}")
+
     async def _save_integration_connect_async(self, integration_id: str, credentials: dict) -> None:
         """Async helper to save integration credentials."""
         try:
@@ -1881,6 +1901,7 @@ class CraftApp(App):
                 self.notify(message, severity="information", timeout=3)
                 self._close_integration_connect_modal()
                 self._refresh_integration_list()
+                await self._start_platform_listener(integration_id)
             else:
                 self.notify(message, severity="error", timeout=4)
         except Exception as e:
@@ -1937,6 +1958,7 @@ class CraftApp(App):
             if success:
                 self.notify(message, severity="information", timeout=3)
                 self._refresh_integration_list()
+                await self._start_platform_listener(integration_id)
             else:
                 self.notify(message, severity="error", timeout=4)
         except concurrent.futures.CancelledError:
@@ -1975,6 +1997,91 @@ class CraftApp(App):
         # Run OAuth asynchronously in background thread
         self._oauth_cancelled = False
         create_task(self._start_oauth_connect_async(integration_id))
+
+    def _start_interactive_connect(self) -> None:
+        """Start interactive connection flow (e.g. WhatsApp QR code scan)."""
+        if not hasattr(self, "_integ_connect_current_id"):
+            return
+
+        integration_id = self._integ_connect_current_id
+
+        # Close the connect modal
+        self._close_integration_connect_modal()
+
+        # Show a waiting modal with QR scan instructions
+        self._show_interactive_waiting_modal(integration_id)
+
+        # Run login asynchronously in background thread
+        self._oauth_cancelled = False
+        create_task(self._start_interactive_connect_async(integration_id))
+
+    def _show_interactive_waiting_modal(self, integration_id: str) -> None:
+        """Show a modal while interactive login is in progress."""
+        # Remove any existing waiting modal
+        for overlay in self.query("#oauth-waiting-overlay"):
+            overlay.remove()
+
+        info = get_integration_info(integration_id)
+        name = info["name"] if info else integration_id
+
+        modal = Container(
+            Container(
+                Static(f"Connecting to {name}...", id="oauth-waiting-title"),
+                Static("Scan the QR code in the browser window that opened.", classes="oauth-waiting-desc"),
+                Static("This window will update automatically when done.", classes="oauth-waiting-hint"),
+                Horizontal(
+                    Button("Cancel", id="oauth-waiting-cancel", classes="oauth-waiting-btn"),
+                    id="oauth-waiting-actions",
+                ),
+                id="oauth-waiting-modal",
+            ),
+            id="oauth-waiting-overlay",
+        )
+        self.mount(modal)
+
+    async def _start_interactive_connect_async(self, integration_id: str) -> None:
+        """Async helper to start interactive login in a background thread."""
+        import asyncio
+        import concurrent.futures
+
+        loop = asyncio.get_event_loop()
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+        try:
+            success, message = await loop.run_in_executor(
+                executor,
+                self._run_interactive_sync,
+                integration_id
+            )
+
+            if hasattr(self, "_oauth_cancelled") and self._oauth_cancelled:
+                self._oauth_cancelled = False
+                return
+
+            if success:
+                self.notify(message, severity="information", timeout=3)
+                self._refresh_integration_list()
+                await self._start_platform_listener(integration_id)
+            else:
+                self.notify(message, severity="error", timeout=4)
+        except concurrent.futures.CancelledError:
+            self.notify("Connection cancelled", severity="information", timeout=2)
+        except Exception as e:
+            self.notify(f"Connection failed: {e}", severity="error", timeout=4)
+        finally:
+            executor.shutdown(wait=False)
+            self._close_oauth_waiting_modal()
+
+    def _run_interactive_sync(self, integration_id: str):
+        """Synchronous wrapper to run interactive login in a thread."""
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(connect_integration_interactive(integration_id))
+        finally:
+            loop.close()
 
     def _show_oauth_waiting_modal(self, integration_id: str) -> None:
         """Show a modal while OAuth is in progress with cancel option."""

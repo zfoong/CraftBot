@@ -12,16 +12,20 @@ from agent_core import action
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def send_slack_message(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    creds = SlackAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Slack credential. Use /slack login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.slack.helpers.slack_helpers import send_message
-    result = send_message(cred.bot_token, input_data["channel"], input_data["text"],
-                          thread_ts=input_data.get("thread_ts"))
-    return {"status": "success", "result": result}
+async def send_slack_message(input_data: dict) -> dict:
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = await client.send_message(
+            input_data["channel"],
+            input_data["text"],
+            thread_ts=input_data.get("thread_ts"),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -34,14 +38,15 @@ def send_slack_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "channels": {"type": "array"}},
 )
 def list_slack_channels(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    creds = SlackAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Slack credential. Use /slack login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.slack.helpers.slack_helpers import list_channels
-    result = list_channels(cred.bot_token, limit=input_data.get("limit", 100))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.list_channels(limit=input_data.get("limit", 100))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -55,14 +60,15 @@ def list_slack_channels(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "messages": {"type": "array"}},
 )
 def get_slack_channel_history(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    creds = SlackAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Slack credential. Use /slack login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.slack.helpers.slack_helpers import get_channel_history
-    result = get_channel_history(cred.bot_token, input_data["channel"], limit=input_data.get("limit", 50))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.get_channel_history(input_data["channel"], limit=input_data.get("limit", 50))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -75,14 +81,15 @@ def get_slack_channel_history(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "users": {"type": "array"}},
 )
 def list_slack_users(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    creds = SlackAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Slack credential. Use /slack login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.slack.helpers.slack_helpers import list_users
-    result = list_users(cred.bot_token, limit=input_data.get("limit", 100))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.list_users(limit=input_data.get("limit", 100))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -96,14 +103,15 @@ def list_slack_users(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def search_slack_messages(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    creds = SlackAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Slack credential. Use /slack login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.slack.helpers.slack_helpers import search_messages
-    result = search_messages(cred.bot_token, input_data["query"], count=input_data.get("count", 20))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.search_messages(input_data["query"], count=input_data.get("count", 20))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -119,15 +127,23 @@ def search_slack_messages(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def upload_slack_file(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    creds = SlackAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Slack credential. Use /slack login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.slack.helpers.slack_helpers import upload_file
-    result = upload_file(cred.bot_token, input_data["channels"], file_path=input_data.get("file_path"),
-                         title=input_data.get("title"), initial_comment=input_data.get("initial_comment"))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        channels = input_data["channels"]
+        if isinstance(channels, str):
+            channels = [channels]
+        result = client.upload_file(
+            channels,
+            file_path=input_data.get("file_path"),
+            title=input_data.get("title"),
+            initial_comment=input_data.get("initial_comment"),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -140,12 +156,15 @@ def upload_slack_file(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_slack_user_info(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    result = SlackAppLibrary.get_user_info(
-        user_id=input_data.get("user_id", "local"),
-        slack_user_id=input_data["slack_user_id"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.get_user_info(input_data["slack_user_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -158,12 +177,15 @@ def get_slack_user_info(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_slack_channel_info(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    result = SlackAppLibrary.get_channel_info(
-        user_id=input_data.get("user_id", "local"),
-        channel=input_data["channel"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.get_channel_info(input_data["channel"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -177,13 +199,15 @@ def get_slack_channel_info(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_slack_channel(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    result = SlackAppLibrary.create_channel(
-        user_id=input_data.get("user_id", "local"),
-        name=input_data["name"],
-        is_private=input_data.get("is_private", False)
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.create_channel(input_data["name"], is_private=input_data.get("is_private", False))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -197,13 +221,15 @@ def create_slack_channel(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def invite_to_slack_channel(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    result = SlackAppLibrary.invite_to_channel(
-        user_id=input_data.get("user_id", "local"),
-        channel=input_data["channel"],
-        users=input_data["users"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.invite_to_channel(input_data["channel"], input_data["users"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -216,9 +242,12 @@ def invite_to_slack_channel(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def open_slack_dm(input_data: dict) -> dict:
-    from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-    result = SlackAppLibrary.open_dm(
-        user_id=input_data.get("user_id", "local"),
-        users=input_data["users"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.slack import SlackClient
+        client = SlackClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Slack credential. Use /slack login first."}
+        result = client.open_dm(input_data["users"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

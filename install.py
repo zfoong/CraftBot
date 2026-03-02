@@ -169,6 +169,16 @@ def verify_conda_env(env_name: str) -> bool:
     except:
         return False
 
+def install_playwright_browser():
+    """Install Playwright Chromium browser for WhatsApp Web support."""
+    print("\nInstalling Playwright Chromium browser...")
+    try:
+        run_command([sys.executable, "-m", "playwright", "install", "chromium"])
+        print("Playwright Chromium installed.")
+    except Exception as e:
+        print(f"Warning: Failed to install Playwright browser: {e}")
+        print("WhatsApp Web integration will not work until you run: playwright install chromium")
+
 def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
     print("\nInstalling dependencies with pip...")
     if not os.path.exists(requirements_file):
@@ -176,6 +186,9 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
         sys.exit(1)
     run_command([sys.executable, "-m", "pip", "install", "-r", requirements_file])
     print("Dependencies installed.")
+
+    # Install Playwright browser (needed for WhatsApp Web)
+    install_playwright_browser()
 
 # ==========================================
 # OMNIPARSER SETUP (GUI Mode)
@@ -351,6 +364,15 @@ if __name__ == "__main__":
         env_name = get_env_name_from_yml()
         setup_conda_environment(env_name)
         verify_conda_env(env_name)
+
+        # Install Playwright browser in conda env
+        print("\nInstalling Playwright Chromium browser...")
+        try:
+            run_command(["conda", "run", "-n", env_name, "python", "-m", "playwright", "install", "chromium"])
+            print("Playwright Chromium installed.")
+        except Exception as e:
+            print(f"Warning: Failed to install Playwright browser: {e}")
+            print("WhatsApp Web integration will not work until you run: playwright install chromium")
     else:
         setup_pip_environment()
 

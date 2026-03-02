@@ -12,16 +12,20 @@ from agent_core import action
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_google_meet(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    creds = GoogleWorkspaceAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Google credential. Use /google login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.google_workspace.helpers.google_helpers import create_google_meet_event
-    result = create_google_meet_event(cred.token,
-                                      calendar_id=input_data.get("calendar_id", "primary"),
-                                      event_data=input_data.get("event_data"))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+        result = client.create_meet_event(
+            calendar_id=input_data.get("calendar_id", "primary"),
+            event_data=input_data.get("event_data"),
+        )
+        if result.get("ok"):
+            return {"status": "success", "result": result["result"]}
+        return {"status": "error", "message": result.get("error", "Failed to create event.")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -36,17 +40,21 @@ def create_google_meet(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def check_calendar_availability(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    creds = GoogleWorkspaceAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Google credential. Use /google login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.google_workspace.helpers.google_helpers import check_google_calendar_availability
-    result = check_google_calendar_availability(cred.token,
-                                                calendar_id=input_data.get("calendar_id", "primary"),
-                                                time_min=input_data.get("time_min"),
-                                                time_max=input_data.get("time_max"))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+        result = client.check_availability(
+            calendar_id=input_data.get("calendar_id", "primary"),
+            time_min=input_data.get("time_min"),
+            time_max=input_data.get("time_max"),
+        )
+        if result.get("ok"):
+            return {"status": "success", "result": result["result"]}
+        return {"status": "error", "message": result.get("error", "Failed to check availability.")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -64,15 +72,85 @@ def check_calendar_availability(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def check_availability_and_schedule(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    from datetime import datetime
-    result = GoogleWorkspaceAppLibrary.schedule_if_free(
-        user_id=input_data.get("user_id", "local"),
-        start_time=datetime.fromisoformat(input_data["start_time"]),
-        end_time=datetime.fromisoformat(input_data["end_time"]),
-        summary=input_data["summary"],
-        description=input_data.get("description", ""),
-        attendees=input_data.get("attendees"),
-        from_email=input_data.get("from_email")
-    )
-    return result
+    try:
+        import uuid
+        from datetime import datetime
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+
+        start_time = datetime.fromisoformat(input_data["start_time"])
+        end_time = datetime.fromisoformat(input_data["end_time"])
+
+        # Step 1: Check availability
+        avail = client.check_availability(
+            calendar_id="primary",
+            time_min=start_time.isoformat() + "Z",
+            time_max=end_time.isoformat() + "Z",
+        )
+
+        if "error" in avail:
+            return {
+                "status": "error",
+                "reason": "Google Calendar FreeBusy API error",
+                "details": avail,
+            }
+
+        busy_slots = (
+            avail.get("result", {})
+            .get("calendars", {})
+            .get("primary", {})
+            .get("busy", [])
+        )
+
+        if busy_slots:
+            return {
+                "status": "busy",
+                "reason": "Time slot is already occupied",
+                "conflicting_events": busy_slots,
+            }
+
+        # Step 2: Schedule the meeting
+        attendees = input_data.get("attendees") or []
+        formatted_attendees = [{"email": a} for a in attendees]
+
+        event_payload = {
+            "summary": input_data["summary"],
+            "description": input_data.get("description", ""),
+            "start": {
+                "dateTime": start_time.isoformat() + "Z",
+                "timeZone": "UTC",
+            },
+            "end": {
+                "dateTime": end_time.isoformat() + "Z",
+                "timeZone": "UTC",
+            },
+            "attendees": formatted_attendees,
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": f"meet-{uuid.uuid4()}",
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
+                }
+            },
+        }
+
+        result = client.create_meet_event(
+            calendar_id="primary",
+            event_data=event_payload,
+        )
+
+        if "error" in result:
+            return {
+                "status": "error",
+                "reason": "Google Calendar API error",
+                "details": result,
+            }
+
+        return {
+            "status": "success",
+            "reason": "Meeting scheduled successfully.",
+            "event": result.get("result", result),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

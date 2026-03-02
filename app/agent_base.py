@@ -1439,8 +1439,9 @@ class AgentBase:
         """
         Handle an incoming external tool event (WhatsApp, Telegram, etc.).
 
-        Routes the external message through the same flow as _handle_chat_message
-        so it can be routed to an existing session or create a new one.
+        Self-messages (user messaging themselves) are treated as direct user
+        input to the agent.  Messages from other people are wrapped as
+        notifications so the agent asks the user what to do.
 
         Args:
             payload: Event payload with standardized fields:
@@ -1449,6 +1450,7 @@ class AgentBase:
                 - contactId: Contact/chat ID
                 - contactName: Contact name
                 - messageBody: Message text
+                - is_self_message: True when the user sent themselves a message
         """
         try:
             source = payload.get("source", "Unknown")
@@ -1456,6 +1458,7 @@ class AgentBase:
             contact_name = payload.get("contactName") or contact_id
             message_body = payload.get("messageBody", "")
             integration_type = payload.get("integrationType", "").lower()
+            is_self_message = payload.get("is_self_message", False)
 
             if not message_body:
                 logger.warning(f"[EXTERNAL] Empty message body from {source}, ignoring.")
@@ -1463,7 +1466,8 @@ class AgentBase:
 
             logger.info(
                 f"[EXTERNAL] Received from {source} ({integration_type}): "
-                f"{contact_name}: {message_body[:100]}..."
+                f"{contact_name}: {message_body[:100]}... "
+                f"(self={is_self_message})"
             )
 
             # Map integration type to platform for routing
@@ -1472,23 +1476,41 @@ class AgentBase:
                 "whatsapp_business": "whatsapp",
                 "telegram_bot": "telegram",
                 "telegram_mtproto": "telegram",
+                "slack": "slack",
+                "discord": "discord",
+                "linkedin": "linkedin",
+                "notion": "notion",
+                "zoom": "zoom",
+                "recall": "recall",
+                "github": "github",
+                "outlook": "outlook",
+                "google_workspace": "google",
+                "gmail": "google",
             }
             source_platform = platform_map.get(integration_type, source.lower())
 
-            # Format event as message content for the agent
-            event_content = (
-                f"[External {source} message from {contact_name} ({contact_id})]: "
-                f"{message_body}"
-            )
+            if is_self_message:
+                # Self-message = user is directly talking to the agent.
+                # Pass message body as-is (like a normal chat input).
+                event_content = message_body
+            else:
+                # Someone else sent a message — notify the agent so it can
+                # ask the user what to do about it.
+                event_content = (
+                    f"[Incoming {source} message from {contact_name} ({contact_id})]: "
+                    f"\"{message_body}\"\n\n"
+                    f"A new message was received on {source} from {contact_name}. "
+                    f"Ask the user what they would like to do about this message. "
+                    f"Present the message content and wait for instructions."
+                )
 
             # Route through the existing chat message handler
-            # This allows external messages to be routed to existing sessions
-            # or create new tasks just like user messages
             await self._handle_chat_message({
                 "text": event_content,
                 "gui_mode": False,
                 "platform": source_platform,
                 "external_event": True,
+                "is_self_message": is_self_message,
                 "contact_id": contact_id,
                 "contact_name": contact_name,
             })
@@ -1854,31 +1876,13 @@ class AgentBase:
     # =====================================
 
     async def _initialize_external_libraries(self) -> None:
-        """Initialize all external app libraries."""
+        """Import all platform modules so their @register_client decorators fire."""
         try:
-            from agent_core.external_libraries.notion.external_app_library import NotionAppLibrary
-            from agent_core.external_libraries.whatsapp.external_app_library import WhatsAppAppLibrary
-            from agent_core.external_libraries.slack.external_app_library import SlackAppLibrary
-            from agent_core.external_libraries.telegram.external_app_library import TelegramAppLibrary
-            from agent_core.external_libraries.linkedin.external_app_library import LinkedInAppLibrary
-            from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-            from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-            from agent_core.external_libraries.recall.external_app_library import RecallAppLibrary
-            from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-
-            NotionAppLibrary.initialize()
-            WhatsAppAppLibrary.initialize()
-            SlackAppLibrary.initialize()
-            TelegramAppLibrary.initialize()
-            LinkedInAppLibrary.initialize()
-            ZoomAppLibrary.initialize()
-            DiscordAppLibrary.initialize()
-            RecallAppLibrary.initialize()
-            GoogleWorkspaceAppLibrary.initialize()
-            
-            logger.info("[EXT LIBS] External libraries initialized")
+            from app.external_comms.manager import _import_all_platforms
+            _import_all_platforms()
+            logger.info("[EXT LIBS] External platform modules loaded")
         except Exception as e:
-            logger.warning(f"[EXT LIBS] Failed to initialize external libraries: {e}")
+            logger.warning(f"[EXT LIBS] Failed to load platform modules: {e}")
 
     # =====================================
     # Lifecycle

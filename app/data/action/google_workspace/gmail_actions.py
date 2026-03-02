@@ -14,18 +14,22 @@ from agent_core import action
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_gmail(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    creds = GoogleWorkspaceAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Google credential. Use /google login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.google_workspace.helpers.google_helpers import encode_email, send_email_oauth2
-    encoded = encode_email(input_data["to"], cred.email, input_data["subject"],
-                           input_data["body"], attachments=input_data.get("attachments"))
-    success = send_email_oauth2(cred.token, encoded)
-    if success:
-        return {"status": "success", "message": "Email sent."}
-    return {"status": "error", "message": "Failed to send email."}
+    try:
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+        result = client.send_email(
+            to=input_data["to"],
+            subject=input_data["subject"],
+            body=input_data["body"],
+            attachments=input_data.get("attachments"),
+        )
+        if result.get("ok"):
+            return {"status": "success", "message": "Email sent."}
+        return {"status": "error", "message": result.get("error", "Failed to send email.")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -38,14 +42,17 @@ def send_gmail(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_gmail(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    creds = GoogleWorkspaceAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Google credential. Use /google login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.google_workspace.helpers.google_helpers import list_recent_emails
-    result = list_recent_emails(cred.token, n=input_data.get("count", 5))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+        result = client.list_emails(n=input_data.get("count", 5))
+        if result.get("ok"):
+            return {"status": "success", "result": result["result"]}
+        return {"status": "error", "message": result.get("error", "Failed to list emails.")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -59,15 +66,20 @@ def list_gmail(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_gmail(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    creds = GoogleWorkspaceAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Google credential. Use /google login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.google_workspace.helpers.google_helpers import get_email_details
-    result = get_email_details(cred.token, input_data["message_id"],
-                               full_body=input_data.get("full_body", False))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+        result = client.get_email(
+            message_id=input_data["message_id"],
+            full_body=input_data.get("full_body", False),
+        )
+        if result.get("ok"):
+            return {"status": "success", "result": result["result"]}
+        return {"status": "error", "message": result.get("error", "Failed to get email.")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -81,15 +93,20 @@ def get_gmail(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def read_top_emails(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    creds = GoogleWorkspaceAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Google credential. Use /google login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.google_workspace.helpers.google_helpers import read_top_n_emails
-    result = read_top_n_emails(cred.token, n=input_data.get("count", 5),
-                               full_body=input_data.get("full_body", False))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+        result = client.read_top_emails(
+            n=input_data.get("count", 5),
+            full_body=input_data.get("full_body", False),
+        )
+        if result.get("ok"):
+            return {"status": "success", "result": result["result"]}
+        return {"status": "error", "message": result.get("error", "Failed to read emails.")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -106,16 +123,23 @@ def read_top_emails(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_google_workspace_email(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    result = GoogleWorkspaceAppLibrary.send_email(
-        user_id=input_data.get("user_id", "local"),
-        to_email=input_data["to_email"],
-        subject=input_data["subject"],
-        body=input_data["body"],
-        attachments=input_data.get("attachments"),
-        from_email=input_data.get("from_email")
-    )
-    return result
+    try:
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+        result = client.send_email(
+            to=input_data["to_email"],
+            subject=input_data["subject"],
+            body=input_data["body"],
+            from_email=input_data.get("from_email"),
+            attachments=input_data.get("attachments"),
+        )
+        if result.get("ok"):
+            return {"status": "success", "message": "Email sent.", "result": result.get("result")}
+        return {"status": "error", "message": result.get("error", "Failed to send email.")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -130,11 +154,17 @@ def send_google_workspace_email(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def read_recent_google_workspace_emails(input_data: dict) -> dict:
-    from agent_core.external_libraries.google_workspace.external_app_library import GoogleWorkspaceAppLibrary
-    result = GoogleWorkspaceAppLibrary.read_recent_emails(
-        user_id=input_data.get("user_id", "local"),
-        n=input_data.get("n", 5),
-        full_body=input_data.get("full_body", False),
-        from_email=input_data.get("from_email")
-    )
-    return result
+    try:
+        from app.external_comms.platforms.google_workspace import GoogleWorkspaceClient
+        client = GoogleWorkspaceClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Google credential. Use /google login first."}
+        result = client.read_top_emails(
+            n=input_data.get("n", 5),
+            full_body=input_data.get("full_body", False),
+        )
+        if result.get("ok"):
+            return {"status": "success", "result": result["result"]}
+        return {"status": "error", "message": result.get("error", "Failed to read emails.")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

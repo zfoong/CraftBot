@@ -1,6 +1,11 @@
 from agent_core import action
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Bot actions
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 @action(
     name="send_discord_message",
     description="Send a message to a Discord channel.",
@@ -12,14 +17,18 @@ from agent_core import action
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_discord_message(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    creds = DiscordAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Discord credential. Use /discord login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.discord.helpers.discord_bot_helpers import send_message
-    result = send_message(cred.bot_token, input_data["channel_id"], input_data["content"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.bot_send_message(
+            channel_id=input_data["channel_id"],
+            content=input_data["content"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -33,15 +42,18 @@ def send_discord_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_messages(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    creds = DiscordAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Discord credential. Use /discord login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.discord.helpers.discord_bot_helpers import get_messages
-    result = get_messages(cred.bot_token, input_data["channel_id"],
-                          limit=input_data.get("limit", 50))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.get_messages(
+            channel_id=input_data["channel_id"],
+            limit=input_data.get("limit", 50),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -54,14 +66,17 @@ def get_discord_messages(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_discord_guilds(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    creds = DiscordAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Discord credential. Use /discord login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.discord.helpers.discord_bot_helpers import get_bot_guilds
-    result = get_bot_guilds(cred.bot_token, limit=input_data.get("limit", 100))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.get_bot_guilds(
+            limit=input_data.get("limit", 100),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -74,14 +89,17 @@ def list_discord_guilds(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_channels(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    creds = DiscordAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Discord credential. Use /discord login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.discord.helpers.discord_bot_helpers import get_guild_channels
-    result = get_guild_channels(cred.bot_token, input_data["guild_id"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.get_guild_channels(
+            guild_id=input_data["guild_id"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -95,14 +113,18 @@ def get_discord_channels(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_discord_dm(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    creds = DiscordAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Discord credential. Use /discord login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.discord.helpers.discord_bot_helpers import send_dm
-    result = send_dm(cred.bot_token, input_data["recipient_id"], input_data["content"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.send_dm(
+            recipient_id=input_data["recipient_id"],
+            content=input_data["content"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -116,13 +138,18 @@ def send_discord_dm(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_discord_guild_members(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    result = DiscordAppLibrary.get_guild_members(
-        user_id=input_data.get("user_id", "local"),
-        guild_id=input_data["guild_id"],
-        limit=input_data.get("limit", 100)
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.list_guild_members(
+            guild_id=input_data["guild_id"],
+            limit=input_data.get("limit", 100),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -132,19 +159,29 @@ def list_discord_guild_members(input_data: dict) -> dict:
     input_schema={
         "channel_id": {"type": "string", "description": "Channel ID.", "example": "123"},
         "message_id": {"type": "string", "description": "Message ID.", "example": "456"},
-        "emoji": {"type": "string", "description": "Emoji.", "example": "👍"},
+        "emoji": {"type": "string", "description": "Emoji.", "example": "\ud83d\udc4d"},
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def add_discord_reaction(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    result = DiscordAppLibrary.add_reaction(
-        user_id=input_data.get("user_id", "local"),
-        channel_id=input_data["channel_id"],
-        message_id=input_data["message_id"],
-        emoji=input_data["emoji"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.add_reaction(
+            channel_id=input_data["channel_id"],
+            message_id=input_data["message_id"],
+            emoji=input_data["emoji"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# User-account actions (self-bot / personal automation)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
 @action(
@@ -158,13 +195,18 @@ def add_discord_reaction(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_discord_user_message(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    result = DiscordAppLibrary.send_message_user(
-        user_id=input_data.get("user_id", "local"),
-        channel_id=input_data["channel_id"],
-        content=input_data["content"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.user_send_message(
+            channel_id=input_data["channel_id"],
+            content=input_data["content"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -175,11 +217,15 @@ def send_discord_user_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_user_guilds(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    result = DiscordAppLibrary.get_user_guilds(
-        user_id=input_data.get("user_id", "local")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.user_get_guilds()
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -190,11 +236,15 @@ def get_discord_user_guilds(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_user_dm_channels(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    result = DiscordAppLibrary.get_dm_channels(
-        user_id=input_data.get("user_id", "local")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.user_get_dm_channels()
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -208,13 +258,23 @@ def get_discord_user_dm_channels(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_discord_user_dm(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    result = DiscordAppLibrary.send_dm_user(
-        user_id=input_data.get("user_id", "local"),
-        recipient_id=input_data["recipient_id"],
-        content=input_data["content"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.user_send_dm(
+            recipient_id=input_data["recipient_id"],
+            content=input_data["content"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Voice actions
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
 @action(
@@ -227,36 +287,19 @@ def send_discord_user_dm(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def join_discord_voice_channel(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    import asyncio
+async def join_discord_voice_channel(input_data: dict) -> dict:
     try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    
-    if loop.is_running():
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(
-                asyncio.run,
-                DiscordAppLibrary.join_voice_channel(
-                    user_id=input_data.get("user_id", "local"),
-                    guild_id=input_data["guild_id"],
-                    channel_id=input_data["channel_id"]
-                )
-            )
-            result = future.result()
-    else:
-        result = loop.run_until_complete(
-            DiscordAppLibrary.join_voice_channel(
-                user_id=input_data.get("user_id", "local"),
-                guild_id=input_data["guild_id"],
-                channel_id=input_data["channel_id"]
-            )
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = await client.join_voice(
+            guild_id=input_data["guild_id"],
+            channel_id=input_data["channel_id"],
         )
-    return {"status": result.get("status", "success"), "result": result}
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -266,26 +309,18 @@ def join_discord_voice_channel(input_data: dict) -> dict:
     input_schema={"guild_id": {"type": "string", "description": "Guild ID.", "example": "123"}},
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def leave_discord_voice_channel(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    import asyncio
+async def leave_discord_voice_channel(input_data: dict) -> dict:
     try:
-        result = asyncio.run(DiscordAppLibrary.leave_voice_channel(
-            user_id=input_data.get("user_id", "local"),
-            guild_id=input_data["guild_id"]
-        ))
-    except RuntimeError:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(
-                asyncio.run,
-                DiscordAppLibrary.leave_voice_channel(
-                    user_id=input_data.get("user_id", "local"),
-                    guild_id=input_data["guild_id"]
-                )
-            )
-            result = future.result()
-    return {"status": result.get("status", "success"), "result": result}
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = await client.leave_voice(
+            guild_id=input_data["guild_id"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -298,28 +333,19 @@ def leave_discord_voice_channel(input_data: dict) -> dict:
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
-def speak_discord_voice_tts(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    import asyncio
+async def speak_discord_voice_tts(input_data: dict) -> dict:
     try:
-        result = asyncio.run(DiscordAppLibrary.speak_in_voice(
-            user_id=input_data.get("user_id", "local"),
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = await client.speak_tts(
             guild_id=input_data["guild_id"],
-            text=input_data["text"]
-        ))
-    except RuntimeError:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(
-                asyncio.run,
-                DiscordAppLibrary.speak_in_voice(
-                    user_id=input_data.get("user_id", "local"),
-                    guild_id=input_data["guild_id"],
-                    text=input_data["text"]
-                )
-            )
-            result = future.result()
-    return {"status": result.get("status", "success"), "result": result}
+            text=input_data["text"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -330,9 +356,14 @@ def speak_discord_voice_tts(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_voice_status(input_data: dict) -> dict:
-    from agent_core.external_libraries.discord.external_app_library import DiscordAppLibrary
-    result = DiscordAppLibrary.get_voice_status(
-        user_id=input_data.get("user_id", "local"),
-        guild_id=input_data["guild_id"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.discord import DiscordClient
+        client = DiscordClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Discord credential. Use /discord login first."}
+        result = client.get_voice_status(
+            guild_id=input_data["guild_id"],
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

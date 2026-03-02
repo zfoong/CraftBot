@@ -15,18 +15,21 @@ from agent_core import action
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_zoom_meeting(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    creds = ZoomAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.zoom.helpers.zoom_helpers import create_meeting
-    result = create_meeting(cred.access_token, input_data["topic"],
-                            start_time=input_data.get("start_time"),
-                            duration=input_data.get("duration", 60),
-                            timezone=input_data.get("timezone", "UTC"),
-                            agenda=input_data.get("agenda", ""))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.create_meeting(
+            input_data["topic"],
+            start_time=input_data.get("start_time"),
+            duration=input_data.get("duration", 60),
+            timezone=input_data.get("timezone", "UTC"),
+            agenda=input_data.get("agenda", ""),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -39,15 +42,15 @@ def create_zoom_meeting(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_zoom_meetings(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    creds = ZoomAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.zoom.helpers.zoom_helpers import list_meetings
-    result = list_meetings(cred.access_token,
-                           meeting_type=input_data.get("meeting_type", "scheduled"))
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.list_meetings(meeting_type=input_data.get("meeting_type", "scheduled"))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -60,14 +63,15 @@ def list_zoom_meetings(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_zoom_meeting(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    creds = ZoomAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.zoom.helpers.zoom_helpers import get_meeting
-    result = get_meeting(cred.access_token, input_data["meeting_id"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.get_meeting(input_data["meeting_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -80,14 +84,15 @@ def get_zoom_meeting(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def delete_zoom_meeting(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    creds = ZoomAppLibrary.get_credential_store().get(input_data.get("user_id", "local"))
-    if not creds:
-        return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
-    cred = creds[0]
-    from agent_core.external_libraries.zoom.helpers.zoom_helpers import delete_meeting
-    result = delete_meeting(cred.access_token, input_data["meeting_id"])
-    return {"status": "success", "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.delete_meeting(input_data["meeting_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -98,11 +103,15 @@ def delete_zoom_meeting(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_zoom_profile(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    result = ZoomAppLibrary.get_my_profile(
-        user_id=input_data.get("user_id", "local")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.get_user_profile()
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -113,12 +122,15 @@ def get_zoom_profile(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_upcoming_zoom_meetings(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    result = ZoomAppLibrary.get_upcoming_meetings(
-        user_id=input_data.get("user_id", "local"),
-        page_size=input_data.get("page_size", 30)
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.get_upcoming_meetings(page_size=input_data.get("page_size", 30))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -129,11 +141,15 @@ def get_upcoming_zoom_meetings(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_live_zoom_meetings(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    result = ZoomAppLibrary.get_live_meetings(
-        user_id=input_data.get("user_id", "local")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.get_live_meetings()
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -147,19 +163,24 @@ def get_live_zoom_meetings(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def update_zoom_meeting(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    result = ZoomAppLibrary.update_meeting(
-        user_id=input_data.get("user_id", "local"),
-        meeting_id=input_data["meeting_id"],
-        topic=input_data.get("topic"),
-        start_time=input_data.get("start_time"),
-        duration=input_data.get("duration"),
-        timezone=input_data.get("timezone"),
-        agenda=input_data.get("agenda"),
-        password=input_data.get("password"),
-        settings=input_data.get("settings")
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.update_meeting(
+            input_data["meeting_id"],
+            topic=input_data.get("topic"),
+            start_time=input_data.get("start_time"),
+            duration=input_data.get("duration"),
+            timezone=input_data.get("timezone"),
+            agenda=input_data.get("agenda"),
+            password=input_data.get("password"),
+            settings=input_data.get("settings"),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -170,12 +191,15 @@ def update_zoom_meeting(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_zoom_meeting_invitation(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    result = ZoomAppLibrary.get_meeting_invitation(
-        user_id=input_data.get("user_id", "local"),
-        meeting_id=input_data["meeting_id"]
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.get_meeting_invitation(input_data["meeting_id"])
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @action(
@@ -186,9 +210,12 @@ def get_zoom_meeting_invitation(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_zoom_users(input_data: dict) -> dict:
-    from agent_core.external_libraries.zoom.external_app_library import ZoomAppLibrary
-    result = ZoomAppLibrary.list_users(
-        user_id=input_data.get("user_id", "local"),
-        page_size=input_data.get("page_size", 30)
-    )
-    return {"status": result.get("status", "success"), "result": result}
+    try:
+        from app.external_comms.platforms.zoom import ZoomClient
+        client = ZoomClient()
+        if not client.has_credentials():
+            return {"status": "error", "message": "No Zoom credential. Use /zoom login first."}
+        result = client.list_users(page_size=input_data.get("page_size", 30))
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
