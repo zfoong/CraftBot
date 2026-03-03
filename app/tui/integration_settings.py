@@ -60,13 +60,7 @@ INTEGRATION_REGISTRY: Dict[str, Dict[str, Any]] = {
         "auth_type": "interactive",  # Requires QR code scan
         "fields": [],
     },
-    "outlook": {
-        "name": "Outlook",
-        "description": "Email via Microsoft Graph",
-        "auth_type": "oauth",
-        "fields": [],
-    },
-    "whatsapp_business": {
+"whatsapp_business": {
         "name": "WhatsApp Business",
         "description": "WhatsApp Cloud API",
         "auth_type": "token",
