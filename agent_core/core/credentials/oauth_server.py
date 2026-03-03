@@ -1,22 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-Temporary local HTTPS server for OAuth callbacks.
+Temporary local HTTP/HTTPS server for OAuth callbacks.
 
 This module provides a simple OAuth callback server that can be used
-to capture authorization codes from OAuth flows. It uses HTTPS with
-an auto-generated self-signed certificate for localhost.
+to capture authorization codes from OAuth flows. Supports both HTTP
+(for providers like Google that allow http://localhost) and HTTPS with
+an auto-generated self-signed certificate (for providers like Slack
+that require https://).
 
 Usage:
     from agent_core.core.credentials.oauth_server import run_oauth_flow
 
-    # Run OAuth flow (opens browser, waits for callback)
+    # HTTP (default — works with Google, Notion, LinkedIn, etc.)
     code, error = run_oauth_flow("https://provider.com/oauth/authorize?...")
 
-    if error:
-        print(f"OAuth failed: {error}")
-    else:
-        # Use code for token exchange
-        print(f"Got authorization code: {code}")
+    # HTTPS (for Slack and other providers requiring https redirect URIs)
+    code, error = run_oauth_flow("https://slack.com/oauth/...", use_https=True)
 """
 
 import ipaddress
@@ -106,7 +105,7 @@ def _cleanup_files(*paths: str) -> None:
 
 
 class _OAuthCallbackHandler(BaseHTTPRequestHandler):
-    """HTTPS handler for OAuth callback requests."""
+    """Handler for OAuth callback requests."""
 
     code: Optional[str] = None
     state: Optional[str] = None
@@ -146,7 +145,7 @@ def _serve_until_code(server: HTTPServer, deadline: float) -> None:
     """
     while time.time() < deadline:
         remaining = max(0.5, deadline - time.time())
-        server.timeout = min(remaining, 2.0)  # Short timeout so we can check the loop condition
+        server.timeout = min(remaining, 2.0)
         try:
             server.handle_request()
         except Exception as e:
@@ -156,22 +155,18 @@ def _serve_until_code(server: HTTPServer, deadline: float) -> None:
 
 
 def run_oauth_flow(
-    auth_url: str, port: int = 8765, timeout: int = 120
+    auth_url: str, port: int = 8765, timeout: int = 120, use_https: bool = False
 ) -> Tuple[Optional[str], Optional[str]]:
     """
     Open browser for OAuth, wait for callback.
 
-    This function:
-    1. Generates a self-signed TLS certificate for localhost
-    2. Starts a temporary HTTPS server on localhost
-    3. Opens the authorization URL in the user's browser
-    4. Waits for the OAuth provider to redirect back with a code
-    5. Returns the authorization code (or error)
-
     Args:
-        auth_url: The full OAuth authorization URL to open
-        port: Local port for callback server (default: 8765)
-        timeout: Seconds to wait for callback (default: 120)
+        auth_url: The full OAuth authorization URL to open.
+        port: Local port for callback server (default: 8765).
+        timeout: Seconds to wait for callback (default: 120).
+        use_https: If True, serve HTTPS with a self-signed cert.
+                   Required for providers like Slack that reject http:// redirect URIs.
+                   Default False (plain HTTP — works with Google, Notion, etc.).
 
     Returns:
         Tuple of (code, error_message):
@@ -184,22 +179,22 @@ def run_oauth_flow(
 
     server = HTTPServer(("127.0.0.1", port), _OAuthCallbackHandler)
 
-    # Wrap socket with TLS using a self-signed certificate
-    cert_path = key_path = None
-    try:
-        cert_path, key_path = _generate_self_signed_cert()
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(cert_path, key_path)
-        server.socket = ctx.wrap_socket(server.socket, server_side=True)
-    except Exception as e:
-        _cleanup_files(cert_path or "", key_path or "")
-        server.server_close()
-        return None, f"Failed to set up HTTPS for OAuth: {e}"
-    finally:
-        # Cert/key are loaded into the SSL context — temp files no longer needed
-        _cleanup_files(cert_path or "", key_path or "")
+    if use_https:
+        cert_path = key_path = None
+        try:
+            cert_path, key_path = _generate_self_signed_cert()
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(cert_path, key_path)
+            server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        except Exception as e:
+            _cleanup_files(cert_path or "", key_path or "")
+            server.server_close()
+            return None, f"Failed to set up HTTPS for OAuth: {e}"
+        finally:
+            _cleanup_files(cert_path or "", key_path or "")
 
-    logger.info(f"[OAUTH] HTTPS server listening on https://127.0.0.1:{port}")
+    scheme = "https" if use_https else "http"
+    logger.info(f"[OAUTH] {scheme.upper()} server listening on {scheme}://127.0.0.1:{port}")
 
     deadline = time.time() + timeout
     thread = threading.Thread(

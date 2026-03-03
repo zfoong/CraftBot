@@ -16,7 +16,8 @@ from app.external_comms.credentials import has_credential, load_credential, save
 logger = logging.getLogger(__name__)
 
 LOCAL_USER_ID = "local"
-REDIRECT_URI = "https://localhost:8765"
+REDIRECT_URI = "http://localhost:8765"
+REDIRECT_URI_HTTPS = "https://localhost:8765"  # For providers that require HTTPS (e.g. Slack)
 
 # Pending Telegram MTProto auth state: {phone_number: {phone_code_hash, session_string, api_id, api_hash}}
 _pending_telegram_auth: dict[str, dict] = {}
@@ -54,7 +55,7 @@ class GoogleHandler(IntegrationHandler):
     SCOPES = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"
 
     async def login(self, args):
-        from app.config import GOOGLE_CLIENT_ID
+        from app.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
         if not GOOGLE_CLIENT_ID:
             return False, "Not configured. Set GOOGLE_CLIENT_ID env var (or use embedded credentials)."
 
@@ -79,15 +80,19 @@ class GoogleHandler(IntegrationHandler):
         code, error = run_oauth_flow(f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}")
         if error: return False, f"Google OAuth failed: {error}"
 
+        token_data = {
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "redirect_uri": REDIRECT_URI,
+            "grant_type": "authorization_code",
+            "code_verifier": code_verifier,
+        }
+        if GOOGLE_CLIENT_SECRET:
+            token_data["client_secret"] = GOOGLE_CLIENT_SECRET
+
         import aiohttp
         async with aiohttp.ClientSession() as s:
-            async with s.post("https://oauth2.googleapis.com/token", data={
-                "code": code,
-                "client_id": GOOGLE_CLIENT_ID,
-                "redirect_uri": REDIRECT_URI,
-                "grant_type": "authorization_code",
-                "code_verifier": code_verifier,
-            }) as r:
+            async with s.post("https://oauth2.googleapis.com/token", data=token_data) as r:
                 if r.status != 200: return False, f"Token exchange failed: {await r.text()}"
                 tokens = await r.json()
             async with s.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {tokens['access_token']}"}) as r:
@@ -100,7 +105,7 @@ class GoogleHandler(IntegrationHandler):
             refresh_token=tokens.get("refresh_token", ""),
             token_expiry=time.time() + tokens.get("expires_in", 3600),
             client_id=GOOGLE_CLIENT_ID,
-            client_secret="",  # PKCE flow, no secret
+            client_secret=GOOGLE_CLIENT_SECRET,
             email=info.get("email", ""),
         ))
         return True, f"Google connected as {info.get('email')}"
@@ -135,14 +140,14 @@ class SlackHandler(IntegrationHandler):
             return False, "CraftOS Slack app not configured. Set SLACK_SHARED_CLIENT_ID and SLACK_SHARED_CLIENT_SECRET env vars.\nAlternatively, use /slack login <bot_token> with your own Slack app."
 
         scopes = "chat:write,channels:read,channels:history,groups:read,groups:history,users:read,files:write,im:read,im:write,im:history"
-        params = {"client_id": SLACK_SHARED_CLIENT_ID, "scope": scopes, "redirect_uri": REDIRECT_URI, "state": secrets.token_urlsafe(32)}
+        params = {"client_id": SLACK_SHARED_CLIENT_ID, "scope": scopes, "redirect_uri": REDIRECT_URI_HTTPS, "state": secrets.token_urlsafe(32)}
         from agent_core import run_oauth_flow
-        code, error = run_oauth_flow(f"https://slack.com/oauth/v2/authorize?{urlencode(params)}")
+        code, error = run_oauth_flow(f"https://slack.com/oauth/v2/authorize?{urlencode(params)}", use_https=True)
         if error: return False, f"Slack OAuth failed: {error}"
 
         import aiohttp
         async with aiohttp.ClientSession() as s:
-            async with s.post("https://slack.com/api/oauth.v2.access", data={"code": code, "client_id": SLACK_SHARED_CLIENT_ID, "client_secret": SLACK_SHARED_CLIENT_SECRET, "redirect_uri": REDIRECT_URI}) as r:
+            async with s.post("https://slack.com/api/oauth.v2.access", data={"code": code, "client_id": SLACK_SHARED_CLIENT_ID, "client_secret": SLACK_SHARED_CLIENT_SECRET, "redirect_uri": REDIRECT_URI_HTTPS}) as r:
                 data = await r.json()
                 if not data.get("ok"): return False, f"Slack OAuth token exchange failed: {data.get('error')}"
 
