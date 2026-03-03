@@ -46,10 +46,6 @@ LINKEDIN_CLIENT_SECRET: str = get_credential("linkedin", "client_secret", "LINKE
 # Outlook / Microsoft (PKCE - only client_id required)
 OUTLOOK_CLIENT_ID: str = get_credential("outlook", "client_id", "OUTLOOK_CLIENT_ID")
 
-# Discord (token-based, not OAuth)
-DISCORD_SHARED_BOT_TOKEN: str = os.environ.get("DISCORD_SHARED_BOT_TOKEN", "")
-DISCORD_SHARED_BOT_ID: str = os.environ.get("DISCORD_SHARED_BOT_ID", "")
-
 # Slack (requires both client_id and client_secret - no PKCE support)
 SLACK_SHARED_CLIENT_ID: str = get_credential("slack", "client_id", "SLACK_SHARED_CLIENT_ID")
 SLACK_SHARED_CLIENT_SECRET: str = get_credential("slack", "client_secret", "SLACK_SHARED_CLIENT_SECRET")

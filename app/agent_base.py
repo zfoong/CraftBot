@@ -1464,10 +1464,13 @@ class AgentBase:
                 logger.warning(f"[EXTERNAL] Empty message body from {source}, ignoring.")
                 return
 
+            channel_id = payload.get("channelId", "")
+            channel_name = payload.get("channelName", "")
+
             logger.info(
                 f"[EXTERNAL] Received from {source} ({integration_type}): "
                 f"{contact_name}: {message_body[:100]}... "
-                f"(self={is_self_message})"
+                f"(channel={channel_name or channel_id}, self={is_self_message})"
             )
 
             # Map integration type to platform for routing
@@ -1487,6 +1490,14 @@ class AgentBase:
             }
             source_platform = platform_map.get(integration_type, source.lower())
 
+            # Build a location string (channel/server context)
+            location_parts = []
+            if channel_name:
+                location_parts.append(channel_name)
+            elif channel_id:
+                location_parts.append(f"channel {channel_id}")
+            location_str = f" in {' / '.join(location_parts)}" if location_parts else ""
+
             if is_self_message:
                 # Self-message = user is directly talking to the agent.
                 # Pass message body as-is (like a normal chat input).
@@ -1495,9 +1506,9 @@ class AgentBase:
                 # Someone else sent a message — notify the agent so it can
                 # ask the user what to do about it.
                 event_content = (
-                    f"[Incoming {source} message from {contact_name} ({contact_id})]: "
+                    f"[Incoming {source} message from {contact_name} ({contact_id}){location_str}]: "
                     f"\"{message_body}\"\n\n"
-                    f"A new message was received on {source} from {contact_name}. "
+                    f"A new message was received on {source} from {contact_name}{location_str}. "
                     f"Ask the user what they would like to do about this message. "
                     f"Present the message content and wait for instructions."
                 )
@@ -1511,6 +1522,8 @@ class AgentBase:
                 "is_self_message": is_self_message,
                 "contact_id": contact_id,
                 "contact_name": contact_name,
+                "channel_id": channel_id,
+                "channel_name": channel_name,
             })
 
         except Exception as e:

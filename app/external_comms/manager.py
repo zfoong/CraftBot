@@ -177,6 +177,7 @@ class ExternalCommsManager:
             "channelName": msg.channel_name,
             "messageId": msg.message_id,
             "is_self_message": msg.raw.get("is_self_message", False),
+            "raw": msg.raw,
         }
 
         source = payload["source"]

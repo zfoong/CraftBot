@@ -41,7 +41,7 @@ INTEGRATION_REGISTRY: Dict[str, Dict[str, Any]] = {
 "discord": {
         "name": "Discord",
         "description": "Community chat",
-        "auth_type": "both",  # Has both invite and bot token login
+        "auth_type": "token",
         "fields": [
             {"key": "bot_token", "label": "Bot Token", "placeholder": "Enter bot token", "password": True},
         ],

@@ -306,45 +306,13 @@ class LinkedInHandler(IntegrationHandler):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Discord (unified: invite + bot + user)
+# Discord (bot token)
 # ═══════════════════════════════════════════════════════════════════
 
 class DiscordHandler(IntegrationHandler):
     @property
     def subcommands(self) -> list[str]:
-        return ["invite", "login", "login-user", "logout", "status"]
-
-    async def handle(self, sub, args):
-        if sub == "login-user": return await self._login_user(args)
-        return await super().handle(sub, args)
-
-    async def invite(self, args):
-        from app.config import DISCORD_SHARED_BOT_ID
-        if not DISCORD_SHARED_BOT_ID:
-            return False, "CraftOS Discord bot not configured. Set DISCORD_SHARED_BOT_ID env var.\nAlternatively, use /discord login <bot_token> with your own bot."
-
-        permissions = 274878024704  # Send Messages, Read Messages, Embed Links, Attach Files, Read History, Add Reactions
-        invite_url = f"https://discord.com/oauth2/authorize?client_id={DISCORD_SHARED_BOT_ID}&permissions={permissions}&scope=bot%20applications.commands"
-        webbrowser.open(invite_url)
-
-        # If shared bot token is configured, store it
-        from app.config import DISCORD_SHARED_BOT_TOKEN
-        if DISCORD_SHARED_BOT_TOKEN:
-            from app.external_comms.platforms.discord import DiscordCredential
-            # Preserve existing user_token if present
-            existing = load_credential("discord.json", DiscordCredential) if has_credential("discord.json") else None
-            save_credential("discord.json", DiscordCredential(
-                bot_token=DISCORD_SHARED_BOT_TOKEN,
-                user_token=existing.user_token if existing else "",
-            ))
-            return True, f"CraftOS Discord bot connected. Invite link opened in browser.\nInvite URL: {invite_url}"
-
-        return True, (
-            f"Bot invite link opened in browser.\n"
-            f"After adding the bot to your server, register with:\n"
-            f"  /discord login <bot_token>\n\n"
-            f"Invite URL: {invite_url}"
-        )
+        return ["login", "logout", "status"]
 
     async def login(self, args):
         if not args: return False, "Usage: /discord login <bot_token>"
@@ -357,36 +325,20 @@ class DiscordHandler(IntegrationHandler):
                 data = await r.json()
 
         from app.external_comms.platforms.discord import DiscordCredential
-        # Preserve existing user_token if present
-        existing = load_credential("discord.json", DiscordCredential) if has_credential("discord.json") else None
-        save_credential("discord.json", DiscordCredential(
-            bot_token=bot_token,
-            user_token=existing.user_token if existing else "",
-        ))
+        save_credential("discord.json", DiscordCredential(bot_token=bot_token))
         return True, f"Discord bot connected: {data.get('username')} ({data.get('id')})"
-
-    async def _login_user(self, args):
-        if not args: return False, "Usage: /discord login-user <user_token>"
-        user_token = args[0]
-
-        import aiohttp
-        async with aiohttp.ClientSession() as s:
-            async with s.get("https://discord.com/api/v10/users/@me", headers={"Authorization": user_token}) as r:
-                if r.status != 200: return False, f"Invalid user token: {r.status}"
-                data = await r.json()
-
-        from app.external_comms.platforms.discord import DiscordCredential
-        # Preserve existing bot_token if present
-        existing = load_credential("discord.json", DiscordCredential) if has_credential("discord.json") else None
-        save_credential("discord.json", DiscordCredential(
-            bot_token=existing.bot_token if existing else "",
-            user_token=user_token,
-        ))
-        return True, f"Discord user connected: {data.get('username')} ({data.get('id')})"
 
     async def logout(self, args):
         if not has_credential("discord.json"):
             return False, "No Discord credentials found."
+        # Stop the active gateway listener before removing credentials
+        try:
+            from app.external_comms.manager import get_external_comms_manager
+            manager = get_external_comms_manager()
+            if manager:
+                await manager.stop_platform("discord")
+        except Exception:
+            pass
         remove_credential("discord.json")
         return True, "Removed Discord credential."
 
@@ -395,16 +347,9 @@ class DiscordHandler(IntegrationHandler):
             return True, "Discord: Not connected"
         from app.external_comms.platforms.discord import DiscordCredential
         cred = load_credential("discord.json", DiscordCredential)
-        if not cred:
+        if not cred or not cred.bot_token:
             return True, "Discord: Not connected"
-        lines = []
-        if cred.bot_token:
-            lines.append("  - Bot: configured")
-        if cred.user_token:
-            lines.append("  - User: configured")
-        if not lines:
-            return True, "Discord: Not connected"
-        return True, "Discord: Connected\n" + "\n".join(lines)
+        return True, "Discord: Connected (bot token)"
 
 
 # ═══════════════════════════════════════════════════════════════════
