@@ -304,70 +304,6 @@ class LinkedInHandler(IntegrationHandler):
         return True, f"LinkedIn: Connected\n  - {lid}"
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Zoom
-# ═══════════════════════════════════════════════════════════════════
-
-class ZoomHandler(IntegrationHandler):
-    async def login(self, args):
-        from app.config import ZOOM_CLIENT_ID
-        if not ZOOM_CLIENT_ID:
-            return False, "Not configured. Set ZOOM_CLIENT_ID env var (or use embedded credentials)."
-
-        # Generate PKCE code_verifier and code_challenge (RFC 7636)
-        code_verifier = secrets.token_urlsafe(64)[:128]
-        code_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode()).digest()
-        ).decode().rstrip("=")
-
-        params = {
-            "response_type": "code",
-            "client_id": ZOOM_CLIENT_ID,
-            "redirect_uri": REDIRECT_URI,
-            "state": secrets.token_urlsafe(32),
-            "code_challenge": code_challenge,
-            "code_challenge_method": "S256",
-        }
-        from agent_core import run_oauth_flow
-        code, error = run_oauth_flow(f"https://zoom.us/oauth/authorize?{urlencode(params)}")
-        if error: return False, f"Zoom OAuth failed: {error}"
-
-        import aiohttp
-        async with aiohttp.ClientSession() as s:
-            async with s.post("https://zoom.us/oauth/token", data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": REDIRECT_URI,
-                "client_id": ZOOM_CLIENT_ID,
-                "code_verifier": code_verifier,
-            }) as r:
-                if r.status != 200: return False, f"Token exchange failed: {await r.text()}"
-                tokens = await r.json()
-            async with s.get("https://api.zoom.us/v2/users/me", headers={"Authorization": f"Bearer {tokens['access_token']}"}) as r:
-                if r.status != 200: return False, "Failed to fetch user info."
-                info = await r.json()
-
-        from app.external_comms.platforms.zoom import ZoomCredential
-        save_credential("zoom.json", ZoomCredential(
-            access_token=tokens["access_token"],
-            refresh_token=tokens.get("refresh_token", ""),
-            token_expiry=time.time() + tokens.get("expires_in", 3600),
-            client_id=ZOOM_CLIENT_ID,
-            client_secret="",  # PKCE flow, no secret
-        ))
-        return True, f"Zoom connected as {info.get('display_name')} ({info.get('email')})"
-
-    async def logout(self, args):
-        if not has_credential("zoom.json"):
-            return False, "No Zoom credentials found."
-        remove_credential("zoom.json")
-        return True, "Removed Zoom credential."
-
-    async def status(self):
-        if not has_credential("zoom.json"):
-            return True, "Zoom: Not connected"
-        return True, "Zoom: Connected"
-
 
 # ═══════════════════════════════════════════════════════════════════
 # Discord (unified: invite + bot + user)
@@ -956,7 +892,6 @@ INTEGRATION_HANDLERS: dict[str, IntegrationHandler] = {
     "slack":              SlackHandler(),
     "notion":             NotionHandler(),
     "linkedin":           LinkedInHandler(),
-    "zoom":               ZoomHandler(),
     "discord":            DiscordHandler(),
     "telegram":           TelegramHandler(),
     "whatsapp":           WhatsAppHandler(),

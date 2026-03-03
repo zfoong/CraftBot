@@ -1481,7 +1481,6 @@ class AgentBase:
                 "discord": "discord",
                 "linkedin": "linkedin",
                 "notion": "notion",
-                "zoom": "zoom",
                 "outlook": "outlook",
                 "google_workspace": "google",
                 "gmail": "google",

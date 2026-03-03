@@ -43,9 +43,6 @@ GOOGLE_CLIENT_SECRET: str = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 LINKEDIN_CLIENT_ID: str = get_credential("linkedin", "client_id", "LINKEDIN_CLIENT_ID")
 LINKEDIN_CLIENT_SECRET: str = get_credential("linkedin", "client_secret", "LINKEDIN_CLIENT_SECRET")
 
-# Zoom (PKCE - only client_id required, secret kept for backwards compatibility)
-ZOOM_CLIENT_ID: str = get_credential("zoom", "client_id", "ZOOM_CLIENT_ID")
-ZOOM_CLIENT_SECRET: str = os.environ.get("ZOOM_CLIENT_SECRET", "")
 
 # Discord (token-based, not OAuth)
 DISCORD_SHARED_BOT_TOKEN: str = os.environ.get("DISCORD_SHARED_BOT_TOKEN", "")

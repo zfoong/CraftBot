@@ -38,13 +38,7 @@ INTEGRATION_REGISTRY: Dict[str, Dict[str, Any]] = {
         "auth_type": "oauth",
         "fields": [],
     },
-    "zoom": {
-        "name": "Zoom",
-        "description": "Video meetings",
-        "auth_type": "oauth",
-        "fields": [],
-    },
-    "discord": {
+"discord": {
         "name": "Discord",
         "description": "Community chat",
         "auth_type": "both",  # Has both invite and bot token login
