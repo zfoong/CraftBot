@@ -66,24 +66,7 @@ INTEGRATION_REGISTRY: Dict[str, Dict[str, Any]] = {
         "auth_type": "interactive",  # Requires QR code scan
         "fields": [],
     },
-    "recall": {
-        "name": "Recall.ai",
-        "description": "Meeting transcription",
-        "auth_type": "token",
-        "fields": [
-            {"key": "api_key", "label": "API Key", "placeholder": "Enter API key", "password": True},
-            {"key": "region", "label": "Region", "placeholder": "us or eu", "password": False},
-        ],
-    },
-    "github": {
-        "name": "GitHub",
-        "description": "Code hosting & issues",
-        "auth_type": "token",
-        "fields": [
-            {"key": "token", "label": "Personal Access Token", "placeholder": "ghp_...", "password": True},
-        ],
-    },
-    "outlook": {
+"outlook": {
         "name": "Outlook",
         "description": "Email (IMAP/SMTP)",
         "auth_type": "token",
@@ -276,21 +259,6 @@ async def connect_integration_token(integration_id: str, credentials: Dict[str, 
         if not bot_token:
             return False, "Bot token is required"
         args = [bot_token]
-
-    elif integration_id == "recall":
-        api_key = credentials.get("api_key", "")
-        if not api_key:
-            return False, "API key is required"
-        args = [api_key]
-        region = credentials.get("region", "us")
-        if region:
-            args.append(region)
-
-    elif integration_id == "github":
-        token = credentials.get("token", "")
-        if not token:
-            return False, "Personal access token is required"
-        args = [token]
 
     elif integration_id == "outlook":
         email_address = credentials.get("email_address", "")

@@ -1482,8 +1482,6 @@ class AgentBase:
                 "linkedin": "linkedin",
                 "notion": "notion",
                 "zoom": "zoom",
-                "recall": "recall",
-                "github": "github",
                 "outlook": "outlook",
                 "google_workspace": "google",
                 "gmail": "google",

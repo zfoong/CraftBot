@@ -869,76 +869,6 @@ class WhatsAppHandler(IntegrationHandler):
         return True, f"WhatsApp: Connected\n  - Session: {sid}"
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Recall.ai
-# ═══════════════════════════════════════════════════════════════════
-
-class RecallHandler(IntegrationHandler):
-    async def login(self, args):
-        if not args: return False, "Usage: /recall login <api_key> [region]\nRegion: us (default) or eu"
-        api_key, region = args[0], args[1] if len(args) > 1 else "us"
-
-        import aiohttp
-        base = "https://us-west-2.recall.ai" if region == "us" else "https://eu-central-1.recall.ai"
-        async with aiohttp.ClientSession() as s:
-            async with s.get(f"{base}/api/v1/bot/", headers={"Authorization": f"Token {api_key}"}) as r:
-                if r.status == 401: return False, "Invalid Recall API key."
-
-        from app.external_comms.platforms.recall import RecallCredential
-        save_credential("recall.json", RecallCredential(api_key=api_key, region=region))
-        return True, f"Recall.ai connected (region: {region})"
-
-    async def logout(self, args):
-        if not has_credential("recall.json"):
-            return False, "No Recall credentials found."
-        remove_credential("recall.json")
-        return True, "Removed Recall.ai credential."
-
-    async def status(self):
-        if not has_credential("recall.json"):
-            return True, "Recall.ai: Not connected"
-        from app.external_comms.platforms.recall import RecallCredential
-        cred = load_credential("recall.json", RecallCredential)
-        region = cred.region if cred else "us"
-        return True, f"Recall.ai: Connected (region: {region})"
-
-
-# ═══════════════════════════════════════════════════════════════════
-# GitHub
-# ═══════════════════════════════════════════════════════════════════
-
-class GitHubHandler(IntegrationHandler):
-    async def login(self, args):
-        if not args: return False, "Usage: /github login <personal_access_token>"
-        token = args[0]
-
-        import aiohttp
-        async with aiohttp.ClientSession() as s:
-            async with s.get("https://api.github.com/user", headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-            }) as r:
-                if r.status != 200: return False, f"Invalid GitHub token: {r.status}"
-                data = await r.json()
-
-        from app.external_comms.platforms.github import GitHubCredential
-        save_credential("github.json", GitHubCredential(token=token, username=data.get("login", "")))
-        return True, f"GitHub connected as {data.get('login')} ({data.get('name', '')})"
-
-    async def logout(self, args):
-        if not has_credential("github.json"):
-            return False, "No GitHub credentials found."
-        remove_credential("github.json")
-        return True, "Removed GitHub credential."
-
-    async def status(self):
-        if not has_credential("github.json"):
-            return True, "GitHub: Not connected"
-        from app.external_comms.platforms.github import GitHubCredential
-        cred = load_credential("github.json", GitHubCredential)
-        username = cred.username if cred else "unknown"
-        return True, f"GitHub: Connected\n  - {username}"
-
 
 # ═══════════════════════════════════════════════════════════════════
 # Outlook
@@ -1030,8 +960,6 @@ INTEGRATION_HANDLERS: dict[str, IntegrationHandler] = {
     "discord":            DiscordHandler(),
     "telegram":           TelegramHandler(),
     "whatsapp":           WhatsAppHandler(),
-    "recall":             RecallHandler(),
-    "github":             GitHubHandler(),
     "outlook":            OutlookHandler(),
     "whatsapp_business":  WhatsAppBusinessHandler(),
 }

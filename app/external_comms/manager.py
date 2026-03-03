@@ -39,8 +39,6 @@ def _import_all_platforms() -> None:
         "app.external_comms.platforms.notion",
         "app.external_comms.platforms.linkedin",
         "app.external_comms.platforms.zoom",
-        "app.external_comms.platforms.recall",
-        "app.external_comms.platforms.github",
         "app.external_comms.platforms.outlook",
         "app.external_comms.platforms.google_workspace",
     ]
