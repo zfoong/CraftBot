@@ -10,10 +10,17 @@ Run this before the app directory, using 'python -m app.main'
 """
 
 # ============================================================================
-# CRITICAL: Suppress console logging BEFORE any other imports
+# CRITICAL: Suppress console logging and terminal escape sequences BEFORE imports
 # This prevents log messages from corrupting the Textual TUI display.
 # Must be done before any module calls logging.basicConfig()
 # ============================================================================
+import os as _os
+
+# Suppress Kitty graphics protocol detection (prevents garbage output like "Gi=...")
+# This tells Textual not to query for Kitty graphics support
+_os.environ.setdefault("KITTEN_NO_GRAPHICS", "1")
+_os.environ.setdefault("TEXTUAL_SCREENSHOT", "0")
+
 import logging
 import sys as _sys
 

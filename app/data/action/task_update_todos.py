@@ -10,12 +10,13 @@ from agent_core import action
         "4. Verify outcome (check if result meets requirements) [one or multiple steps]\n"
         "5. Confirm with user (get approval before ending)\n"
         "6. Clean up (delete temp files if any)\n\n"
-        "Always provide the COMPLETE todo list. Mark items as 'in_progress' when starting, 'completed' when done."
+        "Always provide the COMPLETE todo list. Mark items as 'in_progress' when starting, 'completed' when done. "
+        "This action can be executed in parallel with send_message, but do not use multiple task_update_todos actions at the same time."
     ),
     mode="ALL",
     default=True,
     action_sets=["core"],
-    parallelizable=False,
+    parallelizable=True,
     input_schema={
         "todos": {
             "type": "array",

@@ -2,10 +2,10 @@ from agent_core import action
 
 @action(
         name="send_message",
-        description="Use this action to deliver a detailed text update that will be recorded in the conversation log and event stream. Avoid revealing internal or sensitive information and do not mention conversation identifiers. This action does not perform work; it only communicates status to the user.",
+        description="Use this action to deliver a detailed text update that will be recorded in the conversation log and event stream. Avoid revealing internal or sensitive information and do not mention conversation identifiers. This action does not perform work; it only communicates status to the user. This action can be executed in parallel with other actions, but do not use multiple send_message actions at the same time as that is redundant - combine messages into one.",
         default=True,
         action_sets=["core"],
-        parallelizable=False,
+        parallelizable=True,
         input_schema={
                 "message": {
                         "type": "string",

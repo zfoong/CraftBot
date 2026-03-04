@@ -38,6 +38,10 @@ Conversation ID: {conversation_id}
 3. CREATE NEW SESSION when:
    - The message is a NEW topic clearly unrelated to any existing task
    - The message doesn't match any existing task's context AND there are multiple active sessions
+
+IMPORTANT NOTES: 
+- If the message has no context, it is very LIKELY it is meant for another task, DO NOT CREATE a new session
+- If there is on-going task waiting for user reply, it is very LIKELY the incoming item is meant for the session
 </rules>
 
 <output_format>

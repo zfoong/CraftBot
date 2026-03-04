@@ -39,11 +39,12 @@ HARD_ONBOARDING_STEPS = [
 
 # Soft onboarding interview questions template
 SOFT_ONBOARDING_QUESTIONS = [
-    "name",           # What should I call you?
-    "job",            # What do you do for work?
-    "location",       # Where are you located?
-    "timezone",       # What timezone are you in?
-    "tone",           # How would you like me to communicate?
-    "proactivity",    # Should I be proactive or wait for instructions?
-    "approval",       # What actions need your approval?
+    "name",                        # What should I call you?
+    "job",                         # What do you do for work?
+    "location",                    # Where are you located?
+    "timezone",                    # What timezone are you in?
+    "tone",                        # How would you like me to communicate?
+    "proactivity",                 # Should I be proactive or wait for instructions?
+    "approval",                    # What actions need your approval?
+    "preferred_messaging_platform",  # Where should I send notifications? (telegram/whatsapp/discord/slack/tui)
 ]

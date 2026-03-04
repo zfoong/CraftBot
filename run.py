@@ -212,7 +212,7 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
     skip_flags = {"--gui", "--no-conda"}
     pass_args = [a for a in sys.argv[1:] if a not in skip_flags]
 
-    print(f"\nLaunching CraftBot...\n")
+    print("\nLaunching CraftBot\n")
 
     # Build command
     if use_conda and env_name:
@@ -245,10 +245,6 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
 # MAIN
 # ==========================================
 if __name__ == "__main__":
-    print("="*50)
-    print(" CraftBot")
-    print("="*50)
-
     args = set(sys.argv[1:])
 
     # Parse flags
@@ -263,8 +259,6 @@ if __name__ == "__main__":
     os.environ["USE_CONDA"] = str(use_conda)
     os.environ["GUI_MODE_ENABLED"] = str(gui_mode)
     os.environ["USE_OMNIPARSER"] = str(gui_mode)
-
-    print(f"\nMode: {'GUI' if gui_mode else 'CLI'}")
 
     # Check conda
     conda_base = None

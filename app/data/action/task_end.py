@@ -6,12 +6,13 @@ from agent_core import action
     description=(
         "End the current task for this session with a final status. "
         "Use status='complete' when the task is fully done, or 'abort' when it "
-        "should be cancelled/failed early. Always provide a reason and a detailed summary."
+        "should be cancelled/failed early. Always provide a reason and a detailed summary. "
+        "This action can be executed in parallel with send_message, but do not use multiple task_end actions at the same time."
     ),
     default=True,
     mode="CLI",
     action_sets=["core"],
-    parallelizable=False,
+    parallelizable=True,
     input_schema={
         "status": {
             "type": "string",

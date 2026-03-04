@@ -67,6 +67,9 @@ class ContextEngine:
         self.state_manager = state_manager
         self._memory_manager = None
 
+        # Message source context for external platform messages
+        self._current_message_context: Optional[Dict[str, Any]] = None
+
         # Hooks for WCA-specific context (default to empty string)
         self._get_conversation_history = get_conversation_history_hook or (lambda: "")
         self._get_chat_target_info = get_chat_target_info_hook or (lambda: "")
@@ -75,6 +78,69 @@ class ContextEngine:
     def set_memory_manager(self, memory_manager) -> None:
         """Set the memory manager for context retrieval."""
         self._memory_manager = memory_manager
+
+    # ─────────────── MESSAGE SOURCE CONTEXT ───────────────
+
+    def set_message_context(self, context: Optional[Dict[str, Any]]) -> None:
+        """Set the current message source context for external platform messages.
+
+        Args:
+            context: Dict containing message metadata:
+                - platform: Source platform (telegram, whatsapp, discord, slack, tui, cli)
+                - contact_id: Contact/sender ID
+                - contact_name: Human-readable contact name
+                - channel_id: Channel/group ID (if applicable)
+                - channel_name: Channel/group name (if applicable)
+                - is_self_message: True if user messaged themselves
+                - integration_type: Full integration type (telegram_bot, whatsapp_web, etc.)
+        """
+        self._current_message_context = context
+
+    def clear_message_context(self) -> None:
+        """Clear the current message context after processing."""
+        self._current_message_context = None
+
+    def get_message_source_block(self) -> str:
+        """Get formatted message source context for inclusion in prompts.
+
+        Returns:
+            Formatted XML block with message source info, or empty string if no context.
+        """
+        if not self._current_message_context:
+            return ""
+
+        platform = self._current_message_context.get("platform", "tui")
+        integration_type = self._current_message_context.get("integration_type", "")
+        contact_name = self._current_message_context.get("contact_name", "")
+        contact_id = self._current_message_context.get("contact_id", "")
+        channel_name = self._current_message_context.get("channel_name", "")
+        channel_id = self._current_message_context.get("channel_id", "")
+        is_self_message = self._current_message_context.get("is_self_message", True)
+
+        lines = [
+            "<message_source>",
+            f"Platform: {platform}",
+        ]
+
+        if integration_type:
+            lines.append(f"Integration Type: {integration_type}")
+
+        if is_self_message:
+            lines.append("Message Type: Self-message (user talking to agent directly)")
+        else:
+            lines.append("Message Type: Third-party message (someone else sent this)")
+            if contact_name:
+                lines.append(f"Sender: {contact_name}")
+            if contact_id:
+                lines.append(f"Sender ID: {contact_id}")
+
+        if channel_name:
+            lines.append(f"Channel: {channel_name}")
+        elif channel_id:
+            lines.append(f"Channel ID: {channel_id}")
+
+        lines.append("</message_source>")
+        return "\n".join(lines)
 
     # ─────────────── SYSTEM MESSAGE COMPONENTS (STATIC ONLY) ───────────────
 

@@ -206,10 +206,12 @@ class TUIInterface:
             return True
 
         # Handle per-integration commands (/google, /slack, /telegram, etc.)
-        integration_name = command.lstrip("/")
-        if integration_name in INTEGRATION_HANDLERS:
-            await self._handle_integration_command(integration_name, parts[1:])
-            return True
+        # Only check for integration commands if the input starts with "/"
+        if command.startswith("/"):
+            integration_name = command.lstrip("/")
+            if integration_name in INTEGRATION_HANDLERS:
+                await self._handle_integration_command(integration_name, parts[1:])
+                return True
 
         handler = self._command_handlers.get(command)
         if handler:
@@ -1084,7 +1086,11 @@ Skills are also automatically selected during task creation based on the task de
                 found_task_id = stream_task_id
 
             # Method 2: Extract task name from message and find by display_name
-            if not found_task_id:
+            # Only try this if stream_task_id was NOT provided (empty).
+            # If stream_task_id was provided but not found in _action_items,
+            # we should NOT fall back to name matching as it might mark the
+            # wrong task as completed in parallel task scenarios.
+            if not found_task_id and not stream_task_id:
                 task_name = message
                 if message.startswith("Task ended: "):
                     task_name = message[12:]
@@ -1096,13 +1102,8 @@ Skills are also automatically selected during task creation based on the task de
                         found_task_id = item_id
                         break
 
-            # Method 4: Fallback - find most recent running task
-            if not found_task_id:
-                for item_id in reversed(self._action_order):
-                    item = self._action_items.get(item_id)
-                    if item and item.item_type == "task" and item.status == "running":
-                        found_task_id = item_id
-                        break
+            # NOTE: Removed fallback "Method 4" that marked "most recent running task"
+            # as it would incorrectly mark the wrong task in parallel task scenarios.
 
             # Update task status to completed
             if found_task_id and found_task_id in self._action_items:

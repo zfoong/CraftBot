@@ -89,7 +89,22 @@ class ActionRouter:
             List[Dict[str, Any]]: List of decision payloads, each with ``action_name``,
             ``parameters``, and ``reasoning`` for execution.
         """
-        conversation_mode_actions = ["send_message", "task_start", "ignore"]
+        # Base conversation mode actions
+        base_actions = ["send_message", "task_start", "ignore"]
+
+        # Dynamically add messaging actions for connected platforms
+        try:
+            from app.external_comms.integration_discovery import (
+                get_connected_messaging_platforms,
+                get_messaging_actions_for_platforms,
+            )
+            connected_platforms = get_connected_messaging_platforms()
+            messaging_actions = get_messaging_actions_for_platforms(connected_platforms)
+            conversation_mode_actions = base_actions + messaging_actions
+        except Exception as e:
+            logger.debug(f"[ACTION] Could not discover messaging actions: {e}")
+            conversation_mode_actions = base_actions
+
         action_candidates = []
 
         for action in conversation_mode_actions:
@@ -103,12 +118,18 @@ class ActionRouter:
                     "output_schema": act.output_schema
                 })
 
+        # Get message source context for external platform messages
+        message_source_block = ""
+        if hasattr(self.context_engine, 'get_message_source_block'):
+            message_source_block = self.context_engine.get_message_source_block()
+
         # Build the instruction prompt for the LLM
         prompt = SELECT_ACTION_PROMPT.format(
             event_stream=self.context_engine.get_event_stream(),
             memory_context=self.context_engine.get_memory_context(query),
             query=query,
             action_candidates=self._format_candidates(action_candidates),
+            message_source_block=message_source_block,
         )
 
         max_retries = 3

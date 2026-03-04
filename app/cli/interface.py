@@ -394,10 +394,12 @@ class CLIInterface:
             return True
 
         # Handle per-integration commands (/google, /slack, /telegram, etc.)
-        integration_name = command.lstrip("/")
-        if integration_name in INTEGRATION_HANDLERS:
-            await self._handle_integration_command(integration_name, parts[1:])
-            return True
+        # Only check for integration commands if the input starts with "/"
+        if command.startswith("/"):
+            integration_name = command.lstrip("/")
+            if integration_name in INTEGRATION_HANDLERS:
+                await self._handle_integration_command(integration_name, parts[1:])
+                return True
 
         # Built-in commands
         handler = self._command_handlers.get(command)

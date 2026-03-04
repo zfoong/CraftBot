@@ -46,7 +46,6 @@ from app.config import (
     PROCESS_MEMORY_AT_STARTUP,
 )
 
-from app.tui import TUIInterface
 from app.internal_action_interface import InternalActionInterface
 from app.llm import LLMInterface, LLMCallType
 from app.vlm_interface import VLMInterface
@@ -1373,6 +1372,13 @@ class AgentBase:
             # Extract platform from payload (e.g., "cli", "gui", "tui")
             source_platform = "gui" if gui_mode else "cli"
 
+            # For non-external messages (TUI/CLI), clear any stale message context
+            # External messages already have context set via _handle_external_event
+            is_external = payload.get("external_event", False)
+            if not is_external:
+                if hasattr(self, 'context_engine') and self.context_engine:
+                    self.context_engine.clear_message_context()
+
             # Check active tasks — route message to matching session if possible
             # Use active_task_ids from state_manager (not just triggers in queue) to ensure
             # all running tasks are visible for routing, not just those waiting in queue
@@ -1490,6 +1496,22 @@ class AgentBase:
             }
             source_platform = platform_map.get(integration_type, source.lower())
 
+            # Build message context for the context engine
+            # This allows the agent to know where the message came from and make routing decisions
+            message_context = {
+                "platform": source_platform,
+                "integration_type": integration_type,
+                "contact_id": contact_id,
+                "contact_name": contact_name,
+                "channel_id": channel_id,
+                "channel_name": channel_name,
+                "is_self_message": is_self_message,
+            }
+
+            # Inject message context into context engine for prompt inclusion
+            if hasattr(self, 'context_engine') and self.context_engine:
+                self.context_engine.set_message_context(message_context)
+
             # Build a location string (channel/server context)
             location_parts = []
             if channel_name:
@@ -1524,6 +1546,7 @@ class AgentBase:
                 "contact_name": contact_name,
                 "channel_id": channel_id,
                 "channel_name": channel_name,
+                "message_context": message_context,
             })
 
         except Exception as e:
@@ -1916,10 +1939,15 @@ class AgentBase:
             api_key: Optional API key presented in the interface for convenience.
             interface_mode: "tui" for Textual interface, "cli" for command line.
         """
+        # Startup progress messages
+        print("[3/8] Initializing agent...")
+
         # Initialize MCP client and register tools
+        print("[4/8] Connecting to MCP servers...")
         await self._initialize_mcp()
 
         # Initialize skills system
+        print("[5/8] Loading skills...")
         await self._initialize_skills()
 
         # Start usage reporter background flush
@@ -1928,6 +1956,7 @@ class AgentBase:
         self._usage_reporter.start_background_flush()
 
         # Initialize external app libraries
+        print("[6/8] Loading libraries...")
         await self._initialize_external_libraries()
 
         # Process unprocessed events into memory at startup (if enabled)
@@ -1935,6 +1964,7 @@ class AgentBase:
             await self._process_memory_at_startup()
 
         # Initialize and start the scheduler (handles memory processing and other periodic tasks)
+        print("[7/8] Starting scheduler...")
         from app.config import PROJECT_ROOT
         scheduler_config_path = PROJECT_ROOT / "app" / "config" / "scheduler_config.json"
         await self.scheduler.initialize(
@@ -1951,9 +1981,18 @@ class AgentBase:
             await self.trigger_soft_onboarding()
 
         # Initialize external communications (WhatsApp, Telegram)
+        print("[8/8] Starting communications...")
         from app.external_comms import ExternalCommsManager
         self._external_comms = ExternalCommsManager(self)
         await self._external_comms.start()
+
+        # Startup complete
+        print("\n[OK] Ready!\n", flush=True)
+
+        # Flush stdout/stderr to ensure clean output before TUI starts
+        import sys
+        sys.stdout.flush()
+        sys.stderr.flush()
 
         try:
             # Select interface based on mode
@@ -1965,6 +2004,8 @@ class AgentBase:
                     default_api_key=api_key,
                 )
             else:
+                # Import TUI lazily to avoid terminal capability queries at startup
+                from app.tui import TUIInterface
                 interface = TUIInterface(
                     self,
                     default_provider=provider or self.llm.provider,

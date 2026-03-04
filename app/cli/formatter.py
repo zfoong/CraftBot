@@ -32,11 +32,11 @@ class CLIFormatter:
     }
 
     # ANSI escape codes for colors
-    # Using 256-color mode for better compatibility
+    # Using true color (24-bit) for exact color matching with TUI
     COLORS = {
         "user": "\033[1;37m",           # Bold white
-        "agent": "\033[1;38;5;208m",    # Bold orange (#ff4f18 approximation)
-        "task": "\033[1;38;5;208m",     # Bold orange
+        "agent": "\033[1;38;2;255;79;24m",    # Bold orange (#ff4f18)
+        "task": "\033[1;38;2;255;79;24m",     # Bold orange (#ff4f18)
         "action": "\033[1;90m",         # Bold gray
         "error": "\033[1;31m",          # Bold red
         "system": "\033[1;90m",         # Bold gray
