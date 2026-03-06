@@ -181,6 +181,9 @@ python install.py              # Global pip (fastest, minimal deps)
 python install.py --conda      # Conda environment
 python install.py --gui --conda # Full installation with GUI components
 
+python run.py              # For global pip install
+python run.py              # For conda environment (no flag needed, conda is automatic)
+python run.py --gui        # For full installation with GUI components
 ```
 
 > [!TIP]
