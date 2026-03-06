@@ -633,6 +633,8 @@ class AgentBase:
 
     async def _handle_proactive_heartbeat(self, frequency: str) -> bool:
         """Create heartbeat processing task for the given frequency."""
+        import time
+
         # Check if there are any tasks for this frequency
         tasks = self.proactive_manager.get_tasks(frequency=frequency, enabled_only=True)
         if not tasks:
@@ -649,10 +651,24 @@ class AgentBase:
             selected_skills=["heartbeat-processor"],
         )
         logger.info(f"[PROACTIVE] Created heartbeat task: {task_id} for {frequency}")
+
+        # Queue trigger to start the task (matching user-profile-interview pattern)
+        trigger = Trigger(
+            fire_at=time.time(),
+            priority=50,
+            next_action_description=f"Execute {frequency} proactive tasks",
+            session_id=task_id,
+            payload={"type": "proactive_heartbeat", "frequency": frequency},
+        )
+        await self.triggers.put(trigger)
+        logger.info(f"[PROACTIVE] Queued trigger for heartbeat task: {task_id}")
+
         return True
 
     async def _handle_proactive_planner(self, scope: str) -> bool:
         """Create planner task for the given scope (day, week, month)."""
+        import time
+
         skill_name = f"{scope}-planner"
 
         task_id = self.task_manager.create_task(
@@ -664,6 +680,18 @@ class AgentBase:
             selected_skills=[skill_name],
         )
         logger.info(f"[PROACTIVE] Created planner task: {task_id} for {scope}")
+
+        # Queue trigger to start the task (matching user-profile-interview pattern)
+        trigger = Trigger(
+            fire_at=time.time(),
+            priority=50,
+            next_action_description=f"Execute {scope} planner task",
+            session_id=task_id,
+            payload={"type": "proactive_planner", "scope": scope},
+        )
+        await self.triggers.put(trigger)
+        logger.info(f"[PROACTIVE] Queued trigger for planner task: {task_id}")
+
         return True
 
     async def _handle_conversation_workflow(self, trigger_data: TriggerData, session_id: str) -> None:

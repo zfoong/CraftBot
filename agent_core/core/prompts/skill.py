@@ -17,6 +17,7 @@ You are selecting a skill and action sets for a task. This is a two-part selecti
 <task_information>
 Task Name: {task_name}
 Task Description: {task_description}
+Source Platform: {source_platform}
 </task_information>
 
 <available_skills>
@@ -44,7 +45,11 @@ Task Description: {task_description}
   - PDFs/documents → 'document_processing'
   - GUI automation → 'gui_interaction'
   - Running commands → 'shell'
-- Select ONLY the sets needed (fewer is better for performance)
+- Select ONLY the sets needed (fewer is better for performance)- 
+- If the source platform is an external messaging service, you MUST include that platform's action set, for example:
+  - Telegram → include 'telegram' action set
+  - Slack → include 'slack' action set
+  - CraftBot TUI → no additional action set needed (uses default send_message)
 </instructions>
 
 <output_format>
@@ -57,6 +62,9 @@ Example with skill:
 
 Example without skill:
 {{"skills": [], "action_sets": ["web_research"]}}
+
+Example with external platform:
+{{"skills": [], "action_sets": ["web_research", "telegram"]}}
 </output_format>
 """
 

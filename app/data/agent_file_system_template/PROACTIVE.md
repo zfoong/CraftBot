@@ -1,51 +1,175 @@
-# Proactive Management
+---
+version: "1.0"
+last_updated: {{TIMESTAMP}}  # Auto-updated by system (format: YYYY-MM-DDTHH:MM:SSZ)
+---
 
-**Last Updated:** `YYYY-MM-DD HH:MM:SS UTC`
+# Proactive Tasks
 
-## Overview
+<!--
+================================================================================
+PROACTIVE MODULE OVERVIEW
+================================================================================
+This file defines scheduled autonomous tasks that the agent executes without
+direct user prompts. The agent reads this file during scheduled heartbeats
+and planners to determine what actions to take.
 
-This document tracks all proactive activities, monitoring targets, and automated interventions.
+IMPORTANT: Do NOT remove the HTML comment markers (PROACTIVE_TASKS_START, etc.)
+as they are used by the parser to locate sections.
+================================================================================
+-->
+
+## How Proactive Tasks Work
 
 You can operate proactively based on scheduled activations. Schedules can be hourly (every X hours), daily (at a specific time), weekly (on a specific day), or monthly (on a specific date).
 
 When a schedule fires, you execute a proactive check workflow. First, read PROACTIVE.md to understand configured proactive tasks and their conditions. Then research the agent file system for relevant context - user preferences, project status, organizational priorities.
 
-Evaluate each potential proactive task using a five-dimension rubric. Score each dimension from 1 to 5:
-- Impact: How significant is the outcome? (1=negligible, 5=critical)
-- Risk: What could go wrong? (1=high risk, 5=no risk)
-- Cost: Resources and effort required? (1=very high, 5=negligible)
-- Urgency: How time-sensitive? (1=not urgent, 5=immediate)
-- Confidence: Will the user accept this? (1=unlikely, 5=certain)
+---
 
-Add the scores. Tasks scoring 18 or above are strong candidates for execution. Tasks scoring 13-17 may be worth doing but might need user input first. Tasks below 13 should be skipped or deferred.
+## Decision Rubric
+
+Evaluate each potential proactive task using a five-dimension rubric. Score each dimension from 1 to 5:
+
+| Dimension   | 1 (Low)        | 5 (High)      | Description                        |
+|-------------|----------------|---------------|------------------------------------|
+| Impact      | Negligible     | Critical      | How significant is the outcome?    |
+| Risk        | High risk      | No risk       | What could go wrong?               |
+| Cost        | Very high      | Negligible    | Resources and effort required?     |
+| Urgency     | Not urgent     | Immediate     | How time-sensitive?                |
+| Confidence  | Unlikely       | Certain       | Will the user accept this?         |
+
+**Scoring Thresholds:**
+- **18+**: Strong candidates for execution - proceed
+- **13-17**: May need user input first - consider asking
+- **<13**: Skip or defer - not worth doing now
+
+---
+
+## Permission Tiers
 
 Before acting on any proactive task, follow the tiered permission model:
-- Tier 0 (silent read): Searching, analyzing, drafting internally - proceed without asking
-- Tier 1 (suggest): Notifying user of findings or recommendations - wait for acknowledgment
-- Tier 2 (low-risk): Creating tickets, scheduling reminders, drafting PRs - inform and proceed unless objected
-- Tier 3 (high-risk): Emailing external parties, changing configs, touching finances - explicit approval required every time
-- Tier 4 (prohibited): Actions disallowed by policy or potentially irreversible harm - never proceed
+
+| Tier | Name         | Actions                                              | Behavior                    |
+|------|--------------|------------------------------------------------------|-----------------------------|
+| 0    | Silent Read  | Searching, analyzing, drafting internally            | Proceed without asking      |
+| 1    | Suggest      | Notifying user of findings or recommendations        | Wait for acknowledgment     |
+| 2    | Low-Risk     | Creating tickets, scheduling reminders, drafting PRs | Inform and proceed unless objected |
+| 3    | High-Risk    | Emailing external parties, changing configs, finances | Explicit approval required  |
+| 4    | Prohibited   | Actions disallowed by policy or irreversible harm    | Never proceed               |
 
 When requesting permission for proactive tasks, prefix your message with the star emoji to indicate it is a proactive request.
 
 After executing proactive tasks, update PROACTIVE.md with what was done, when, and the outcome.
 
-## Proactive Tasks
+---
 
-### Startup
+## Task Definitions
 
-empty
+<!--
+================================================================================
+TASK FORMAT REFERENCE
+================================================================================
+Each task follows this structure:
 
-### Hourly
+### [FREQUENCY] Task Name
+```yaml
+id: unique_task_id              # REQUIRED: Unique identifier (snake_case)
+frequency: daily                # REQUIRED: hourly | daily | weekly | monthly
+time: "09:00"                   # OPTIONAL: Execution time in HH:MM (24hr format)
+day: monday                     # OPTIONAL: For weekly tasks (monday-sunday)
+                                #           For monthly tasks (1-31)
+enabled: true                   # REQUIRED: true | false
+priority: 50                    # REQUIRED: 1-100 (lower = higher priority)
+permission_tier: 1              # REQUIRED: 0-4 (see Permission Tiers above)
+run_count: 0                    # AUTO: Number of times executed
+conditions: []                  # OPTIONAL: List of execution conditions
+instruction: |                  # REQUIRED: Detailed task instruction (see below)
+  Multi-line instruction
+  describing the task.
+outcome_history: []             # AUTO: Recent execution results (max 5)
+```
 
-empty
+FREQUENCY OPTIONS:
+- hourly:  Runs every hour (time field optional)
+- daily:   Runs once per day (time field recommended)
+- weekly:  Runs once per week (day + time fields recommended)
+- monthly: Runs once per month (day = date 1-31, time field recommended)
 
-### Weekly
+CONDITIONS (optional):
+- market_hours_only: Only run during market hours
+- user_available: Only run when user is active
+- weekdays_only: Skip weekends
+- Custom conditions can be added as needed
 
-empty
+================================================================================
+WRITING EFFECTIVE INSTRUCTIONS
+================================================================================
+The instruction field is the most critical part of a proactive task. Write
+detailed, specific instructions that leave no ambiguity about what the agent
+should do. Poor instructions lead to poor execution.
 
-### Monthly
+INSTRUCTION GUIDELINES:
+1. Be specific about WHAT to do - list exact steps, not vague goals
+2. Specify WHERE to find information - which files, APIs, or sources to use
+3. Define the OUTPUT format - how results should be presented or stored
+4. Include SUCCESS CRITERIA - how to know the task is complete
+5. Handle EDGE CASES - what to do if data is missing or errors occur
+6. Specify USER INTERACTION - when to notify, ask, or wait for response
 
-empty
+BAD INSTRUCTION (too vague):
+  "Check emails and summarize important ones."
 
-### Other
+GOOD INSTRUCTION (detailed):
+  "1. Connect to user's email via Gmail integration
+   2. Fetch unread emails from the last 24 hours
+   3. Filter for emails marked as important or from contacts in CONTACTS.md
+   4. For each qualifying email, extract: sender, subject, key action items
+   5. Compile into a summary with sections: Urgent (needs response today),
+      Important (needs response this week), FYI (informational only)
+   6. Present summary to user via chat message
+   7. If no qualifying emails found, send brief 'inbox clear' notification
+   8. Log summary to TASK_HISTORY.md with timestamp"
+
+================================================================================
+-->
+
+<!-- PROACTIVE_TASKS_START -->
+
+<!-- Add your proactive tasks here following the format above -->
+
+<!-- PROACTIVE_TASKS_END -->
+
+---
+
+<!--
+================================================================================
+PLANNER OUTPUTS
+================================================================================
+This section is auto-populated by the day/week/month planners.
+The planners analyze recent interactions and suggest proactive opportunities.
+
+Do NOT manually edit this section - it will be overwritten by planners.
+================================================================================
+-->
+
+<!-- PLANNER_OUTPUTS_START -->
+## Planner Outputs
+
+No planner outputs yet.
+
+<!-- PLANNER_OUTPUTS_END -->
+
+---
+
+<!--
+================================================================================
+HOW TO ADD A NEW TASK
+================================================================================
+1. Add a new section between PROACTIVE_TASKS_START and PROACTIVE_TASKS_END
+2. Use the format: ### [FREQUENCY] Task Name
+3. Include a YAML code block with all required fields
+4. Write detailed, step-by-step instructions (see WRITING EFFECTIVE INSTRUCTIONS)
+5. Set enabled: true when ready to activate
+6. The agent will pick up the task on the next heartbeat
+================================================================================
+-->

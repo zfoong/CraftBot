@@ -20,7 +20,7 @@
       "id": "hourly-heartbeat",
       "name": "Hourly Heartbeat",
       "instruction": "Execute hourly proactive tasks from PROACTIVE.md",
-      "schedule": "every 1 hours",
+      "schedule": "every 5 minutes",
       "enabled": true,
       "priority": 60,
       "mode": "complex",

@@ -241,7 +241,7 @@ class InternalActionInterface:
         # Select skills and action sets in a single LLM call (optimized)
         # Skills are selected first, then action sets with knowledge of skill recommendations
         selected_skills, all_action_sets = await cls._select_skills_and_action_sets_via_llm(
-            task_name, task_description
+            task_name, task_description, source_platform=original_platform
         )
         logger.info(f"[TASK] Auto-selected skills for '{task_name}': {selected_skills}")
         logger.info(f"[TASK] Final action sets: {all_action_sets}")
@@ -478,7 +478,7 @@ class InternalActionInterface:
 
     @classmethod
     async def _select_skills_and_action_sets_via_llm(
-        cls, task_name: str, task_description: str
+        cls, task_name: str, task_description: str, source_platform: Optional[str] = None
     ) -> tuple[List[str], List[str]]:
         """
         Select skills and action sets in a single LLM call.
@@ -490,6 +490,8 @@ class InternalActionInterface:
         Args:
             task_name: Short name for the task.
             task_description: Detailed description of the task.
+            source_platform: Platform where the message originated (e.g., "Telegram", "Whatsapp").
+                            Used to guide action set selection for reply capability.
 
         Returns:
             Tuple of (selected_skills, selected_action_sets).
@@ -544,6 +546,7 @@ class InternalActionInterface:
             prompt = SKILLS_AND_ACTION_SETS_SELECTION_PROMPT.format(
                 task_name=task_name,
                 task_description=task_description,
+                source_platform=source_platform or "CraftBot TUI",
                 available_skills=skills_text,
                 available_sets=sets_text
             )
