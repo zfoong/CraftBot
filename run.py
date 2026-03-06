@@ -232,9 +232,9 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
     else:
         cmd = [sys.executable, "-u", main_script] + pass_args
 
-    # Run in current terminal
+    # Run in current terminal with all environment variables
     try:
-        result = subprocess.run(cmd, cwd=os.path.dirname(main_script))
+        result = subprocess.run(cmd, cwd=os.path.dirname(main_script), env=os.environ.copy())
         sys.exit(result.returncode)
     except KeyboardInterrupt:
         print("\nInterrupted.")
