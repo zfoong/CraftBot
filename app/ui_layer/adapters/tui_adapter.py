@@ -141,6 +141,53 @@ class TUIActionPanelComponent(ActionPanelProtocol):
                 ActionPanelUpdate("update", self._items[item_id])
             )
 
+    async def update_item_by_name(
+        self,
+        action_name: str,
+        task_id: str,
+        status: str,
+        action_id: str = "",
+    ) -> None:
+        """Update item status by matching name and task."""
+        matched_item = None
+
+        # First try exact ID match if provided
+        if action_id and action_id in self._items:
+            matched_item = self._items[action_id]
+
+        # Try matching by name + task_id + running status
+        if not matched_item and task_id:
+            for item_id in reversed(self._order):
+                item = self._items.get(item_id)
+                if (
+                    item
+                    and item.item_type == "action"
+                    and item.display_name == action_name
+                    and item.task_id == task_id
+                    and item.status == "running"
+                ):
+                    matched_item = item
+                    break
+
+        # Fallback: match by just name + running status (handles mismatched task_ids)
+        if not matched_item:
+            for item_id in reversed(self._order):
+                item = self._items.get(item_id)
+                if (
+                    item
+                    and item.item_type == "action"
+                    and item.display_name == action_name
+                    and item.status == "running"
+                ):
+                    matched_item = item
+                    break
+
+        if matched_item:
+            matched_item.status = status
+            await self._adapter.action_updates.put(
+                ActionPanelUpdate("update", matched_item)
+            )
+
     async def remove_item(self, item_id: str) -> None:
         """Remove an item."""
         if item_id in self._items:

@@ -32,7 +32,10 @@ class EventTransformer:
     INFO_KINDS = {"info", "note"}
 
     # Actions that should be hidden from the UI (for action_start/action_end events)
-    HIDDEN_ACTIONS = {"task_update_todos", "send message", "ignore"}
+    HIDDEN_ACTIONS = {
+        "task_update_todos", "send message", "ignore",
+        "task start", "task_start", "task end", "task_end",
+    }
 
     # Event kinds that should be hidden from chat (reasoning, internal events)
     HIDDEN_EVENT_KINDS = {
@@ -41,6 +44,10 @@ class EventTransformer:
         "reflection", "debug", "trace", "context",
         "memory", "observation", "reasoning_step",
     }
+
+    # Track active actions: (task_id, action_name) -> action_id
+    # This allows action_end events to find the corresponding action_id
+    _active_actions: dict[tuple[str, str], str] = {}
 
     @classmethod
     def transform(
@@ -174,7 +181,8 @@ class EventTransformer:
 
     @classmethod
     def _clean_action_name(cls, name: str) -> str:
-        """Clean action name by removing common prefixes."""
+        """Clean action name by removing common prefixes and suffixes."""
+        # Remove prefixes like "Running ", "Starting ", etc.
         prefixes_to_remove = [
             "Running ", "Starting ", "Executing ",
             "Processing ", "Performing ", "Doing ",
@@ -182,6 +190,17 @@ class EventTransformer:
         for prefix in prefixes_to_remove:
             if name.startswith(prefix):
                 name = name[len(prefix):]
+
+        # Remove suffixes like " → done", " → error", " → completed" (from action_end display_message)
+        # Note: ActionManager uses "completed" and "failed" as display_status values
+        suffixes_to_remove = [
+            " → done", " → error", " → failed", " → completed",
+            " -> done", " -> error", " -> failed", " -> completed",
+        ]
+        for suffix in suffixes_to_remove:
+            if name.endswith(suffix):
+                name = name[:-len(suffix)]
+
         return name.strip()
 
     @classmethod
@@ -250,6 +269,10 @@ class EventTransformer:
         # Generate action ID
         action_id = f"{task_id or 'main'}:{action_name}:{timestamp.timestamp()}"
 
+        # Register this action for later matching by action_end
+        key = (task_id or "", action_name)
+        cls._active_actions[key] = action_id
+
         return UIEvent(
             type=UIEventType.ACTION_START,
             data={
@@ -285,9 +308,22 @@ class EventTransformer:
         # Clean up the action name
         action_name = cls._clean_action_name(action_name)
 
+        # Look up the action_id from the corresponding action_start
+        key = (task_id or "", action_name)
+        action_id = cls._active_actions.pop(key, "")
+
+        # Fallback: match by just action_name if exact key not found
+        if not action_id:
+            for (t_id, a_name), a_id in list(cls._active_actions.items()):
+                if a_name == action_name:
+                    action_id = a_id
+                    del cls._active_actions[(t_id, a_name)]
+                    break
+
         return UIEvent(
             type=UIEventType.ACTION_END,
             data={
+                "action_id": action_id,
                 "action_name": action_name,
                 "message": message,
                 "status": "error" if is_error else "completed",
@@ -309,3 +345,8 @@ class EventTransformer:
             except ValueError:
                 pass
         return datetime.utcnow()
+
+    @classmethod
+    def clear_active_actions(cls) -> None:
+        """Clear all tracked active actions. Call on session reset."""
+        cls._active_actions.clear()

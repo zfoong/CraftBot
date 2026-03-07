@@ -137,7 +137,15 @@ class BrowserActionPanelComponent(ActionPanelProtocol):
         self._items: List[ActionItem] = []
 
     async def add_item(self, item: ActionItem) -> None:
-        """Add item and broadcast."""
+        """Add item and broadcast. Prevents duplicates by ID."""
+        # Check if item with same ID already exists
+        for existing in self._items:
+            if existing.id == item.id:
+                # Item already exists, just update its status if needed
+                if existing.status != item.status:
+                    await self.update_item(existing.id, item.status)
+                return
+
         self._items.append(item)
         await self._adapter._broadcast({
             "type": "action_add",
@@ -151,19 +159,72 @@ class BrowserActionPanelComponent(ActionPanelProtocol):
         })
 
     async def update_item(self, item_id: str, status: str) -> None:
-        """Update item status and broadcast."""
+        """Update item status by ID and broadcast."""
+        found = False
         for item in self._items:
             if item.id == item_id:
                 item.status = status
+                found = True
                 break
 
-        await self._adapter._broadcast({
-            "type": "action_update",
-            "data": {
-                "id": item_id,
-                "status": status,
-            },
-        })
+        if found:
+            await self._adapter._broadcast({
+                "type": "action_update",
+                "data": {
+                    "id": item_id,
+                    "status": status,
+                },
+            })
+
+    async def update_item_by_name(
+        self,
+        action_name: str,
+        task_id: str,
+        status: str,
+        action_id: str = "",
+    ) -> None:
+        """Update item status by matching name and task."""
+        matched_item = None
+
+        # First try exact ID match if provided
+        if action_id:
+            for item in self._items:
+                if item.id == action_id:
+                    matched_item = item
+                    break
+
+        # Try matching by name + parent_id + running status
+        if not matched_item and task_id:
+            for item in reversed(self._items):
+                if (
+                    item.item_type == "action"
+                    and item.name == action_name
+                    and item.parent_id == task_id
+                    and item.status == "running"
+                ):
+                    matched_item = item
+                    break
+
+        # Fallback: match by just name + running status (handles mismatched task_ids)
+        if not matched_item:
+            for item in reversed(self._items):
+                if (
+                    item.item_type == "action"
+                    and item.name == action_name
+                    and item.status == "running"
+                ):
+                    matched_item = item
+                    break
+
+        if matched_item:
+            matched_item.status = status
+            await self._adapter._broadcast({
+                "type": "action_update",
+                "data": {
+                    "id": matched_item.id,
+                    "status": status,
+                },
+            })
 
     async def remove_item(self, item_id: str) -> None:
         """Remove item and broadcast."""

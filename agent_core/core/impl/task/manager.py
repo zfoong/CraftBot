@@ -24,6 +24,7 @@ Chatserver hooks (WCA only):
 - finalize_todos_chatserver: PUT remaining todos on task end
 """
 
+import asyncio
 import re
 import shutil
 import uuid
@@ -612,6 +613,10 @@ class TaskManager:
 
         # Clean up session-specific state (multi-task isolation)
         StateSession.end(task.id)
+
+        # Small delay to allow UI to poll task_end event before stream removal.
+        # The UI polls every 50ms, so 100ms gives at least one poll opportunity.
+        await asyncio.sleep(0.1)
 
         # Remove event stream via hook (WCA) or no-op (CraftBot)
         if self._on_stream_remove:

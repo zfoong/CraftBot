@@ -75,7 +75,9 @@ class StateManager:
     def on_task_ended(self, task: Task, status: str, summary: Optional[str] = None) -> None:
         """Called when a task ends.
 
-        Updates main state, logs to main stream, removes per-task stream.
+        Updates main state and logs to main stream.
+        Note: Stream removal is handled by TaskManager's on_stream_remove hook,
+        which runs later to give the UI time to poll the task_end event.
         """
         # Update main state
         self._main_state.mark_task_ended(
@@ -89,9 +91,10 @@ class StateManager:
             display_message=f"Task {status}: {task.name}"
         )
 
-        # Remove per-task stream
-        self.event_stream_manager.remove_stream(task.id)
-        logger.debug(f"[STATE] Task ended and removed from tracking: {task.id}")
+        # NOTE: Do NOT remove stream here. The TaskManager's on_stream_remove hook
+        # handles this later, giving the UI time to poll the task_end event from
+        # the task stream before it's removed.
+        logger.debug(f"[STATE] Task ended: {task.id}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Session Management

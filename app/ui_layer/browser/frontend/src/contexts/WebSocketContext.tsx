@@ -37,8 +37,21 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<WebSocketState>(defaultState)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
+  const isConnectingRef = useRef<boolean>(false)
 
   const connect = useCallback(() => {
+    // Prevent duplicate connections (React StrictMode calls useEffect twice)
+    if (isConnectingRef.current || wsRef.current?.readyState === WebSocket.OPEN) {
+      return
+    }
+    isConnectingRef.current = true
+
+    // Close any existing connection before creating new one
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/ws`
 
@@ -47,6 +60,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     ws.onopen = () => {
       console.log('[WS] Connected')
+      isConnectingRef.current = false
       setState(prev => ({ ...prev, connected: true }))
     }
 
@@ -61,6 +75,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     ws.onclose = () => {
       console.log('[WS] Disconnected')
+      isConnectingRef.current = false
       setState(prev => ({
         ...prev,
         connected: false,
@@ -75,6 +90,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     ws.onerror = (err) => {
       console.error('[WS] Error:', err)
+      isConnectingRef.current = false
     }
   }, [])
 
@@ -112,10 +128,26 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
       case 'action_add': {
         const action = msg.data as unknown as ActionItem
-        setState(prev => ({
-          ...prev,
-          actions: [...prev.actions, action],
-        }))
+        setState(prev => {
+          // Prevent duplicate items by ID only
+          const existingItem = prev.actions.find(a => a.id === action.id)
+          if (existingItem) {
+            // Update existing item's status if different
+            if (existingItem.status !== action.status) {
+              return {
+                ...prev,
+                actions: prev.actions.map(a =>
+                  a.id === action.id ? { ...a, status: action.status } : a
+                ),
+              }
+            }
+            return prev // No change needed
+          }
+          return {
+            ...prev,
+            actions: [...prev.actions, action],
+          }
+        })
         break
       }
 
@@ -174,11 +206,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     connect()
 
     return () => {
+      // Reset connecting flag on cleanup
+      isConnectingRef.current = false
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
       }
       if (wsRef.current) {
         wsRef.current.close()
+        wsRef.current = null
       }
     }
   }, [connect])

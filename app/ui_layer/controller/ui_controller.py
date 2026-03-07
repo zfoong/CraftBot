@@ -295,10 +295,17 @@ class UIController:
     def _update_state_from_event(self, event: UIEvent) -> None:
         """Update state store based on UI events."""
         if event.type == UIEventType.TASK_START:
+            # Skip task events from main stream (empty task_id).
+            # Main stream's task_started events are for conversation history tracking,
+            # not for UI task panels. Task stream has the actual task_start events.
+            task_id = event.data.get("task_id", "")
+            if not task_id:
+                return
+
             self._state_store.dispatch(
                 "ADD_ACTION_ITEM",
                 {
-                    "id": event.data.get("task_id", ""),
+                    "id": task_id,
                     "display_name": event.data.get("task_name", "Task"),
                     "item_type": "task",
                     "status": "running",
@@ -307,22 +314,49 @@ class UIController:
             self._state_store.dispatch(
                 "SET_CURRENT_TASK",
                 {
-                    "task_id": event.data.get("task_id"),
+                    "task_id": task_id,
                     "task_name": event.data.get("task_name"),
                 },
             )
             self._state_store.dispatch("SET_AGENT_STATE", AgentStateType.WORKING.value)
+            # Emit state change event so adapters can update status
+            task_name = event.data.get("task_name", "task")
+            self._event_bus.emit(
+                UIEvent(
+                    type=UIEventType.AGENT_STATE_CHANGED,
+                    data={
+                        "state": AgentStateType.WORKING.value,
+                        "status_message": f"Working on {task_name}...",
+                    },
+                )
+            )
 
         elif event.type == UIEventType.TASK_END:
+            # Skip task events from main stream (empty task_id).
+            # Main stream's task_ended events are for conversation history tracking.
+            task_id = event.data.get("task_id", "")
+            if not task_id:
+                return
+
             self._state_store.dispatch(
                 "UPDATE_ACTION_ITEM",
                 {
-                    "id": event.data.get("task_id", ""),
+                    "id": task_id,
                     "status": event.data.get("status", "completed"),
                 },
             )
             self._state_store.dispatch("SET_CURRENT_TASK", None)
             self._state_store.dispatch("SET_AGENT_STATE", AgentStateType.IDLE.value)
+            # Emit state change event so adapters can update status
+            self._event_bus.emit(
+                UIEvent(
+                    type=UIEventType.AGENT_STATE_CHANGED,
+                    data={
+                        "state": AgentStateType.IDLE.value,
+                        "status_message": "Agent is idle",
+                    },
+                )
+            )
 
         elif event.type == UIEventType.ACTION_START:
             self._state_store.dispatch(

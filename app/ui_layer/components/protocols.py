@@ -63,11 +63,32 @@ class ActionPanelProtocol(Protocol):
 
     async def update_item(self, item_id: str, status: str) -> None:
         """
-        Update an item's status.
+        Update an item's status by ID.
 
         Args:
             item_id: ID of the item to update
             status: New status ("running", "completed", "error")
+        """
+        ...
+
+    async def update_item_by_name(
+        self,
+        action_name: str,
+        task_id: str,
+        status: str,
+        action_id: str = "",
+    ) -> None:
+        """
+        Update an item's status by matching name and task.
+
+        Finds the most recent running action with the given name under the task
+        and updates its status. Falls back to ID matching if action_id provided.
+
+        Args:
+            action_name: Name of the action to update
+            task_id: Parent task ID
+            status: New status ("running", "completed", "error")
+            action_id: Optional exact action ID to match first
         """
         ...
 

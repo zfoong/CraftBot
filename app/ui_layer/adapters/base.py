@@ -290,11 +290,18 @@ class InterfaceAdapter(ABC):
 
     def _handle_task_start(self, event: UIEvent) -> None:
         """Handle task start event."""
+        # Skip task events from main stream (empty task_id).
+        # Main stream's task_started events are for conversation history,
+        # not for UI task panels.
+        task_id = event.data.get("task_id", "")
+        if not task_id:
+            return
+
         if self.action_panel:
             asyncio.create_task(
                 self.action_panel.add_item(
                     ActionItem(
-                        id=event.data.get("task_id", ""),
+                        id=task_id,
                         name=event.data.get("task_name", "Task"),
                         status="running",
                         item_type="task",
@@ -304,15 +311,24 @@ class InterfaceAdapter(ABC):
 
     def _handle_task_end(self, event: UIEvent) -> None:
         """Handle task end event."""
+        # Skip task events from main stream (empty task_id).
+        task_id = event.data.get("task_id", "")
+        if not task_id:
+            return
+
         if self.action_panel:
             status = event.data.get("status", "completed")
             asyncio.create_task(
-                self.action_panel.update_item(event.data.get("task_id", ""), status)
+                self.action_panel.update_item(task_id, status)
             )
 
     def _handle_action_start(self, event: UIEvent) -> None:
         """Handle action start event."""
         if self.action_panel:
+            # Use event's task_id if available, otherwise fall back to current task
+            # This handles cases where action events go to main stream (task_id="")
+            # but should still be associated with the running task
+            task_id = event.data.get("task_id") or self._controller.state.current_task_id
             asyncio.create_task(
                 self.action_panel.add_item(
                     ActionItem(
@@ -320,7 +336,7 @@ class InterfaceAdapter(ABC):
                         name=event.data.get("action_name", "Action"),
                         status="running",
                         item_type="action",
-                        parent_id=event.data.get("task_id"),
+                        parent_id=task_id,
                     )
                 )
             )
@@ -329,8 +345,18 @@ class InterfaceAdapter(ABC):
         """Handle action end event."""
         if self.action_panel:
             status = "error" if event.data.get("error") else "completed"
+            # Try to match by action_id first, then fall back to action_name + task_id
+            action_id = event.data.get("action_id", "")
+            action_name = event.data.get("action_name", "")
+            # Use event's task_id if available, otherwise fall back to current task
+            task_id = event.data.get("task_id") or self._controller.state.current_task_id or ""
             asyncio.create_task(
-                self.action_panel.update_item(event.data.get("action_id", ""), status)
+                self.action_panel.update_item_by_name(
+                    action_name=action_name,
+                    task_id=task_id,
+                    status=status,
+                    action_id=action_id,
+                )
             )
 
     def _handle_state_change(self, event: UIEvent) -> None:
