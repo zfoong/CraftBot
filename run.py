@@ -254,10 +254,16 @@ if __name__ == "__main__":
 
     # Parse flags
     gui_mode = "--gui" in args
+    no_conda_flag = "--no-conda" in args
     
     # Load saved config to check what was actually installed
     config = load_config()
     use_conda = config.get("use_conda", False)  # Use config instead of defaulting to True
+    
+    # Override with command-line flag if provided
+    if no_conda_flag:
+        use_conda = False
+    
     gui_installed = config.get("gui_mode_enabled", False)
 
     # Set environment variables

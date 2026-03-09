@@ -68,8 +68,9 @@ CraftBot awaits your orders, set up your own CraftBot now.
 
 ### Prerequisites
 - Python **3.10+**
-- `git` and `conda` (or `pip`)
+- `git` (required to clone the repository)
 - An API key for your chosen LLM provider (OpenAI, Gemini, or Anthropic)
+- `conda` (optional - if not found, installer offers to auto-install Miniconda)
 
 ### Quick Install
 
@@ -177,20 +178,39 @@ python install.py --no-conda
 python run.py --no-conda
 */
 '''
+**Installation Examples:**
+```bash
 # Simple pip installation (no conda)
 python install.py
 
-# With conda environment
+# With conda environment (recommended)
+# If conda is not found, the installer will offer to auto-install Miniconda
 python install.py --conda
 
-# With GUI (requires conda)
+# With GUI support (requires conda)
 python install.py --gui --conda
 
-# Run the agent (uses whatever was installed)
-python run.py
+# With GUI on CPU-only systems (no NVIDIA GPU)
+python install.py --gui --conda --cpu-only
+```
 
-# Run with GUI mode (if installed)
-python run.py --gui
+**Automatic Miniconda Installation:**
+If conda is not detected when using `--conda` flag, the installer will offer to automatically download and install Miniconda. This is the easiest way to get started!
+
+**Launching CraftBot:**
+```bash
+# Run with conda environment
+conda run -n craftbot python run.py
+
+# Run with GUI mode (if installed with --gui)
+conda run -n craftbot python run.py --gui
+
+# Or if using pip (no conda)
+python run.py
+```
+
+> [!NOTE]
+> After installation completes, exact launch commands will be displayed. Installation will automatically detect GPU availability and fall back to CPU-only mode if needed.
 
 
 > [!TIP]
