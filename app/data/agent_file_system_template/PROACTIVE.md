@@ -1,51 +1,157 @@
+---
+version: "1.0"
+last_updated: null
+---
+
 # Proactive Management
 
-**Last Updated:** `YYYY-MM-DD HH:MM:SS UTC`
+This document defines proactive tasks that the agent executes automatically based on scheduled heartbeats.
 
-## Overview
+## How Proactive Tasks Work
 
-This document tracks all proactive activities, monitoring targets, and automated interventions.
+When a scheduled heartbeat fires (hourly, daily, weekly, or monthly), the agent:
+1. Reads this PROACTIVE.md file to find tasks matching the current frequency
+2. Evaluates each task's conditions and priority
+3. Executes enabled tasks according to their permission tier
+4. Records outcomes in the task's history
 
-You can operate proactively based on scheduled activations. Schedules can be hourly (every X hours), daily (at a specific time), weekly (on a specific day), or monthly (on a specific date).
+## Permission Tiers
 
-When a schedule fires, you execute a proactive check workflow. First, read PROACTIVE.md to understand configured proactive tasks and their conditions. Then research the agent file system for relevant context - user preferences, project status, organizational priorities.
+Each task has a permission tier that controls how it interacts with the user:
 
-Evaluate each potential proactive task using a five-dimension rubric. Score each dimension from 1 to 5:
-- Impact: How significant is the outcome? (1=negligible, 5=critical)
-- Risk: What could go wrong? (1=high risk, 5=no risk)
-- Cost: Resources and effort required? (1=very high, 5=negligible)
-- Urgency: How time-sensitive? (1=not urgent, 5=immediate)
-- Confidence: Will the user accept this? (1=unlikely, 5=certain)
+| Tier | Level | Description | User Interaction |
+|------|-------|-------------|------------------|
+| 0 | Silent | Searching, analyzing, drafting, internal operations | Proceed without notifying the user |
+| 1 | Notify | Inform user of task execution and findings | Inform and proceed without waiting |
+| 2 | Approval | Actions that modify state or create artifacts | Ask for approval before proceeding |
+| 3 | High-risk | Email external parties, change configs, sensitive ops | Explicit detailed approval required |
 
-Add the scores. Tasks scoring 18 or above are strong candidates for execution. Tasks scoring 13-17 may be worth doing but might need user input first. Tasks below 13 should be skipped or deferred.
+**Note:** Tier 0 and 1 are typically used for user-created proactive tasks. Tiers 2-3 are reserved for system-level or high-impact tasks that require user oversight.
 
-Before acting on any proactive task, follow the tiered permission model:
-- Tier 0 (silent read): Searching, analyzing, drafting internally - proceed without asking
-- Tier 1 (suggest): Notifying user of findings or recommendations - wait for acknowledgment
-- Tier 2 (low-risk): Creating tickets, scheduling reminders, drafting PRs - inform and proceed unless objected
-- Tier 3 (high-risk): Emailing external parties, changing configs, touching finances - explicit approval required every time
-- Tier 4 (prohibited): Actions disallowed by policy or potentially irreversible harm - never proceed
+## Task Format
 
-When requesting permission for proactive tasks, prefix your message with the star emoji to indicate it is a proactive request.
+Tasks are defined with a markdown header followed by a YAML code block:
 
-After executing proactive tasks, update PROACTIVE.md with what was done, when, and the outcome.
+**Header format:** `### [FREQUENCY] Task Name`
+
+**YAML fields:**
+- `id` (required): Unique identifier (format: `{frequency}_{descriptive_name}`)
+- `frequency` (required): One of `hourly`, `daily`, `weekly`, `monthly`
+- `instruction` (required): Clear description of what the agent should do
+- `enabled`: Whether task is active (default: true)
+- `priority`: Execution priority, lower = higher (default: 50)
+- `permission_tier`: Permission level 0-3 (default: 1)
+- `time`: Time in 24-hour format "HH:MM" (required for daily+)
+- `day`: Day name for weekly tasks (e.g., "monday", "sunday")
+- `conditions`: List of conditions that must be met
+- `run_count`: Number of times task has run (auto-updated)
+- `outcome_history`: Recent execution results (auto-updated)
+
+<!-- PROACTIVE_TASKS_START -->
 
 ## Proactive Tasks
 
-### Startup
+### [HOURLY] System Health Check
+```yaml
+id: hourly_system_health
+frequency: hourly
+instruction: |
+  Check system health and resource usage. Look for any errors in logs,
+  memory issues, or performance problems. Report only if issues are found.
+enabled: false
+priority: 40
+permission_tier: 0
+conditions: []
+run_count: 0
+outcome_history: []
+```
 
-empty
+### [DAILY] Morning Briefing
+```yaml
+id: daily_morning_briefing
+frequency: daily
+instruction: |
+  Prepare a morning briefing for the user. Review:
+  - Any scheduled tasks or reminders for today
+  - Recent project activity or updates
+  - Pending items that need attention
+  Present a concise summary to help the user start their day.
+time: "08:00"
+enabled: false
+priority: 30
+permission_tier: 1
+conditions: []
+run_count: 0
+outcome_history: []
+```
 
-### Hourly
+### [DAILY] End of Day Summary
+```yaml
+id: daily_eod_summary
+frequency: daily
+instruction: |
+  Summarize the day's activities:
+  - Tasks completed
+  - Conversations and decisions made
+  - Items to follow up on tomorrow
+  Update TASK_HISTORY.md with completed work.
+time: "18:00"
+enabled: false
+priority: 35
+permission_tier: 1
+conditions: []
+run_count: 0
+outcome_history: []
+```
 
-empty
+### [WEEKLY] Weekly Review
+```yaml
+id: weekly_review
+frequency: weekly
+instruction: |
+  Conduct a weekly review:
+  - Summarize accomplishments from the past week
+  - Review goals and progress
+  - Identify blockers or issues that need attention
+  - Suggest priorities for the coming week
+  Update relevant documentation with findings.
+day: "sunday"
+time: "18:00"
+enabled: false
+priority: 25
+permission_tier: 1
+conditions: []
+run_count: 0
+outcome_history: []
+```
 
-### Weekly
+### [MONTHLY] Monthly Retrospective
+```yaml
+id: monthly_retrospective
+frequency: monthly
+instruction: |
+  Perform a monthly retrospective:
+  - Review overall progress on long-term goals
+  - Analyze patterns in completed work
+  - Identify areas for improvement
+  - Update documentation and knowledge base
+  - Archive old conversation history if needed
+time: "10:00"
+enabled: false
+priority: 20
+permission_tier: 1
+conditions: []
+run_count: 0
+outcome_history: []
+```
 
-empty
+<!-- PROACTIVE_TASKS_END -->
 
-### Monthly
+<!-- PLANNER_OUTPUTS_START -->
 
-empty
+## Planner Outputs
 
-### Other
+This section stores outputs from the planning workflows (day/week/month planners).
+Planners analyze recent activity and help organize upcoming work.
+
+<!-- PLANNER_OUTPUTS_END -->
