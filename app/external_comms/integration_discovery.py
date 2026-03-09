@@ -14,8 +14,8 @@ from agent_core.utils.logger import logger
 
 # Maps platform client IDs to their messaging action sets
 PLATFORM_TO_ACTION_SET: Dict[str, str] = {
-    "telegram_bot": "telegram",
-    "telegram_user": "telegram",
+    "telegram_bot": "telegram_bot",
+    "telegram_user": "telegram_user",
     "whatsapp_web": "whatsapp",
     "whatsapp_business": "whatsapp",
     "discord": "discord",
@@ -25,7 +25,8 @@ PLATFORM_TO_ACTION_SET: Dict[str, str] = {
 # Maps action sets to their primary send actions for conversation mode
 # These are the basic send message actions for each platform
 ACTION_SET_SEND_ACTIONS: Dict[str, List[str]] = {
-    "telegram": ["send_telegram_message", "send_telegram_user_message"],
+    "telegram_bot": ["send_telegram_bot_message"],
+    "telegram_user": ["send_telegram_user_message"],
     "whatsapp": ["send_whatsapp_web_text_message"],
     "discord": ["send_discord_message", "send_discord_dm"],
     "slack": ["send_slack_message"],
@@ -75,7 +76,7 @@ def get_messaging_actions_for_platforms(platforms: List[str]) -> List[str]:
         platforms: List of connected platform IDs
 
     Returns:
-        List of action names (e.g., ["send_telegram_message", "send_discord_message"])
+        List of action names (e.g., ["send_telegram_bot_message", "send_discord_message"])
     """
     # Get unique action sets from connected platforms
     action_sets = set()

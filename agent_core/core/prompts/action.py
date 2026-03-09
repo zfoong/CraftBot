@@ -47,7 +47,7 @@ Critical Rules:
 
 CRITICAL - Message Source Routing Rules:
 - When a message comes from an external platform, you MUST reply on that same platform. NEVER use send_message for external platform messages.
-- If platform is Telegram → MUST use send_telegram_message or send_telegram_user_message
+- If platform is Telegram → use send_telegram_bot_message (bot) or send_telegram_user_message (user account), whichever is available
 - If platform is WhatsApp → MUST use send_whatsapp_web_text_message (use to="user" for self-messages)
 - If platform is Discord → MUST use send_discord_message or send_discord_dm
 - If platform is Slack → MUST use send_slack_message

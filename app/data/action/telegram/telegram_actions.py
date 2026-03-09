@@ -7,9 +7,9 @@ from agent_core import action
 
 
 @action(
-    name="send_telegram_message",
-    description="Send a text message to a Telegram chat via bot.",
-    action_sets=["telegram"],
+    name="send_telegram_bot_message",
+    description="Send a text message to a Telegram chat via bot. Use this ONLY when replying to Telegram Bot messages.",
+    action_sets=["telegram_bot"],
     input_schema={
         "chat_id": {"type": "string", "description": "Telegram chat ID or @username.", "example": "123456789"},
         "text": {"type": "string", "description": "Message text to send.", "example": "Hello!"},
@@ -20,7 +20,7 @@ from agent_core import action
         "message": {"type": "string", "example": "Message sent"},
     },
 )
-async def send_telegram_message(input_data: dict) -> dict:
+async def send_telegram_bot_message(input_data: dict) -> dict:
     from app.external_comms.platforms.telegram_bot import TelegramBotClient
     try:
         client = TelegramBotClient()
@@ -41,7 +41,7 @@ async def send_telegram_message(input_data: dict) -> dict:
 @action(
     name="send_telegram_photo",
     description="Send a photo to a Telegram chat via bot.",
-    action_sets=["telegram"],
+    action_sets=["telegram_bot"],
     input_schema={
         "chat_id": {"type": "string", "description": "Telegram chat ID.", "example": "123456789"},
         "photo": {"type": "string", "description": "URL or file_id of the photo.", "example": "https://example.com/photo.jpg"},
@@ -70,7 +70,7 @@ async def send_telegram_photo(input_data: dict) -> dict:
 @action(
     name="get_telegram_updates",
     description="Get incoming updates (messages) for the Telegram bot.",
-    action_sets=["telegram"],
+    action_sets=["telegram_bot"],
     input_schema={
         "limit": {"type": "integer", "description": "Max number of updates to retrieve.", "example": 10},
         "offset": {"type": "integer", "description": "Update offset for pagination.", "example": 0},
@@ -99,8 +99,8 @@ async def get_telegram_updates(input_data: dict) -> dict:
 
 @action(
     name="get_telegram_chat",
-    description="Get information about a Telegram chat.",
-    action_sets=["telegram"],
+    description="Get information about a Telegram chat via bot.",
+    action_sets=["telegram_bot"],
     input_schema={
         "chat_id": {"type": "string", "description": "Chat ID or @username.", "example": "123456789"},
     },
@@ -123,7 +123,7 @@ async def get_telegram_chat(input_data: dict) -> dict:
 @action(
     name="search_telegram_contact",
     description="Search for a Telegram contact by name from bot's recent chat history.",
-    action_sets=["telegram"],
+    action_sets=["telegram_bot"],
     input_schema={
         "name": {"type": "string", "description": "Contact name to search for.", "example": "John"},
     },
@@ -145,8 +145,8 @@ async def search_telegram_contact(input_data: dict) -> dict:
 
 @action(
     name="send_telegram_document",
-    description="Send a document to a Telegram chat.",
-    action_sets=["telegram"],
+    description="Send a document to a Telegram chat via bot.",
+    action_sets=["telegram_bot"],
     input_schema={
         "chat_id": {"type": "string", "description": "Chat ID.", "example": "123"},
         "document": {"type": "string", "description": "File ID or URL.", "example": "https://example.com/doc.pdf"},
@@ -174,8 +174,8 @@ async def send_telegram_document(input_data: dict) -> dict:
 
 @action(
     name="forward_telegram_message",
-    description="Forward a message.",
-    action_sets=["telegram"],
+    description="Forward a message via bot.",
+    action_sets=["telegram_bot"],
     input_schema={
         "chat_id": {"type": "string", "description": "Dest Chat ID.", "example": "123"},
         "from_chat_id": {"type": "string", "description": "Source Chat ID.", "example": "456"},
@@ -204,7 +204,7 @@ async def forward_telegram_message(input_data: dict) -> dict:
 @action(
     name="get_telegram_bot_info",
     description="Get bot info.",
-    action_sets=["telegram"],
+    action_sets=["telegram_bot"],
     input_schema={},
     output_schema={"status": {"type": "string", "example": "success"}},
 )
@@ -224,8 +224,8 @@ async def get_telegram_bot_info(input_data: dict) -> dict:
 
 @action(
     name="get_telegram_chat_members_count",
-    description="Get members count.",
-    action_sets=["telegram"],
+    description="Get chat members count via bot.",
+    action_sets=["telegram_bot"],
     input_schema={
         "chat_id": {"type": "string", "description": "Chat ID.", "example": "123"},
     },
@@ -252,8 +252,8 @@ async def get_telegram_chat_members_count(input_data: dict) -> dict:
 
 @action(
     name="get_telegram_chats",
-    description="Get MTProto chats.",
-    action_sets=["telegram"],
+    description="Get chats via Telegram user account.",
+    action_sets=["telegram_user"],
     input_schema={
         "limit": {"type": "integer", "description": "Limit.", "example": 50},
     },
@@ -275,8 +275,8 @@ async def get_telegram_chats(input_data: dict) -> dict:
 
 @action(
     name="read_telegram_messages",
-    description="Read MTProto messages.",
-    action_sets=["telegram"],
+    description="Read messages via Telegram user account.",
+    action_sets=["telegram_user"],
     input_schema={
         "chat_id": {"type": "string", "description": "Chat ID.", "example": "123"},
         "limit": {"type": "integer", "description": "Limit.", "example": 50},
@@ -302,8 +302,8 @@ async def read_telegram_messages(input_data: dict) -> dict:
 
 @action(
     name="send_telegram_user_message",
-    description="Send MTProto message.",
-    action_sets=["telegram"],
+    description="Send a text message via Telegram user account. Use this when replying to Telegram User messages.",
+    action_sets=["telegram_user"],
     input_schema={
         "chat_id": {"type": "string", "description": "Chat ID.", "example": "123"},
         "text": {"type": "string", "description": "Text.", "example": "Hi"},
@@ -329,8 +329,8 @@ async def send_telegram_user_message(input_data: dict) -> dict:
 
 @action(
     name="send_telegram_user_file",
-    description="Send MTProto file.",
-    action_sets=["telegram"],
+    description="Send a file via Telegram user account.",
+    action_sets=["telegram_user"],
     input_schema={
         "chat_id": {"type": "string", "description": "Chat ID.", "example": "123"},
         "file_path": {"type": "string", "description": "Path.", "example": "/path/to/file"},
@@ -356,8 +356,8 @@ async def send_telegram_user_file(input_data: dict) -> dict:
 
 @action(
     name="search_telegram_user_contacts",
-    description="Search MTProto contacts.",
-    action_sets=["telegram"],
+    description="Search contacts via Telegram user account.",
+    action_sets=["telegram_user"],
     input_schema={
         "query": {"type": "string", "description": "Query.", "example": "John"},
     },
@@ -379,8 +379,8 @@ async def search_telegram_user_contacts(input_data: dict) -> dict:
 
 @action(
     name="get_telegram_user_account_info",
-    description="Get MTProto account info.",
-    action_sets=["telegram"],
+    description="Get account info via Telegram user account.",
+    action_sets=["telegram_user"],
     input_schema={},
     output_schema={"status": {"type": "string", "example": "success"}},
 )

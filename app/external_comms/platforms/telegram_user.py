@@ -41,6 +41,17 @@ class TelegramUserClient(BasePlatformClient):
         self._cred: Optional[TelegramUserCredential] = None
         self._live_client = None          # persistent TelegramClient for listening
         self._my_user_id: Optional[int] = None
+        self._agent_sent_ids: set = set()  # track IDs of messages sent by the agent
+
+    @property
+    def _agent_prefix(self) -> str:
+        """Return prefix like '[AgentName] ' using the configured agent name."""
+        try:
+            from app.onboarding import onboarding_manager
+            name = onboarding_manager.state.agent_name or "AGENT"
+        except Exception:
+            name = "AGENT"
+        return f"[{name}] "
 
     # ------------------------------------------------------------------
     # Credential helpers
@@ -151,6 +162,17 @@ class TelegramUserClient(BasePlatformClient):
         if msg.out and not is_saved_messages:
             return
 
+        # Skip agent-sent self-messages (prevents echo loop)
+        if is_saved_messages and msg.out:
+            msg_id_str = str(msg.id)
+            if msg_id_str in self._agent_sent_ids:
+                self._agent_sent_ids.discard(msg_id_str)
+                logger.debug(f"[TELEGRAM_USER] Skipping agent-sent message (ID match): {msg_id_str}")
+                return
+            if msg.text.startswith(self._agent_prefix):
+                logger.debug(f"[TELEGRAM_USER] Skipping agent-sent message (prefix match): {msg.text[:50]}...")
+                return
+
         sender = await event.get_sender()
         chat = await event.get_chat()
 
@@ -173,7 +195,7 @@ class TelegramUserClient(BasePlatformClient):
             await self._message_callback(platform_msg)
 
     async def send_message(self, recipient: str, text: str, **kwargs) -> Dict[str, Any]:
-        """Send a text message to a chat as the user account.
+        """Send a text message to a chat as the user account. Prepends agent prefix.
 
         Args:
             recipient: Chat ID, username, or phone number.
@@ -184,6 +206,7 @@ class TelegramUserClient(BasePlatformClient):
             Dict with sent message info or error.
         """
         reply_to: Optional[int] = kwargs.get("reply_to")
+        prefixed_text = f"{self._agent_prefix}{text}"
 
         try:
             from telethon import TelegramClient
@@ -193,7 +216,10 @@ class TelegramUserClient(BasePlatformClient):
 
             async with TelegramClient(session, api_id, api_hash) as client:
                 entity = await client.get_entity(recipient)
-                msg = await client.send_message(entity, text, reply_to=reply_to)
+                msg = await client.send_message(entity, prefixed_text, reply_to=reply_to)
+
+                # Track sent message ID to filter echo in _handle_event
+                self._agent_sent_ids.add(str(msg.id))
 
                 return {
                     "ok": True,
