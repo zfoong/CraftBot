@@ -1,6 +1,6 @@
 ---
 version: "1.0"
-last_updated: null
+last_updated: null  # Auto-updated by system (format: YYYY-MM-DDTHH:MM:SSZ)
 ---
 
 # Proactive Tasks
@@ -17,6 +17,8 @@ IMPORTANT: Do NOT remove the HTML comment markers (PROACTIVE_TASKS_START, etc.)
 as they are used by the parser to locate sections.
 ================================================================================
 -->
+
+---
 
 ## How Proactive Tasks Work
 
