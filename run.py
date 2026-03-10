@@ -3,13 +3,22 @@
 CraftBot Run Script
 
 Usage:
-    python run.py           # Run the agent (CLI mode)
-    python run.py --gui     # Run with GUI mode enabled
+    python run.py             # Run the agent (TUI mode)
+    python run.py --cli       # Run in CLI mode
+    python run.py --browser   # Run with browser interface
+    python run.py --gui       # Run with GUI mode enabled
 
 Options:
+<<<<<<< HEAD
     --gui           Enable GUI mode (optional, requires: python install.py --gui)
 
 Note: The installation method (conda/pip) is saved from install.py and reused here.
+=======
+    --cli           Run in CLI mode instead of TUI
+    --browser       Run with browser interface (WebSocket server on port 8080)
+    --gui           Enable GUI mode (requires: python install.py --gui)
+    --no-conda      Use global pip instead of conda
+>>>>>>> fe11d10 (Initial browser interface update)
 """
 import multiprocessing
 import os
@@ -257,7 +266,7 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
         print(f"Error: {main_script} not found.")
         sys.exit(1)
 
-    # Filter flags
+    # Filter flags (--browser and --cli pass through to agent)
     skip_flags = {"--gui", "--no-conda"}
     pass_args = [a for a in sys.argv[1:] if a not in skip_flags]
 
@@ -291,9 +300,16 @@ if __name__ == "__main__":
 
     # Parse flags
     gui_mode = "--gui" in args
+<<<<<<< HEAD
     no_conda_flag = "--no-conda" in args
     
     # Load saved config to check what was actually installed
+=======
+    browser_mode = "--browser" in args
+    use_conda = "--no-conda" not in args
+
+    # Load saved config
+>>>>>>> fe11d10 (Initial browser interface update)
     config = load_config()
     use_conda = config.get("use_conda", False)  # Use config instead of defaulting to True
     
@@ -308,7 +324,8 @@ if __name__ == "__main__":
     os.environ["GUI_MODE_ENABLED"] = str(gui_mode)
     os.environ["USE_OMNIPARSER"] = str(gui_mode and gui_installed)
 
-    print(f"\nMode: {'GUI' if gui_mode else 'CLI'}")
+    mode_str = "GUI" if gui_mode else ("Browser" if browser_mode else "TUI")
+    print(f"\nMode: {mode_str}")
 
     # Check conda only if it was installed earlier
     conda_base = None

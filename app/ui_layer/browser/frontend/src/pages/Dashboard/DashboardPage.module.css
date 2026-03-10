@@ -1,0 +1,249 @@
+/* DashboardPage Component Styles */
+
+.dashboard {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Header Section */
+.header {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.headerContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.agentStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.agentStatus h2 {
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-1);
+}
+
+.agentStatus p {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Stats Grid */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.statCard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+}
+
+.statCard.primary .statIcon { color: var(--color-primary); }
+.statCard.success .statIcon { color: var(--color-success); }
+.statCard.warning .statIcon { color: var(--color-warning); }
+.statCard.error .statIcon { color: var(--color-error); }
+
+.statIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.statContent {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.statLabel {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.statValue {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.statSubtext {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
+/* Panels Grid */
+.panelsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+}
+
+.panelHeader h3 {
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.panelContent {
+  padding: var(--space-4);
+}
+
+/* Token Stats */
+.tokenStats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.tokenStat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tokenLabel {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.tokenValue {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.tokenValue.highlight {
+  color: var(--color-primary);
+}
+
+.progressBar {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+}
+
+.progressLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Server List */
+.serverList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.serverItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.serverName {
+  flex: 1;
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+}
+
+/* Skills List */
+.skillsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skillItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.skillName {
+  font-size: var(--text-sm);
+}
+
+/* System Stats */
+.systemStats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.systemStat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.systemStat svg {
+  color: var(--text-muted);
+}
+
+.systemValue {
+  margin-left: auto;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}

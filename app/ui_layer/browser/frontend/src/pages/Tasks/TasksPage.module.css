@@ -1,0 +1,217 @@
+/* TasksPage Component Styles */
+
+.tasksPage {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Task List - Left Side */
+.taskList {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.listHeader h3 {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.listContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Task Items */
+.taskGroup {
+  margin-bottom: var(--space-1);
+}
+
+.taskItem,
+.actionItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.taskItem:hover,
+.actionItem:hover {
+  background: var(--bg-tertiary);
+}
+
+.taskItem.selected,
+.actionItem.selected {
+  background: var(--color-primary-subtle);
+}
+
+.taskItem {
+  font-weight: var(--font-medium);
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.itemName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Actions List */
+.actionsList {
+  padding-left: var(--space-6);
+  margin-top: var(--space-1);
+}
+
+.actionItem {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-2);
+}
+
+.statusIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Detail Panel - Right Side */
+.detailPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.emptyDetail {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.detailTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.detailTitle h2 {
+  font-size: var(--text-lg);
+}
+
+.detailContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.detailSection {
+  margin-bottom: var(--space-6);
+}
+
+.detailSection h4 {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.detailList {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.detailList dt {
+  color: var(--text-muted);
+}
+
+.detailList dd {
+  color: var(--text-primary);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.codeBlock {
+  padding: var(--space-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.errorBlock {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}

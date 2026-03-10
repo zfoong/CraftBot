@@ -2050,7 +2050,14 @@ class AgentBase:
 
         try:
             # Select interface based on mode
-            if interface_mode == "cli":
+            if interface_mode == "browser":
+                from app.browser import BrowserInterface
+                interface = BrowserInterface(
+                    self,
+                    default_provider=provider or self.llm.provider,
+                    default_api_key=api_key,
+                )
+            elif interface_mode == "cli":
                 from app.cli import CLIInterface
                 interface = CLIInterface(
                     self,

@@ -79,6 +79,11 @@ def _parse_cli_args() -> dict:
         help="Run in CLI mode instead of TUI",
     )
     parser.add_argument(
+        "--browser",
+        action="store_true",
+        help="Run with browser interface (WebSocket server)",
+    )
+    parser.add_argument(
         "--provider",
         type=str,
         default=None,
@@ -158,6 +163,7 @@ async def main_async() -> None:
     # Parse CLI arguments
     cli_args = _parse_cli_args()
     cli_mode = cli_args.get("cli", False)
+    browser_mode = cli_args.get("browser", False)
 
     # CLI args override environment variables if provided
     if cli_args.get("provider"):
@@ -191,8 +197,14 @@ async def main_async() -> None:
     from app.onboarding import onboarding_manager
     onboarding_manager.set_agent(agent)
 
-    # Pass interface mode to agent.run()
-    interface_mode = "cli" if cli_mode else "tui"
+    # Determine interface mode: browser > cli > tui (default)
+    if browser_mode:
+        interface_mode = "browser"
+    elif cli_mode:
+        interface_mode = "cli"
+    else:
+        interface_mode = "tui"
+
     await agent.run(provider=provider, api_key=api_key, interface_mode=interface_mode)
 
 

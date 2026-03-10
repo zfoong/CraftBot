@@ -274,7 +274,7 @@ class BrowserAdapter(InterfaceAdapter):
     ) -> None:
         super().__init__(controller, "browser")
         self._host = host
-        self._port = port
+        self._port = int(os.environ.get("BROWSER_PORT", port))
         self._theme_adapter = BrowserThemeAdapter(BaseTheme())
         self._chat = BrowserChatComponent(self)
         self._action_panel = BrowserActionPanelComponent(self)
@@ -282,6 +282,7 @@ class BrowserAdapter(InterfaceAdapter):
         self._footage = BrowserFootageComponent(self)
         self._app: Optional["web.Application"] = None
         self._ws_clients: Set = set()
+        self._runner: Optional["web.AppRunner"] = None
 
     @property
     def theme_adapter(self) -> ThemeAdapter:
@@ -308,12 +309,37 @@ class BrowserAdapter(InterfaceAdapter):
         from aiohttp import web
 
         self._app = web.Application()
+
+        # API and WebSocket routes (must be registered first)
         self._app.router.add_get("/ws", self._websocket_handler)
-        self._app.router.add_get("/", self._index_handler)
         self._app.router.add_get("/api/state", self._state_handler)
         self._app.router.add_get("/api/theme.css", self._theme_css_handler)
 
-        # Serve static files if they exist
+        # Serve Vite-built frontend (production)
+        frontend_dist = Path(__file__).parent.parent / "browser" / "frontend" / "dist"
+        if frontend_dist.exists():
+            # Serve static assets from /assets/
+            assets_path = frontend_dist / "assets"
+            if assets_path.exists():
+                self._app.router.add_static("/assets/", assets_path)
+
+            # Serve favicon
+            favicon_path = frontend_dist / "favicon.svg"
+            if favicon_path.exists():
+                self._app.router.add_get(
+                    "/favicon.svg",
+                    lambda _: web.FileResponse(favicon_path)
+                )
+
+            # Serve index.html for all non-API routes (SPA routing)
+            self._app.router.add_get("/", self._spa_handler)
+            self._app.router.add_get("/{path:.*}", self._spa_handler)
+        else:
+            # Fallback to inline HTML for development without build
+            self._app.router.add_get("/", self._index_handler)
+            self._app.router.add_get("/{path:.*}", self._index_handler)
+
+        # Serve static files if they exist (legacy)
         static_path = Path(__file__).parent.parent / "browser" / "static"
         if static_path.exists():
             self._app.router.add_static("/static/", static_path)
@@ -445,8 +471,30 @@ class BrowserAdapter(InterfaceAdapter):
             "status": self._status_bar.get_status(),
         }
 
+    async def _spa_handler(self, request: "web.Request") -> "web.Response":
+        """Serve index.html for SPA routing."""
+        from aiohttp import web
+
+        # Skip API and WebSocket routes
+        path = request.path
+        if path.startswith("/api/") or path.startswith("/ws"):
+            raise web.HTTPNotFound()
+
+        # Serve the built index.html
+        frontend_dist = Path(__file__).parent.parent / "browser" / "frontend" / "dist"
+        index_path = frontend_dist / "index.html"
+
+        if index_path.exists():
+            return web.FileResponse(index_path)
+        else:
+            # Fallback to inline HTML
+            return web.Response(
+                text=self._get_index_html(),
+                content_type="text/html"
+            )
+
     async def _index_handler(self, request: "web.Request") -> "web.Response":
-        """Serve the main HTML page."""
+        """Serve the main HTML page (fallback when no build exists)."""
         from aiohttp import web
 
         html = self._get_index_html()

@@ -1,0 +1,60 @@
+/* StatusIndicator Component Styles */
+
+.indicator {
+  display: inline-block;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Sizes */
+.sm {
+  width: 6px;
+  height: 6px;
+}
+
+.md {
+  width: 8px;
+  height: 8px;
+}
+
+.lg {
+  width: 10px;
+  height: 10px;
+}
+
+/* Status colors */
+.running,
+.thinking,
+.working {
+  background: var(--color-primary);
+}
+
+.completed,
+.idle {
+  background: var(--color-success);
+}
+
+.error {
+  background: var(--color-error);
+}
+
+.pending,
+.waiting {
+  background: var(--color-gray-500);
+}
+
+/* Pulse animation */
+.pulse {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
