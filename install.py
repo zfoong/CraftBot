@@ -193,13 +193,23 @@ def _wrap_windows_bat(cmd_list: list[str]) -> list[str]:
     return cmd_list
 
 def load_config() -> Dict[str, Any]:
-    if not os.path.exists(CONFIG_FILE):
-        return {}
+    """
+    Load configuration from file safely.
+    
+    SECURITY FIX: Use try-except instead of check-then-use to prevent TOCTOU race conditions.
+    This ensures atomic read operation.
+    """
     try:
         with open(CONFIG_FILE, 'r') as f:
             return json.load(f)
+    except FileNotFoundError:
+        # File doesn't exist - return empty config
+        return {}
     except json.JSONDecodeError:
         print(f"Warning: {CONFIG_FILE} is corrupted. Starting with empty config.")
+        return {}
+    except IOError as e:
+        print(f"Warning: Cannot read config: {e}")
         return {}
 
 def save_config_value(key: str, value: Any) -> None:

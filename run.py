@@ -56,12 +56,19 @@ def _wrap_windows_bat(cmd_list: list[str]) -> list[str]:
     return cmd_list
 
 def load_config() -> Dict[str, Any]:
-    if not os.path.exists(CONFIG_FILE):
-        return {}
+    """
+    Load configuration from file safely.
+    
+    SECURITY FIX: Use try-except instead of check-then-use to prevent TOCTOU race conditions.
+    """
     try:
         with open(CONFIG_FILE, 'r') as f:
             return json.load(f)
+    except FileNotFoundError:
+        return {}
     except json.JSONDecodeError:
+        return {}
+    except IOError:
         return {}
 
 def save_config_value(key: str, value: Any) -> None:
