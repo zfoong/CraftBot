@@ -110,7 +110,7 @@ class EventTransformer:
             # to avoid duplicate display
             return None
 
-        if kind in cls.AGENT_MESSAGE_KINDS:
+        if kind in cls.AGENT_MESSAGE_KINDS or "agent message" in kind:
             return UIEvent(
                 type=UIEventType.AGENT_MESSAGE,
                 data={"message": message},

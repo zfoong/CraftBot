@@ -5,11 +5,12 @@ CraftBot Run Script
 Usage:
     python run.py             # Run the agent (TUI mode)
     python run.py --cli       # Run in CLI mode
-    python run.py --browser   # Run with browser interface
+    python run.py --browser   # Run with browser interface (starts frontend + opens browser)
     python run.py --gui       # Run with GUI mode enabled
 
 Options:
     --gui           Enable GUI mode (optional, requires: python install.py --gui)
+    --browser       Start browser interface (frontend dev server + opens browser)
 
 Note: The installation method (conda/pip) is saved from install.py and reused here.
 """
@@ -22,7 +23,9 @@ import shutil
 import time
 import urllib.request
 import urllib.error
-from typing import Tuple, Optional, Dict, Any
+import webbrowser
+import atexit
+from typing import Tuple, Optional, Dict, Any, List
 
 multiprocessing.freeze_support()
 
@@ -138,6 +141,243 @@ def wait_for_server(url: str, timeout: int = 180) -> bool:
         time.sleep(1)
     print(f" Timeout!")
     return False
+
+# ==========================================
+# BROWSER FRONTEND
+# ==========================================
+FRONTEND_DIR = os.path.join(BASE_DIR, "app", "ui_layer", "browser", "frontend")
+FRONTEND_PORT = 5173
+FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}"
+
+# Global list to track background processes for cleanup
+_background_processes: List[subprocess.Popen] = []
+
+def cleanup_background_processes():
+    """Clean up all background processes on exit."""
+    for proc in _background_processes:
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except:
+                try:
+                    proc.kill()
+                except:
+                    pass
+
+# Register cleanup on exit
+atexit.register(cleanup_background_processes)
+
+def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
+    """Launch the frontend dev server for browser mode."""
+    if not os.path.exists(FRONTEND_DIR):
+        if not silent:
+            print(f"Error: Frontend directory not found at {FRONTEND_DIR}")
+            print("Make sure the browser frontend is installed.")
+        return None
+
+    # Check if node_modules exists
+    node_modules = os.path.join(FRONTEND_DIR, "node_modules")
+    if not os.path.exists(node_modules):
+        if not silent:
+            print("Error: Frontend dependencies not installed.")
+            print("Run 'python install.py' first to install all dependencies.")
+        return None
+
+    # Find npm command
+    npm_cmd = shutil.which("npm")
+    if not npm_cmd:
+        if not silent:
+            print("Error: npm not found in PATH")
+            print("Install Node.js from: https://nodejs.org/")
+        return None
+
+    # Build command for npm run dev
+    if sys.platform == "win32":
+        # On Windows, use cmd.exe to run npm
+        cmd = ["cmd.exe", "/c", "npm", "run", "dev"]
+    else:
+        cmd = [npm_cmd, "run", "dev"]
+
+    try:
+        # Start frontend in background
+        process = subprocess.Popen(
+            cmd,
+            cwd=FRONTEND_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ.copy(),
+        )
+        _background_processes.append(process)
+        return process
+    except Exception as e:
+        if not silent:
+            print(f"Error starting frontend: {e}")
+        return None
+
+def wait_for_frontend(timeout: int = 30) -> bool:
+    """Wait for the frontend dev server to be ready."""
+    print(f"Waiting for frontend at {FRONTEND_URL}...", end="", flush=True)
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with urllib.request.urlopen(FRONTEND_URL, timeout=2) as r:
+                if r.status < 400:
+                    print(" Ready!")
+                    return True
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                print(" Ready!")
+                return True
+        except:
+            pass
+        print(".", end="", flush=True)
+        time.sleep(0.5)
+    print(" Timeout!")
+    return False
+
+def open_browser(url: str):
+    """Open the default web browser to the given URL."""
+    print(f"Opening browser at {url}...")
+    try:
+        webbrowser.open(url)
+    except Exception as e:
+        print(f"Could not open browser automatically: {e}")
+        print(f"Please open {url} manually in your browser.")
+
+BACKEND_PORT = 8080
+BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
+
+# ==========================================
+# BROWSER MODE STARTUP UI
+# ==========================================
+STEP_WIDTH = 45  # Width for step text alignment
+
+def print_browser_header():
+    """Print the browser mode startup header."""
+    print("\n🤖 CraftBot")
+    print("━" * 52)
+    print("\nMode: Browser\n")
+
+def print_step(step_num: int, total: int, message: str, done: bool = False):
+    """Print a formatted step line."""
+    prefix = f"  [{step_num:>2}/{total}]"
+    # Pad message to align checkmarks
+    padded_msg = f"{message}...".ljust(STEP_WIDTH - len(prefix))
+    if done:
+        print(f"{prefix} {padded_msg}✓", flush=True)
+    else:
+        print(f"{prefix} {padded_msg}", end="", flush=True)
+
+def print_step_done():
+    """Print checkmark for current step."""
+    print("✓", flush=True)
+
+def print_ready_banner(url: str):
+    """Print the final ready banner."""
+    print("\n" + "━" * 52)
+    print(f"✓ Ready → CraftBot Browser Interface running at {url}")
+    print("━" * 52 + "\n")
+
+def wait_for_backend_silent(timeout: int = 60) -> bool:
+    """Wait for the agent backend WebSocket server to be ready (silent)."""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with urllib.request.urlopen(BACKEND_URL, timeout=2) as r:
+                if r.status < 400:
+                    return True
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                return True
+        except urllib.error.URLError:
+            pass
+        except:
+            pass
+        time.sleep(0.5)
+    return False
+
+def wait_for_frontend_silent(timeout: int = 30) -> bool:
+    """Wait for the frontend dev server to be ready (silent)."""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with urllib.request.urlopen(FRONTEND_URL, timeout=2) as r:
+                if r.status < 400:
+                    return True
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                return True
+        except:
+            pass
+        time.sleep(0.5)
+    return False
+
+def wait_for_backend(timeout: int = 60) -> bool:
+    """Wait for the agent backend WebSocket server to be ready."""
+    print(f"Waiting for agent backend at {BACKEND_URL}...", end="", flush=True)
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with urllib.request.urlopen(BACKEND_URL, timeout=2) as r:
+                if r.status < 400:
+                    print(" Ready!")
+                    return True
+        except urllib.error.HTTPError as e:
+            # Any HTTP response means server is up
+            if e.code < 500:
+                print(" Ready!")
+                return True
+        except urllib.error.URLError:
+            pass
+        except:
+            pass
+        print(".", end="", flush=True)
+        time.sleep(0.5)
+    print(" Timeout!")
+    return False
+
+def launch_agent_background(env_name: Optional[str], use_conda: bool, silent: bool = False) -> Optional[subprocess.Popen]:
+    """Launch main.py in the background for browser mode."""
+    main_script = os.path.abspath(MAIN_APP_SCRIPT)
+    if not os.path.exists(main_script):
+        if not silent:
+            print(f"Error: {main_script} not found.")
+        return None
+
+    # Filter flags (--browser passes through to agent)
+    skip_flags = {"--gui", "--no-conda"}
+    pass_args = [a for a in sys.argv[1:] if a not in skip_flags]
+
+    # Set environment variable for browser startup UI formatting
+    agent_env = os.environ.copy()
+    agent_env["BROWSER_STARTUP_UI"] = "1"
+
+    # Build command
+    if use_conda and env_name:
+        conda_exe = get_conda_command()
+        cmd = [conda_exe, "run", "--no-capture-output", "-n", env_name, "python", "-u", main_script] + pass_args
+
+        # On Windows, wrap .bat files with cmd.exe
+        if sys.platform == "win32" and conda_exe.lower().endswith((".bat", ".cmd")):
+            cmd = ["cmd.exe", "/d", "/c"] + cmd
+    else:
+        cmd = [sys.executable, "-u", main_script] + pass_args
+
+    try:
+        process = subprocess.Popen(
+            cmd,
+            cwd=os.path.dirname(main_script),
+            env=agent_env,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        _background_processes.append(process)
+        return process
+    except Exception as e:
+        if not silent:
+            print(f"Error starting agent: {e}")
+        return None
 
 # ==========================================
 # ENVIRONMENT DETECTION
@@ -293,16 +533,17 @@ if __name__ == "__main__":
 
     # Parse flags
     gui_mode = "--gui" in args
+    browser_mode = "--browser" in args
     no_conda_flag = "--no-conda" in args
-    
+
     # Load saved config to check what was actually installed
     config = load_config()
     use_conda = config.get("use_conda", False)  # Use config instead of defaulting to True
-    
+
     # Override with command-line flag if provided
     if no_conda_flag:
         use_conda = False
-    
+
     gui_installed = config.get("gui_mode_enabled", False)
 
     # Set environment variables
@@ -310,8 +551,13 @@ if __name__ == "__main__":
     os.environ["GUI_MODE_ENABLED"] = str(gui_mode)
     os.environ["USE_OMNIPARSER"] = str(gui_mode and gui_installed)
 
-    mode_str = "GUI" if gui_mode else ("Browser" if browser_mode else "TUI")
-    print(f"\nMode: {mode_str}")
+    # Determine mode string for display (only print for non-browser modes)
+    if not browser_mode:
+        if gui_mode:
+            mode_str = "GUI"
+        else:
+            mode_str = "TUI"
+        print(f"\nMode: {mode_str}")
 
     # Check conda only if it was installed earlier
     conda_base = None
@@ -340,5 +586,54 @@ if __name__ == "__main__":
         print("Run: python install.py --gui --conda\n")
         sys.exit(1)
 
-    # Launch agent
-    launch_agent(env_name, conda_base, use_conda)
+    # Browser mode: start frontend + agent, wait for both, then open browser
+    if browser_mode:
+        # Print browser mode header
+        print_browser_header()
+
+        # Step 1: Start frontend server
+        print_step(1, 8, "Starting frontend server")
+        frontend_process = launch_frontend(silent=True)
+        if not frontend_process:
+            print(" ✗")
+            print("\nError: Failed to start browser frontend.")
+            print("Run 'python install.py' to install dependencies.")
+            sys.exit(1)
+        print_step_done()
+
+        # Step 2: Start agent backend (agent will print steps 3-8)
+        print_step(2, 8, "Starting agent backend")
+        agent_process = launch_agent_background(env_name, use_conda, silent=True)
+        if not agent_process:
+            print(" ✗")
+            print("\nError: Failed to start agent backend.")
+            sys.exit(1)
+        print_step_done()
+
+        # Wait for frontend and backend to be ready (silent)
+        frontend_ready = wait_for_frontend_silent(timeout=30)
+        backend_ready = wait_for_backend_silent(timeout=60)
+
+        # Print ready banner and open browser
+        if frontend_ready and backend_ready:
+            print_ready_banner(FRONTEND_URL)
+            webbrowser.open(FRONTEND_URL)
+        elif frontend_ready:
+            print("\n⚠ Warning: Backend may not be fully ready")
+            print_ready_banner(FRONTEND_URL)
+            webbrowser.open(FRONTEND_URL)
+        else:
+            print("\n⚠ Warning: Services may not be ready")
+            print_ready_banner(FRONTEND_URL)
+            webbrowser.open(FRONTEND_URL)
+
+        # Wait for agent to finish (keeps script running)
+        try:
+            agent_process.wait()
+        except KeyboardInterrupt:
+            print("\nShutting down...")
+            cleanup_background_processes()
+            sys.exit(0)
+    else:
+        # Non-browser mode: launch agent in foreground as before
+        launch_agent(env_name, conda_base, use_conda)

@@ -2072,15 +2072,30 @@ class AgentBase:
             api_key: Optional API key presented in the interface for convenience.
             interface_mode: "tui" for Textual interface, "cli" for command line.
         """
+        # Check if browser startup UI is active
+        browser_ui = os.getenv("BROWSER_STARTUP_UI", "0") == "1"
+
+        def print_startup_step(step: int, total: int, message: str):
+            """Print a startup step in the appropriate format."""
+            if browser_ui:
+                # Browser mode: formatted with alignment and checkmark
+                prefix = f"  [{step:>2}/{total}]"
+                step_width = 45
+                padded_msg = f"{message}...".ljust(step_width - len(prefix))
+                print(f"{prefix} {padded_msg}✓", flush=True)
+            else:
+                # CLI mode: simple format
+                print(f"[{step}/{total}] {message}...")
+
         # Startup progress messages
-        print("[3/8] Initializing agent...")
+        print_startup_step(3, 8, "Initializing agent")
 
         # Initialize MCP client and register tools
-        print("[4/8] Connecting to MCP servers...")
+        print_startup_step(4, 8, "Connecting to MCP servers")
         await self._initialize_mcp()
 
         # Initialize skills system
-        print("[5/8] Loading skills...")
+        print_startup_step(5, 8, "Loading skills")
         await self._initialize_skills()
 
         # Start usage reporter background flush
@@ -2089,7 +2104,7 @@ class AgentBase:
         self._usage_reporter.start_background_flush()
 
         # Initialize external app libraries
-        print("[6/8] Loading libraries...")
+        print_startup_step(6, 8, "Loading libraries")
         await self._initialize_external_libraries()
 
         # Process unprocessed events into memory at startup (if enabled)
@@ -2097,7 +2112,7 @@ class AgentBase:
             await self._process_memory_at_startup()
 
         # Initialize and start the scheduler (handles memory processing and other periodic tasks)
-        print("[7/8] Starting scheduler...")
+        print_startup_step(7, 8, "Starting scheduler")
         from app.config import PROJECT_ROOT
         scheduler_config_path = PROJECT_ROOT / "app" / "config" / "scheduler_config.json"
         await self.scheduler.initialize(
@@ -2114,14 +2129,15 @@ class AgentBase:
             await self.trigger_soft_onboarding()
 
         # Initialize external communications (WhatsApp, Telegram)
-        print("[8/8] Starting communications...")
+        print_startup_step(8, 8, "Starting communications")
         from app.external_comms import ExternalCommsManager
         from app.external_comms.manager import initialize_manager
         self._external_comms = initialize_manager(self)
         await self._external_comms.start()
 
-        # Startup complete
-        print("\n[OK] Ready!\n", flush=True)
+        # Startup complete (only print in CLI mode, browser mode handles this in run.py)
+        if not browser_ui:
+            print("\n[OK] Ready!\n", flush=True)
 
         # Flush stdout/stderr to ensure clean output before TUI starts
         import sys

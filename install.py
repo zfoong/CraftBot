@@ -445,6 +445,33 @@ def install_playwright_browser():
         print(f"Warning: Failed to install Playwright browser: {e}")
         print("WhatsApp Web integration will not work until you run: playwright install chromium")
 
+def install_browser_frontend():
+    """Install npm dependencies for the browser frontend."""
+    frontend_dir = os.path.join(BASE_DIR, "app", "ui_layer", "browser", "frontend")
+
+    if not os.path.exists(frontend_dir):
+        print(f"Warning: Browser frontend directory not found at {frontend_dir}")
+        return False
+
+    # Check if npm is available
+    npm_cmd = shutil.which("npm")
+    if not npm_cmd:
+        print("\n⚠ Warning: npm not found in PATH")
+        print("   Browser interface requires Node.js and npm.")
+        print("   Install from: https://nodejs.org/")
+        print("   Then run: npm install (in app/ui_layer/browser/frontend)")
+        return False
+
+    print("\n🔧 Installing browser frontend dependencies...")
+    try:
+        run_command_with_progress([npm_cmd, "install"], message="Installing npm packages", cwd=frontend_dir)
+        print("✓ Browser frontend dependencies installed")
+        return True
+    except Exception as e:
+        print(f"\n⚠ Warning: Failed to install browser frontend: {e}")
+        print("   You can manually run: cd app/ui_layer/browser/frontend && npm install")
+        return False
+
 def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
     try:
         if not os.path.exists(requirements_file):
@@ -802,6 +829,9 @@ if __name__ == "__main__":
     else:
         setup_pip_environment()
         print()
+
+    # Install browser frontend dependencies
+    install_browser_frontend()
 
     # Step 2: Install GUI components (optional)
     if install_gui:

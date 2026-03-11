@@ -156,14 +156,19 @@ def main():
     gui_mode_enabled = os.getenv("GUI_MODE_ENABLED", "False").lower() == "true"
     docker_started = False
 
-    print("--- Starting Launch Sequence ---")
+    # Check if browser startup UI is active (suppress verbose output)
+    browser_startup_ui = os.getenv("BROWSER_STARTUP_UI", "0") == "1"
+
+    if not browser_startup_ui:
+        print("--- Starting Launch Sequence ---")
     final_exit_code = 0
 
     # === TRY BLOCK: Setup and Run ===
     try:
         # 1. Start Docker VM (only if GUI mode is enabled)
         if gui_mode_enabled:
-            print("\n[1/3] Launching VM Docker containers in background...")
+            if not browser_startup_ui:
+                print("\n[1/3] Launching VM Docker containers in background...")
             if not os.path.isdir(VM_DIR):
                  print(f"[ERROR] Docker directory not found: {VM_DIR}")
                  sys.exit(1)
@@ -171,26 +176,32 @@ def main():
             docker_started = True
 
             # 2. Wait Loop
-            print(f"\n[2/3] Waiting for VM service to be ready on port {READY_PORT}...")
+            if not browser_startup_ui:
+                print(f"\n[2/3] Waiting for VM service to be ready on port {READY_PORT}...")
             waited = 0
             while not is_port_open(READY_HOST, READY_PORT):
                 if waited >= MAX_WAIT_SECONDS:
                     print(f"\n[ERROR] Timed out waiting for VM port {READY_PORT}.")
                     raise TimeoutError(f"Service on port {READY_PORT} did not become ready.")
-                print(".", end="", flush=True)
+                if not browser_startup_ui:
+                    print(".", end="", flush=True)
                 time.sleep(1)
                 waited += 1
-            print(f"\n[OK] VM Service is reachable after {waited}s!")
+            if not browser_startup_ui:
+                print(f"\n[OK] VM Service is reachable after {waited}s!")
 
             # 3. Start Python Agent
-            print(f"\n[3/3] Launching Python Agent...")
+            if not browser_startup_ui:
+                print(f"\n[3/3] Launching Python Agent...")
         else:
-            print("\n[1/1] Launching Python Agent (CLI Mode)...")
+            if not browser_startup_ui:
+                print("\n[1/1] Launching Python Agent (CLI Mode)...")
 
-        print("--------------------------------")
-        print("Type '/exit' or use your defined quit hotkey to stop.")
-        print("Ctrl+C is handled by the app logic (ignored by wrapper).")
-        print("--------------------------------")
+        if not browser_startup_ui:
+            print("--------------------------------")
+            print("Type '/exit' or use your defined quit hotkey to stop.")
+            print("Ctrl+C is handled by the app logic (ignored by wrapper).")
+            print("--------------------------------")
 
         # Run the main Python app in the foreground.
         # This call BLOCKS until the app exits.

@@ -760,8 +760,11 @@ class BrowserAdapter(InterfaceAdapter):
         site = web.TCPSite(runner, self._host, self._port)
         await site.start()
 
-        print(f"\nCraftBot Browser Interface running at http://{self._host}:{self._port}")
-        print("Open this URL in your browser to interact with CraftBot.\n")
+        # Only print URL info if not using browser startup UI (run.py handles it)
+        import os
+        if os.getenv("BROWSER_STARTUP_UI", "0") != "1":
+            print(f"\nCraftBot Browser Interface running at http://{self._host}:{self._port}")
+            print("Open this URL in your browser to interact with CraftBot.\n")
 
         # Emit ready event
         self._controller.event_bus.emit(

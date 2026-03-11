@@ -22,7 +22,6 @@ from app.ui_layer.components.protocols import (
 )
 from app.ui_layer.components.types import ChatMessage, ActionItem as UIActionItem
 from app.ui_layer.events import UIEvent, UIEventType
-from app.ui_layer.onboarding import OnboardingFlowController
 
 # Import TUI-specific data types for CraftApp compatibility
 from app.tui.data import (
@@ -34,6 +33,7 @@ from app.tui.data import (
 
 if TYPE_CHECKING:
     from app.ui_layer.controller.ui_controller import UIController
+    from app.ui_layer.onboarding import OnboardingFlowController
     from app.tui.app import CraftApp
 
 
@@ -383,7 +383,8 @@ class TUIAdapter(InterfaceAdapter):
         # Suppress console logging for Textual
         self._suppress_console_logging()
 
-        # Check for onboarding
+        # Check for onboarding (lazy import to avoid circular dependency)
+        from app.ui_layer.onboarding import OnboardingFlowController
         onboarding = OnboardingFlowController(self._controller)
         if onboarding.needs_hard_onboarding:
             # Run onboarding before starting Textual app

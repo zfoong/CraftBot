@@ -5,6 +5,7 @@ from agent_core import action
     description="""Fetches content from a URL and returns processed markdown content.
 - Takes a URL and an optional prompt describing what information to extract
 - Fetches the URL content and converts HTML to markdown
+- Uses two-tier extraction: fast static extraction first, then Jina Reader API for JS-rendered sites
 - Handles redirects: when redirecting to a different host, returns redirect info
 - HTTP URLs are automatically upgraded to HTTPS
 - Use web_search action first to find relevant URLs, then use this to read full content
@@ -34,6 +35,16 @@ authentication (Google Docs, Confluence, Jira, etc.), use specialized authentica
             "type": "integer",
             "example": 50000,
             "description": "Maximum content length in characters. Content exceeding this will be truncated. Defaults to 50000."
+        },
+        "use_jina_fallback": {
+            "type": "boolean",
+            "example": True,
+            "description": "Use Jina Reader API as fallback for JS-rendered sites. Defaults to True."
+        },
+        "min_content_length": {
+            "type": "integer",
+            "example": 200,
+            "description": "Minimum content length to consider extraction successful. Below this triggers fallback. Defaults to 200."
         }
     },
     output_schema={
@@ -77,6 +88,10 @@ authentication (Google Docs, Confluence, Jira, etc.), use specialized authentica
         "message": {
             "type": "string",
             "description": "Error or informational message."
+        },
+        "extraction_method": {
+            "type": "string",
+            "description": "Method used for extraction: 'static' (trafilatura/BeautifulSoup) or 'jina' (Jina Reader API)."
         }
     },
     requirement=["requests", "beautifulsoup4", "trafilatura", "lxml"],
@@ -90,7 +105,7 @@ authentication (Google Docs, Confluence, Jira, etc.), use specialized authentica
 def web_fetch(input_data: dict) -> dict:
     """
     Fetches content from a URL and returns processed markdown content.
-    Similar to Claude Code's WebFetch tool - fetches, converts to markdown, and processes.
+    Uses two-tier extraction: fast static extraction first, then Jina Reader API for JS-rendered sites.
     """
     import re
     from urllib.parse import urlparse
@@ -100,6 +115,8 @@ def web_fetch(input_data: dict) -> dict:
     prompt = str(input_data.get('prompt', '')).strip() if input_data.get('prompt') else None
     timeout = float(input_data.get('timeout', 30))
     max_content_length = int(input_data.get('max_content_length', 50000))
+    use_jina_fallback = input_data.get('use_jina_fallback', True)
+    min_content_length = int(input_data.get('min_content_length', 200))
 
     def _make_error(message, url=''):
         return {
@@ -234,9 +251,10 @@ This is a test page demonstrating the web_fetch action functionality.
         encoding = response.encoding or 'utf-8'
         html_text = content_bytes.decode(encoding, errors='replace')
 
-        # Extract content using trafilatura
+        # === TIER 1: Fast Static Extraction ===
         title = ''
         content_md = ''
+        extraction_method = 'static'
 
         try:
             # Try trafilatura for main content extraction
@@ -260,7 +278,7 @@ This is a test page demonstrating the web_fetch action functionality.
             pass
 
         # Fallback to BeautifulSoup if trafilatura fails
-        if not content_md:
+        if not content_md or len(content_md) < min_content_length:
             soup = BeautifulSoup(html_text, 'lxml')
 
             # Get title
@@ -275,7 +293,46 @@ This is a test page demonstrating the web_fetch action functionality.
             text = soup.get_text('\n')
             # Clean up whitespace
             text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
-            content_md = text.strip()
+            bs_content = text.strip()
+
+            # Use BeautifulSoup content if better than trafilatura
+            if len(bs_content) > len(content_md or ''):
+                content_md = bs_content
+
+        # === TIER 2: Jina Reader API Fallback ===
+        # Use Jina if static extraction got insufficient content
+        if use_jina_fallback and (not content_md or len(content_md) < min_content_length):
+            try:
+                jina_url = f"https://r.jina.ai/{url}"
+                jina_headers = {
+                    'Accept': 'text/plain',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+                jina_response = requests.get(jina_url, headers=jina_headers, timeout=timeout)
+
+                if jina_response.status_code == 200:
+                    jina_content = jina_response.text.strip()
+
+                    # Jina returns markdown with title as first line
+                    if jina_content and len(jina_content) > min_content_length:
+                        content_md = jina_content
+                        extraction_method = 'jina'
+
+                        # Extract title from Jina response (usually first # heading)
+                        title_match = re.match(r'^#\s*(.+?)[\n\r]', jina_content)
+                        if title_match and not title:
+                            title = title_match.group(1).strip()
+
+            except Exception:
+                # Jina fallback failed, continue with whatever we have
+                pass
+
+        # === Content Quality Check ===
+        # Clean and validate content
+        if content_md:
+            # Remove excessive whitespace
+            content_md = re.sub(r'\n{4,}', '\n\n\n', content_md)
+            content_md = content_md.strip()
 
         # Check if truncation is needed
         was_truncated = False
@@ -288,7 +345,11 @@ This is a test page demonstrating the web_fetch action functionality.
             content_md += '\n\n[Content truncated due to length...]'
             was_truncated = True
 
-        # Build result
+        # Build result with extraction method info
+        message = ''
+        if not content_md or len(content_md) < min_content_length:
+            message = 'Warning: Extracted content may be incomplete. Site may require JavaScript rendering or authentication.'
+
         return {
             'status': 'success',
             'url': url,
@@ -298,7 +359,8 @@ This is a test page demonstrating the web_fetch action functionality.
             'content_length': len(content_md),
             'was_truncated': was_truncated,
             'prompt_used': prompt or '',
-            'message': ''
+            'message': message,
+            'extraction_method': extraction_method
         }
 
     except requests.exceptions.Timeout:
