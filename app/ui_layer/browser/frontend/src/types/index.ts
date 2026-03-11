@@ -95,6 +95,7 @@ export type WSMessageType =
   // Dynamic tab data
   | 'tab_data'
   | 'tab_create'
+  | 'tab_load_path'
 
 export interface WSMessage {
   type: WSMessageType

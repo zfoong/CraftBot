@@ -934,6 +934,10 @@ class BrowserAdapter(InterfaceAdapter):
             # Frontend is sending tab data — broadcast to all clients
             await self._broadcast({"type": "tab_data", "data": data})
 
+        elif msg_type == "tab_load_path":
+            # Frontend requests git diff / file listing for a folder path
+            await self._handle_tab_load_path(data)
+
         # Settings operations
         elif msg_type == "settings_get":
             await self._handle_settings_get()
@@ -2755,6 +2759,42 @@ class BrowserAdapter(InterfaceAdapter):
                 "taskId": task_id,
                 "tabData": tab_data,
                 "replace": replace,
+            },
+        })
+
+    async def _handle_tab_load_path(self, data: Dict[str, Any]) -> None:
+        """Handle tab_load_path: run git diff at a folder and send result as tab_data."""
+        import os
+        from app.data.action.create_ui_tab import _resolve_code_data
+        from app.logger import logger
+
+        # The WS message is { type, data: { tabId, path } } — extract inner payload
+        inner = data.get("data", data)
+        tab_id = inner.get("tabId", "")
+        path = inner.get("path", "")
+        logger.info(f"[tab_load_path] raw data keys: {list(data.keys())}, tab_id={tab_id}, path={path}")
+
+        if not path or not os.path.isdir(path):
+            logger.warning(f"[tab_load_path] Invalid path: '{path}', isdir={os.path.isdir(path) if path else 'N/A'}")
+            await self._broadcast({
+                "type": "tab_data",
+                "data": {
+                    "tabId": tab_id,
+                    "tabData": {"summary": f"Path not found: {path}"},
+                    "replace": True,
+                },
+            })
+            return
+
+        tab_data = _resolve_code_data(path)
+        logger.info(f"[tab_load_path] Resolved data keys: {list(tab_data.keys())}, has rawDiff: {'rawDiff' in tab_data}")
+
+        await self._broadcast({
+            "type": "tab_data",
+            "data": {
+                "tabId": tab_id,
+                "tabData": tab_data,
+                "replace": True,
             },
         })
 

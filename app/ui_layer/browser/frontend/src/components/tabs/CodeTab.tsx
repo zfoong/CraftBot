@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react'
-import { Code2, GitCommit, FilePlus, FileEdit, FileMinus, ChevronDown, ChevronRight } from 'lucide-react'
+import React, { useMemo, useState, useRef, useEffect } from 'react'
+import { Code2, GitCommit, FilePlus, FileEdit, FileMinus, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { useDynamicTabs } from '../../hooks/useDynamicTabs'
 import { CodeTabData } from '../../types/dynamicTabs'
@@ -180,7 +180,10 @@ function DiffFileBlock({ file, defaultExpanded }: { file: ParsedFile; defaultExp
 
 export const CodeTab = React.memo(function CodeTab({ tabId }: CodeTabProps) {
   const { tabData, getTabById } = useDynamicTabs()
-  const { actions } = useWebSocket()
+  const { actions, sendRawMessage } = useWebSocket()
+  const [pathInput, setPathInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const pathInputRef = useRef<HTMLInputElement>(null)
   const tab = getTabById(tabId)
   const data = tabData[tabId] as CodeTabData | undefined
 
@@ -199,6 +202,13 @@ export const CodeTab = React.memo(function CodeTab({ tabId }: CodeTabProps) {
       { additions: 0, deletions: 0 }
     )
   }, [parsedFiles])
+
+  // Clear loading state when data arrives
+  useEffect(() => {
+    if (data && (data.rawDiff || data.summary)) {
+      setLoading(false)
+    }
+  }, [data])
 
   const hasData = data && (data.rawDiff || data.commits?.length || data.summary)
 
@@ -229,9 +239,34 @@ export const CodeTab = React.memo(function CodeTab({ tabId }: CodeTabProps) {
           </div>
         ) : (
           <div className={styles.placeholder}>
-            <Code2 size={48} strokeWidth={1.5} />
+            <FolderOpen size={48} strokeWidth={1.5} />
             <h2>Code Viewer</h2>
-            <p>Code diffs and commit history will appear here when a code-related task runs.</p>
+            <p>Enter a folder path to view git diff, or wait for a task to push code data.</p>
+            <form
+              className={styles.pathForm}
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!pathInput.trim()) return
+                setLoading(true)
+                sendRawMessage({
+                  type: 'tab_load_path',
+                  data: { tabId, path: pathInput.trim() },
+                })
+              }}
+            >
+              <input
+                ref={pathInputRef}
+                className={styles.pathInput}
+                type="text"
+                value={pathInput}
+                onChange={(e) => setPathInput(e.target.value)}
+                placeholder="e.g. /home/user/project or C:\Users\project"
+                disabled={loading}
+              />
+              <button className={styles.pathBtn} type="submit" disabled={loading || !pathInput.trim()}>
+                {loading ? 'Loading...' : 'Load'}
+              </button>
+            </form>
           </div>
         )}
       </div>

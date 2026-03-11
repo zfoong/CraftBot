@@ -34,6 +34,8 @@ interface WebSocketContextType extends WebSocketState {
   requestFilteredMetrics: (period: MetricsTimePeriod) => void
   /** Subscribe to raw WS messages. Returns unsubscribe function. */
   onRawMessage: (listener: WSMessageListener) => () => void
+  /** Send a raw typed WS message to the backend. */
+  sendRawMessage: (msg: Record<string, unknown>) => void
 }
 
 const defaultState: WebSocketState = {
@@ -354,6 +356,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const sendRawMessage = useCallback((msg: Record<string, unknown>) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(msg))
+    }
+  }, [])
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -366,6 +374,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         openFolder,
         requestFilteredMetrics,
         onRawMessage,
+        sendRawMessage,
       }}
     >
       {children}

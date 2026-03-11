@@ -2,7 +2,7 @@ from agent_core import action
 
 @action(
     name="update_ui_tab",
-    description="Update the data displayed in an existing dynamic browser UI tab. Use this to push new content to a tab that was previously created with create_ui_tab. Data is merged by default (partial updates), or can fully replace existing data. The tab is identified by the current task ID.",
+    description="Update the data displayed in an existing dynamic browser UI tab. Data is merged by default, or can fully replace existing data. The tab is identified by the current task ID.",
     default=False,
     action_sets=["browser_ui"],
     parallelizable=False,
@@ -11,9 +11,7 @@ from agent_core import action
             "type": "object",
             "description": (
                 "Data payload to send to the tab. Structure depends on the tab type:\n"
-                "- code: {\"rawDiff\": \"<raw unified diff output from git diff>\", \"summary\": \"...\", "
-                "\"commits\": [{\"hash\": \"...\", \"message\": \"...\", \"author\": \"...\"}]}. "
-                "For rawDiff, pass the complete output of `git diff` — the UI will parse and render it with colored +/- lines.\n"
+                "- code: {\"path\": \"/path/to/repo\"} — refreshes git diff from the folder.\n"
                 "- stock: {\"ticker\": \"AAPL\", \"name\": \"Apple Inc.\", \"price\": 150.0, \"change\": 2.5, \"changePercent\": 1.7, "
                 "\"summary\": \"...\", \"chartData\": [{\"date\": \"...\", \"open\": 0, \"high\": 0, \"low\": 0, \"close\": 0, \"volume\": 0}]}\n"
                 "- planner: {\"title\": \"...\", \"summary\": \"...\", "
@@ -21,12 +19,12 @@ from agent_core import action
                 "\"tasks\": [{\"id\": \"...\", \"name\": \"...\", \"status\": \"todo|in-progress|done\", \"priority\": \"high|medium|low\", \"assignee\": \"...\", \"dueDate\": \"...\"}]}\n"
                 "- custom: {\"content\": \"markdown text\", \"title\": \"...\"}"
             ),
-            "example": {"content": "# Updated Content\nNew data here."}
+            "example": {"path": "/home/user/project"}
         },
         "replace": {
             "type": "boolean",
             "example": False,
-            "description": "If true, replaces all existing tab data with the new data. If false (default), merges the new data into existing data."
+            "description": "If true, replaces all existing tab data. If false (default), merges new data into existing data."
         }
     },
     output_schema={
@@ -62,6 +60,11 @@ def update_ui_tab(input_data: dict) -> dict:
 
     if simulated_mode:
         return {"status": "ok", "task_id": "sim-task-001", "replace": replace}
+
+    # For code tabs with a path, resolve git diff
+    if "path" in tab_data:
+        from app.data.action.create_ui_tab import _resolve_code_data
+        tab_data = _resolve_code_data(tab_data["path"])
 
     import app.internal_action_interface as iai
     task_id = iai.InternalActionInterface._get_current_task_id()

@@ -18,9 +18,10 @@ interface TabCreateMessage {
 interface TabDataMessage {
   type: 'tab_data'
   data: {
-    taskId: string
+    taskId?: string
+    tabId?: string
     tabData: Partial<TabData>
-    replace?: boolean // true = replace all data, false = merge (default)
+    replace?: boolean
   }
 }
 
@@ -31,7 +32,7 @@ interface TabDataMessage {
  */
 export function useTabWebSocketBridge() {
   const { onRawMessage } = useWebSocket()
-  const { createTab, setTabData, mergeTabData, getTabByTaskId } = useDynamicTabs()
+  const { createTab, setTabData, mergeTabData, getTabByTaskId, getTabById } = useDynamicTabs()
   const { showToast } = useToast()
   const navigate = useNavigate()
 
@@ -52,8 +53,10 @@ export function useTabWebSocketBridge() {
       }
 
       if (msg.type === 'tab_data') {
-        const { taskId, tabData, replace } = (msg as unknown as TabDataMessage).data
-        const tab = getTabByTaskId(taskId)
+        const { taskId, tabId, tabData, replace } = (msg as unknown as TabDataMessage).data
+
+        // Resolve tab by tabId first, then fall back to taskId
+        const tab = tabId ? getTabById(tabId) : (taskId ? getTabByTaskId(taskId) : null)
         if (!tab) return
 
         if (replace) {
@@ -65,5 +68,5 @@ export function useTabWebSocketBridge() {
     })
 
     return unsubscribe
-  }, [onRawMessage, createTab, setTabData, mergeTabData, getTabByTaskId, showToast, navigate])
+  }, [onRawMessage, createTab, setTabData, mergeTabData, getTabByTaskId, getTabById, showToast, navigate])
 }
