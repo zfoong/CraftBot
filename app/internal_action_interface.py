@@ -149,6 +149,58 @@ class InternalActionInterface:
         description = cls.describe_image(img_path)
         return {"description": description, "file_path": img_path}
 
+    # ─────────────────────── Dynamic Tab Operations ───────────────────────
+
+    @classmethod
+    async def create_dynamic_tab(
+        cls,
+        tab_type: str,
+        task_id: str,
+        label: str = "",
+        initial_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Create a dynamic tab in the browser UI.
+
+        Args:
+            tab_type: Tab preset type ('code', 'stock', 'planner', 'custom')
+            task_id: The task ID this tab is linked to
+            label: Display label for the tab
+            initial_data: Optional initial data payload
+
+        Returns:
+            Dict with status and tab info
+        """
+        ui_adapter = cls.ui_adapter
+        if ui_adapter and hasattr(ui_adapter, 'create_dynamic_tab'):
+            await ui_adapter.create_dynamic_tab(tab_type, task_id, label, initial_data)
+            return {"status": "ok", "tab_type": tab_type, "task_id": task_id, "label": label}
+        else:
+            return {"status": "error", "error": "Browser UI adapter not available. Dynamic tabs only work in browser mode."}
+
+    @classmethod
+    async def update_dynamic_tab(
+        cls,
+        task_id: str,
+        tab_data: Dict[str, Any],
+        replace: bool = False,
+    ) -> Dict[str, Any]:
+        """Send data to a dynamic tab linked to a task.
+
+        Args:
+            task_id: The task ID the tab is linked to
+            tab_data: The data payload to send
+            replace: If True, replaces all tab data; if False, merges
+
+        Returns:
+            Dict with status
+        """
+        ui_adapter = cls.ui_adapter
+        if ui_adapter and hasattr(ui_adapter, 'send_tab_data'):
+            await ui_adapter.send_tab_data(task_id, tab_data, replace)
+            return {"status": "ok", "task_id": task_id, "replace": replace}
+        else:
+            return {"status": "error", "error": "Browser UI adapter not available. Dynamic tabs only work in browser mode."}
+
     @staticmethod
     async def do_chat(message: str, platform: str = "CraftBot TUI") -> None:
         """Record an agent-authored chat message to the event stream.
@@ -640,11 +692,15 @@ class InternalActionInterface:
             if not sets_text:
                 sets_text = "(no additional action sets available)"
 
+            # Determine interface mode
+            interface_mode = "browser" if (cls.ui_adapter and hasattr(cls.ui_adapter, 'create_dynamic_tab')) else "cli"
+
             # Build the combined prompt
             prompt = SKILLS_AND_ACTION_SETS_SELECTION_PROMPT.format(
                 task_name=task_name,
                 task_description=task_description,
                 source_platform=source_platform or "CraftBot TUI",
+                interface_mode=interface_mode,
                 available_skills=skills_text,
                 available_sets=sets_text
             )

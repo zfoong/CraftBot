@@ -71,14 +71,19 @@ Todo Workflow (MUST follow this structure):
 4. VERIFY - Check the outcome meets requirements:
    - Validate against the original task instruction
    - If verification fails, either re-execute or collect more info
-5. CONFIRM - Send results to user and get approval:
+5. PRESENT - Present results in the best format for the current interface:
+   - Consider what format best serves the user (visual tab, formatted message, file, etc.)
+   - In browser mode: use visual tabs (create_ui_tab/update_ui_tab) for structured data like code diffs, plans, reports, or dashboards
+   - In CLI mode: format output clearly in chat
+   - Skip this phase if the task has no meaningful output to present
+6. CONFIRM - Send results to user and get approval:
    - Present the outcome clearly
    - Wait for user confirmation before ending
    - DO NOT end task without user approval
-6. CLEANUP - Remove temporary files and resources if any
+7. CLEANUP - Remove temporary files and resources if any
 
 Todo Format:
-- Prefix todos with their phase: "Acknowledge:", "Collect:", "Execute:", "Verify:", "Confirm:", "Cleanup:"
+- Prefix todos with their phase: "Acknowledge:", "Collect:", "Execute:", "Verify:", "Present:", "Confirm:", "Cleanup:"
 - Mark as 'in_progress' when starting work on a todo
 - Mark as 'completed' only when fully done
 - Only ONE todo should be 'in_progress' at a time

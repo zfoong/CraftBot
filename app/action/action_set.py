@@ -23,6 +23,7 @@ DEFAULT_SET_DESCRIPTIONS: Dict[str, str] = {
     "gui_interaction": "Mouse, keyboard, and screen operations",
     "clipboard": "Clipboard read/write operations",
     "shell": "Command line and Python execution",
+    "browser_ui": "Dynamic browser UI tabs (create and update visual tabs for code, stocks, planning, custom content)",
 }
 
 

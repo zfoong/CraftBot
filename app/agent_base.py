@@ -1650,6 +1650,11 @@ class AgentBase:
                 "\n\n## File Sharing\n"
                 "You can send files to the user using the `send_message_with_attachment` action. "
                 "Use this when the user asks you to share, send, or provide a file from the workspace."
+                "\n\n## Visual Tabs (Browser Mode)\n"
+                "The user sees your output in a browser UI. During the PRESENT phase, you can create visual tabs "
+                "using `create_ui_tab` and push data with `update_ui_tab`.\n\n"
+                "**Tab types:** `code` (git diffs with +/- coloring — pass raw `git diff` output as `rawDiff`), "
+                "`stock` (ticker, price, charts), `planner` (kanban board), `custom` (markdown content).\n"
             )
         return ""
 

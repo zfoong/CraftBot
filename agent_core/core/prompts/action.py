@@ -36,7 +36,7 @@ Simple Task Workflow:
 Complex Task Workflow:
 1. Use 'task_start' with task_mode='complex'
 2. Use send message action to acknowledge receipt (REQUIRED)
-3. Use 'task_update_todos' to plan the work following: Acknowledge -> Collect Info -> Execute -> Verify -> Confirm -> Cleanup
+3. Use 'task_update_todos' to plan the work following: Acknowledge -> Collect Info -> Execute -> Verify -> Present -> Confirm -> Cleanup
 4. Execute actions to complete each todo
 5. Use 'task_end' ONLY after user confirms the result is acceptable
 
@@ -147,11 +147,15 @@ Todo Workflow Phases (follow this order):
 2. COLLECT INFO - Gather all required information before execution
 3. EXECUTE - Perform the actual work (can have multiple todos)
 4. VERIFY - Check outcome meets the task requirements
-5. CONFIRM - Present result to user and await approval
-6. CLEANUP - Remove temporary files if any
+5. PRESENT - Present results in the best format for the current interface:
+   - In browser mode: consider using create_ui_tab/update_ui_tab for structured data (code diffs, plans, reports, dashboards)
+   - In CLI mode: format output clearly in chat messages
+   - Skip if no meaningful output to present
+6. CONFIRM - Present result to user and await approval
+7. CLEANUP - Remove temporary files if any
 
 Action Selection Rules:
-- Select action based on the current todo phase (Acknowledge/Collect/Execute/Verify/Confirm/Cleanup)
+- Select action based on the current todo phase (Acknowledge/Collect/Execute/Verify/Present/Confirm/Cleanup)
 - Use 'task_update_todos' to create a plan and track progress: mark current as 'in_progress' when starting, 'completed' when done
 - Use send message action for acknowledgments, progress updates, and presenting results
 - Use send message action when you need information from user during COLLECT phase
@@ -160,6 +164,7 @@ Action Selection Rules:
 Adaptive Execution:
 - If you lack information during EXECUTE, go back to COLLECT phase (add new collect todos)
 - If VERIFY fails, either re-EXECUTE or go back to COLLECT more info
+- During PRESENT, choose the best output format for the interface (visual tabs in browser, formatted text in CLI)
 - DO NOT proceed to next phase until current phase requirements are met
 - If you need an action not in the available list, use 'add_action_sets' to add the required capability
 - Use 'list_action_sets' to see what action sets are available if unsure
@@ -221,7 +226,7 @@ RULES:
 <reasoning_protocol>
 Before selecting an action, you MUST reason through these steps:
 1. Identify the current todo from the [todos] event (marked [>] in_progress or first [ ] pending).
-2. Determine which phase this todo belongs to (Acknowledge/Collect/Execute/Verify/Confirm/Cleanup).
+2. Determine which phase this todo belongs to (Acknowledge/Collect/Execute/Verify/Present/Confirm/Cleanup).
 3. Analyze what "done" means for this specific todo.
 4. Check the event stream to see if the required action was already performed.
 5. If the todo is complete, select action to update todos.

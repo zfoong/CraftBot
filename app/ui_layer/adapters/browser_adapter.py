@@ -925,6 +925,15 @@ class BrowserAdapter(InterfaceAdapter):
             task_id = data.get("taskId", "")
             await self._handle_task_cancel(task_id)
 
+        # Dynamic tab operations (frontend → backend, currently just echoed back)
+        elif msg_type == "tab_create":
+            # Frontend is requesting a tab creation — broadcast to all clients
+            await self._broadcast({"type": "tab_create", "data": data})
+
+        elif msg_type == "tab_data":
+            # Frontend is sending tab data — broadcast to all clients
+            await self._broadcast({"type": "tab_data", "data": data})
+
         # Settings operations
         elif msg_type == "settings_get":
             await self._handle_settings_get()
@@ -2696,6 +2705,58 @@ class BrowserAdapter(InterfaceAdapter):
                     "message": str(e),
                 },
             })
+
+    # ─── Dynamic Tab API ─────────────────────────────────────────────
+
+    async def create_dynamic_tab(
+        self,
+        tab_type: str,
+        task_id: str,
+        label: str = "",
+        initial_data: Dict[str, Any] | None = None,
+    ) -> None:
+        """Create a dynamic tab in the frontend UI.
+
+        Args:
+            tab_type: One of 'code', 'stock', 'planner', 'custom'
+            task_id: The task ID this tab is linked to
+            label: Optional display label for the tab
+            initial_data: Optional initial data payload for the tab
+        """
+        msg: Dict[str, Any] = {
+            "type": "tab_create",
+            "data": {
+                "tabType": tab_type,
+                "taskId": task_id,
+            },
+        }
+        if label:
+            msg["data"]["label"] = label
+        if initial_data:
+            msg["data"]["initialData"] = initial_data
+        await self._broadcast(msg)
+
+    async def send_tab_data(
+        self,
+        task_id: str,
+        tab_data: Dict[str, Any],
+        replace: bool = False,
+    ) -> None:
+        """Send data to a dynamic tab linked to a task.
+
+        Args:
+            task_id: The task ID the tab is linked to
+            tab_data: The data payload to send to the tab
+            replace: If True, replaces all tab data; if False, merges
+        """
+        await self._broadcast({
+            "type": "tab_data",
+            "data": {
+                "taskId": task_id,
+                "tabData": tab_data,
+                "replace": replace,
+            },
+        })
 
     async def _broadcast(self, message: Dict[str, Any]) -> None:
         """Broadcast message to all connected clients."""
