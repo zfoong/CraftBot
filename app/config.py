@@ -21,8 +21,8 @@ APP_CONFIG_PATH = PROJECT_ROOT / "app" / "config"
 AGENT_FILE_SYSTEM_TEMPLATE_PATH = APP_DATA_PATH / "agent_file_system_template"
 AGENT_MEMORY_CHROMA_PATH = PROJECT_ROOT / "chroma_db_memory"
 SETTINGS_CONFIG_PATH = APP_CONFIG_PATH / "settings.json"
-MAX_ACTIONS_PER_TASK: int = 150
-MAX_TOKEN_PER_TASK: int = 6000000 # of tokens
+MAX_ACTIONS_PER_TASK: int = 500
+MAX_TOKEN_PER_TASK: int = 12000000 # of tokens
 
 # Memory processing configuration
 PROCESS_MEMORY_AT_STARTUP: bool = False  # Process EVENT_UNPROCESSED.md into MEMORY.md at startup

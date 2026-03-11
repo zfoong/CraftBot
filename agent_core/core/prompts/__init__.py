@@ -30,7 +30,7 @@ ALL information that is operationally important for downstream decisions.
   • key entities (files/URLs/IDs/emails/app names) that may be referenced later
   • meaningful metrics/counters if they affect decisions
 - Remove noise, duplicates, transient progress messages, or low-value chatter.
-- Prefer concise bullets; keep it readable and compact (aim ~250–350 words).
+- Prefer concise bullets; keep it readable and compact (aim ~400–800 words).
 - Do NOT include the recent (unsummarized) tail; we only rewrite the head summary.
 </rules>
 
