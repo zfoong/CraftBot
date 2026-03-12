@@ -438,11 +438,16 @@ def verify_conda_env(env_name: str) -> bool:
     except Exception as e:
         return False
 
-def install_playwright_browser():
+def install_playwright_browser(use_conda: bool = False):
     """Install Playwright Chromium browser for WhatsApp Web support."""
     print("\nInstalling Playwright Chromium browser...")
     try:
-        run_command([sys.executable, "-m", "playwright", "install", "chromium"])
+        if use_conda:
+            conda_cmd = get_conda_command()
+            env_name = get_env_name_from_yml()
+            run_command([conda_cmd, "run", "-n", env_name, "python", "-m", "playwright", "install", "chromium"])
+        else:
+            run_command([sys.executable, "-m", "playwright", "install", "chromium"])
         print("Playwright Chromium installed.")
     except Exception as e:
         print(f"Warning: Failed to install Playwright browser: {e}")
@@ -487,8 +492,6 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
     except Exception as e:
         raise
 
-    # Install Playwright browser (needed for WhatsApp Web)
-    install_playwright_browser()
 
 # ==========================================
 # OMNIPARSER SETUP (GUI Mode)
@@ -834,6 +837,9 @@ if __name__ == "__main__":
     else:
         setup_pip_environment()
         print()
+
+    # Install Playwright browser (needed for WhatsApp Web)
+    install_playwright_browser(use_conda=use_conda)
 
     # Install browser frontend dependencies
     install_browser_frontend()

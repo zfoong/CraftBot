@@ -38,7 +38,7 @@ from app.tui.skill_settings import (
     install_skill_from_path,
     install_skill_from_git,
 )
-from app.tui.integration_settings import (
+from app.external_comms.integration_settings import (
     list_integrations,
     get_integration_info,
     get_integration_fields,
@@ -1843,25 +1843,6 @@ class CraftApp(App):
         overlay = Container(modal_content, id="integ-connect-overlay")
         self.mount(overlay)
 
-    async def _start_platform_listener(self, integration_id: str) -> None:
-        """Start the external comms listener for a newly connected platform."""
-        try:
-            from app.external_comms.manager import get_external_comms_manager
-            manager = get_external_comms_manager()
-            if manager:
-                # Map integration IDs to platform IDs used in the registry
-                # Some integrations map to multiple platforms (e.g. telegram has bot + user)
-                platform_map = {
-                    "whatsapp": ["whatsapp_web"],
-                    "telegram": ["telegram_bot", "telegram_user"],
-                    "google": ["google_workspace"],
-                }
-                platform_ids = platform_map.get(integration_id, [integration_id])
-                for platform_id in platform_ids:
-                    await manager.start_platform(platform_id)
-        except Exception as e:
-            logger.warning(f"[TUI] Failed to start listener for {integration_id}: {e}")
-
     async def _save_integration_connect_async(self, integration_id: str, credentials: dict) -> None:
         """Async helper to save integration credentials."""
         try:
@@ -1870,7 +1851,6 @@ class CraftApp(App):
                 self.notify(message, severity="information", timeout=3)
                 self._close_integration_connect_modal()
                 self._refresh_integration_list()
-                await self._start_platform_listener(integration_id)
             else:
                 self.notify(message, severity="error", timeout=4)
         except Exception as e:
@@ -1926,7 +1906,6 @@ class CraftApp(App):
             if success:
                 self.notify(message, severity="information", timeout=3)
                 self._refresh_integration_list()
-                await self._start_platform_listener(integration_id)
             else:
                 self.notify(message, severity="error", timeout=6)
         except concurrent.futures.CancelledError:
@@ -2036,7 +2015,6 @@ class CraftApp(App):
             if success:
                 self.notify(message, severity="information", timeout=3)
                 self._refresh_integration_list()
-                await self._start_platform_listener(integration_id)
             else:
                 self.notify(message, severity="error", timeout=6)
         except concurrent.futures.CancelledError:

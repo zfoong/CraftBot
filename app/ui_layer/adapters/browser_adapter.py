@@ -76,6 +76,7 @@ from app.ui_layer.settings import (
     get_integration_info,
     connect_integration_token,
     connect_integration_oauth,
+    connect_integration_interactive,
     disconnect_integration,
     # WhatsApp QR code flow
     start_whatsapp_qr_session,
@@ -1130,6 +1131,10 @@ class BrowserAdapter(InterfaceAdapter):
         elif msg_type == "integration_connect_oauth":
             integration_id = data.get("id", "")
             await self._handle_integration_connect_oauth(integration_id)
+
+        elif msg_type == "integration_connect_interactive":
+            integration_id = data.get("id", "")
+            await self._handle_integration_connect_interactive(integration_id)
 
         elif msg_type == "integration_disconnect":
             integration_id = data.get("id", "")
@@ -2876,7 +2881,7 @@ class BrowserAdapter(InterfaceAdapter):
                     "id": integration_id,
                 },
             })
-            # Refresh the list on success
+            # Refresh the list on success (listener is started by connect_integration_token)
             if success:
                 await self._handle_integration_list()
         except Exception as e:
@@ -2901,7 +2906,32 @@ class BrowserAdapter(InterfaceAdapter):
                     "id": integration_id,
                 },
             })
-            # Refresh the list on success
+            # Refresh the list on success (listener is started by connect_integration_oauth)
+            if success:
+                await self._handle_integration_list()
+        except Exception as e:
+            await self._broadcast({
+                "type": "integration_connect_result",
+                "data": {
+                    "success": False,
+                    "error": str(e),
+                    "id": integration_id,
+                },
+            })
+
+    async def _handle_integration_connect_interactive(self, integration_id: str) -> None:
+        """Connect an integration using interactive flow (e.g. Telegram QR login)."""
+        try:
+            success, message = await connect_integration_interactive(integration_id)
+            await self._broadcast({
+                "type": "integration_connect_result",
+                "data": {
+                    "success": success,
+                    "message": message,
+                    "id": integration_id,
+                },
+            })
+            # Refresh the list on success (listener is started by connect_integration_interactive)
             if success:
                 await self._handle_integration_list()
         except Exception as e:
@@ -2971,7 +3001,7 @@ class BrowserAdapter(InterfaceAdapter):
                 "type": "whatsapp_status_result",
                 "data": result,
             })
-            # If connected, refresh the integrations list
+            # If connected, refresh the integrations list (listener is started by check_whatsapp_session_status)
             if result.get("connected"):
                 await self._handle_integration_list()
         except Exception as e:

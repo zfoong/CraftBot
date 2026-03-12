@@ -32,12 +32,13 @@ from app.tui.skill_settings import (
     remove_skill,
 )
 
-from app.tui.integration_settings import (
+from app.external_comms.integration_settings import (
     list_integrations,
     get_integration_info,
     get_integration_accounts,
     connect_integration_token,
     connect_integration_oauth,
+    connect_integration_interactive,
     disconnect_integration,
     get_integration_auth_type,
     get_integration_fields,
@@ -131,6 +132,7 @@ __all__ = [
     "get_integration_accounts",
     "connect_integration_token",
     "connect_integration_oauth",
+    "connect_integration_interactive",
     "disconnect_integration",
     "get_integration_auth_type",
     "get_integration_fields",

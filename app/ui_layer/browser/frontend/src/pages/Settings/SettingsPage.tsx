@@ -3085,7 +3085,7 @@ interface Integration {
   id: string
   name: string
   description: string
-  auth_type: 'oauth' | 'token' | 'both' | 'interactive'
+  auth_type: 'oauth' | 'token' | 'both' | 'interactive' | 'token_with_interactive'
   connected: boolean
   accounts: IntegrationAccount[]
   fields: IntegrationField[]
@@ -3390,6 +3390,13 @@ function IntegrationsSettings() {
     send('integration_connect_oauth', { id: selectedIntegration.id })
   }
 
+  const handleConnectInteractive = () => {
+    if (!selectedIntegration) return
+    setIsConnecting(true)
+    setConnectError('')
+    send('integration_connect_interactive', { id: selectedIntegration.id })
+  }
+
   const handleDisconnect = (accountId?: string) => {
     if (!managingIntegration) return
     send('integration_disconnect', {
@@ -3649,6 +3656,63 @@ function IntegrationsSettings() {
                     disabled={isConnecting}
                   >
                     Use OAuth Instead
+                  </Button>
+                </div>
+              )}
+
+              {/* Token + Interactive QR integrations (Telegram) */}
+              {selectedIntegration.auth_type === 'token_with_interactive' && (
+                <div className={styles.connectForm}>
+                  {/* Token fields (e.g. Bot Token) */}
+                  {selectedIntegration.fields.map(field => (
+                    <div key={field.key} className={styles.formGroup}>
+                      <label className={styles.formLabel}>{field.label}</label>
+                      <input
+                        type={field.password ? 'password' : 'text'}
+                        className={styles.formInput}
+                        placeholder={field.placeholder}
+                        value={credentials[field.key] || ''}
+                        onChange={(e) => setCredentials(prev => ({
+                          ...prev,
+                          [field.key]: e.target.value
+                        }))}
+                      />
+                    </div>
+                  ))}
+                  {connectError && (
+                    <div className={styles.formError}>{connectError}</div>
+                  )}
+                  <Button
+                    variant="primary"
+                    onClick={handleConnectToken}
+                    disabled={isConnecting}
+                  >
+                    {isConnecting ? (
+                      <>
+                        <Loader2 size={16} className={styles.spinning} />
+                        Connecting...
+                      </>
+                    ) : (
+                      'Connect Bot'
+                    )}
+                  </Button>
+                  <div className={styles.connectFormDivider}>or</div>
+                  <p className={styles.connectDesc}>
+                    Connect a personal account via QR code. A QR code window will open separately on your machine.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    onClick={handleConnectInteractive}
+                    disabled={isConnecting}
+                  >
+                    {isConnecting ? (
+                      <>
+                        <Loader2 size={16} className={styles.spinning} />
+                        Waiting for QR scan...
+                      </>
+                    ) : (
+                      'Connect User Account (QR Code)'
+                    )}
                   </Button>
                 </div>
               )}
