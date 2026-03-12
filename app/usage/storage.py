@@ -47,7 +47,7 @@ class UsageEvent:
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now()
         if self.metadata is None:
             self.metadata = {}
 
@@ -134,7 +134,7 @@ class UsageStorage:
                  session_id, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                event.timestamp.isoformat() if event.timestamp else datetime.utcnow().isoformat(),
+                event.timestamp.isoformat() if event.timestamp else datetime.now().isoformat(),
                 event.service_type,
                 event.provider,
                 event.model,
@@ -166,7 +166,7 @@ class UsageStorage:
             cursor = conn.cursor()
             data = [
                 (
-                    e.timestamp.isoformat() if e.timestamp else datetime.utcnow().isoformat(),
+                    e.timestamp.isoformat() if e.timestamp else datetime.now().isoformat(),
                     e.service_type,
                     e.provider,
                     e.model,
@@ -399,7 +399,7 @@ class UsageStorage:
         Returns:
             List of dictionaries with daily statistics.
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now() - timedelta(days=days)
 
         with sqlite3.connect(self._db_path) as conn:
             cursor = conn.cursor()

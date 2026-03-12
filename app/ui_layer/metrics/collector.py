@@ -460,7 +460,8 @@ class MetricsCollector:
 
     def _get_period_bounds(self, period: TimePeriod) -> Tuple[Optional[datetime], Optional[datetime]]:
         """Calculate start/end datetime for the given period."""
-        now = datetime.utcnow()
+        # Use local time to match how tasks are stored (via datetime.fromtimestamp)
+        now = datetime.now()
         end_date = now
 
         if period == TimePeriod.HOUR_1:
@@ -525,6 +526,23 @@ class MetricsCollector:
             if current_hour != self._current_hour:
                 self._current_hour = current_hour
             self._hourly_requests[current_hour] += 1
+
+        # Persist to UsageStorage (outside lock to avoid blocking)
+        if self._usage_storage:
+            try:
+                from app.usage.storage import UsageEvent
+                usage_event = UsageEvent(
+                    service_type="llm",
+                    provider=provider,
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cached_tokens=cached_tokens,
+                )
+                self._usage_storage.insert_event(usage_event)
+            except Exception:
+                # Don't fail LLM tracking if storage fails
+                pass
 
     # ─────────────────────────────────────────────────────────────────────
     # Task Tracking

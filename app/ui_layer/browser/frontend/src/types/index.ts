@@ -92,6 +92,14 @@ export type WSMessageType =
   // Task control
   | 'task_cancel'
   | 'task_cancel_response'
+  // Onboarding
+  | 'onboarding_step'
+  | 'onboarding_step_get'
+  | 'onboarding_step_submit'
+  | 'onboarding_submit'
+  | 'onboarding_skip'
+  | 'onboarding_back'
+  | 'onboarding_complete'
 
 export interface WSMessage {
   type: WSMessageType
@@ -106,6 +114,8 @@ export interface InitialState {
   actions: ActionItem[]
   status: string
   dashboardMetrics?: DashboardMetrics
+  needsHardOnboarding?: boolean
+  agentName?: string
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -488,3 +498,47 @@ export interface TaskCancelResponse {
 // ─────────────────────────────────────────────────────────────────────
 
 export type NavTab = 'chat' | 'tasks' | 'dashboard' | 'screen' | 'workspace' | 'settings'
+
+// ─────────────────────────────────────────────────────────────────────
+// Onboarding Types
+// ─────────────────────────────────────────────────────────────────────
+
+export interface OnboardingStepOption {
+  value: string
+  label: string
+  description: string
+  default: boolean
+  icon?: string  // Lucide icon name
+  requires_setup?: boolean  // Whether this option needs API key or additional setup
+}
+
+export interface OnboardingStep {
+  name: string
+  title: string
+  description: string
+  required: boolean
+  index: number
+  total: number
+  options: OnboardingStepOption[]
+  default: string | string[] | null
+}
+
+export interface OnboardingStepResponse {
+  success: boolean
+  completed?: boolean
+  step?: OnboardingStep
+  error?: string
+}
+
+export interface OnboardingSubmitResponse {
+  success: boolean
+  nextStep?: OnboardingStep
+  error?: string
+  index?: number
+}
+
+export interface OnboardingCompleteResponse {
+  success: boolean
+  agentName?: string
+  error?: string
+}

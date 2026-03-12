@@ -1,6 +1,6 @@
 {
   "proactive": {
-    "enabled": true
+    "enabled": false
   },
   "general": {
     "agent_name": "CraftBot"

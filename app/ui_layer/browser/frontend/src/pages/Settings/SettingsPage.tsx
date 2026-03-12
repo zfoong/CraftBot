@@ -812,18 +812,32 @@ function ProactiveSettings() {
     if (!isConnected) return
 
     const cleanups = [
+      // Proactive mode handlers (master toggle uses settings.json)
+      onMessage('proactive_mode_get', (data: unknown) => {
+        const d = data as { success: boolean; enabled: boolean }
+        setIsLoadingScheduler(false)
+        if (d.success) {
+          setSchedulerEnabled(d.enabled)
+        }
+      }),
+      onMessage('proactive_mode_set', (data: unknown) => {
+        const d = data as { success: boolean; enabled: boolean }
+        if (d.success) {
+          setSchedulerEnabled(d.enabled)
+          setSaveStatus('success')
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        }
+      }),
+      // Scheduler config handlers (individual schedule toggles)
       onMessage('scheduler_config_get', (data: unknown) => {
         const d = data as { success: boolean; config?: { enabled: boolean; schedules: ScheduleConfig[] } }
-        setIsLoadingScheduler(false)
         if (d.success && d.config) {
-          setSchedulerEnabled(d.config.enabled)
           setSchedules(d.config.schedules || [])
         }
       }),
       onMessage('scheduler_config_update', (data: unknown) => {
         const d = data as { success: boolean; config?: { enabled: boolean; schedules: ScheduleConfig[] } }
         if (d.success && d.config) {
-          setSchedulerEnabled(d.config.enabled)
           setSchedules(d.config.schedules || [])
           setSaveStatus('success')
           setTimeout(() => setSaveStatus('idle'), 2000)
@@ -868,7 +882,8 @@ function ProactiveSettings() {
     ]
 
     // Load initial data
-    send('scheduler_config_get')
+    send('proactive_mode_get')  // Master toggle state from settings.json
+    send('scheduler_config_get')  // Individual schedule states
     send('proactive_tasks_get')
 
     return () => cleanups.forEach(c => c())
@@ -877,10 +892,10 @@ function ProactiveSettings() {
   // Get schedule by ID
   const getSchedule = (id: string) => schedules.find(s => s.id === id)
 
-  // Toggle scheduler globally
+  // Toggle proactive mode globally (uses settings.json, not scheduler_config)
   const handleToggleScheduler = (enabled: boolean) => {
     setSchedulerEnabled(enabled)
-    send('scheduler_config_update', { updates: { enabled } })
+    send('proactive_mode_set', { enabled })
   }
 
   // Toggle individual schedule

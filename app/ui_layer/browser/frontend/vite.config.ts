@@ -14,13 +14,14 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    port: parseInt(process.env.VITE_PORT || '7925'),
     proxy: {
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: `ws://localhost:${process.env.VITE_BACKEND_PORT || '7926'}`,
         ws: true,
       },
       '/api': {
-        target: 'http://localhost:8080',
+        target: `http://localhost:${process.env.VITE_BACKEND_PORT || '7926'}`,
       },
     },
   },

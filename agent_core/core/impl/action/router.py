@@ -973,21 +973,33 @@ class ActionRouter:
         actions = actions[:10]
 
         # Check for non-parallelizable actions by looking up each action's parallelizable attribute
-        has_non_parallel = False
+        # If found, we need to keep the non-parallelizable action (not just the first action)
+        non_parallel_action = None
+        dropped_actions = []
         for action_dict in actions:
             action_name = action_dict.get("action_name", "")
             if action_name:
                 act = self.action_library.retrieve_action(action_name)
                 if act and not getattr(act, "parallelizable", True):
-                    has_non_parallel = True
+                    non_parallel_action = action_dict
                     break
 
-        if has_non_parallel and len(actions) > 1:
+        if non_parallel_action and len(actions) > 1:
+            non_parallel_name = non_parallel_action.get('action_name')
             logger.warning(
                 f"[PARALLEL] Non-parallelizable action detected in batch of {len(actions)}. "
-                f"Using only first action: {actions[0].get('action_name')}"
+                f"Using non-parallelizable action: {non_parallel_name}"
             )
-            actions = [actions[0]]
+            # Mark other actions as dropped with error
+            for action_dict in actions:
+                if action_dict is not non_parallel_action:
+                    dropped_action = action_dict.copy()
+                    dropped_action["_error"] = (
+                        f"Action dropped: cannot run in parallel with non-parallelizable action '{non_parallel_name}'. "
+                        f"Non-parallelizable actions must run alone."
+                    )
+                    dropped_actions.append(dropped_action)
+            actions = [non_parallel_action]
 
         # Validate each action exists and is visible
         validated = []
@@ -999,7 +1011,14 @@ class ActionRouter:
             if act and _is_visible_in_mode(act, GUI_mode):
                 validated.append(action)
             else:
-                logger.warning(f"[PARALLEL] Action '{action_name}' not found or not visible, skipping")
+                # Mark as error instead of silently dropping
+                dropped_action = action.copy()
+                dropped_action["_error"] = f"Action '{action_name}' not found or not visible in current mode"
+                dropped_actions.append(dropped_action)
+                logger.warning(f"[PARALLEL] Action '{action_name}' not found or not visible, marking as error")
+
+        # Append dropped actions with error status so they get logged
+        validated.extend(dropped_actions)
 
         return validated
 

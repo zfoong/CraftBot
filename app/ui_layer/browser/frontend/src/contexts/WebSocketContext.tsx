@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
-import type { ChatMessage, ActionItem, AgentStatus, InitialState, WSMessage, DashboardMetrics, TaskCancelResponse, Attachment, FilteredDashboardMetrics, MetricsTimePeriod } from '../types'
+import type { ChatMessage, ActionItem, AgentStatus, InitialState, WSMessage, DashboardMetrics, TaskCancelResponse, Attachment, FilteredDashboardMetrics, MetricsTimePeriod, OnboardingStep, OnboardingStepResponse, OnboardingSubmitResponse, OnboardingCompleteResponse } from '../types'
 
 // Pending attachment type for upload
 interface PendingAttachment {
@@ -20,6 +20,12 @@ interface WebSocketState {
   dashboardMetrics: DashboardMetrics | null
   filteredMetricsCache: Record<MetricsTimePeriod, FilteredDashboardMetrics | null>
   cancellingTaskId: string | null
+  // Onboarding state
+  needsHardOnboarding: boolean
+  agentName: string
+  onboardingStep: OnboardingStep | null
+  onboardingError: string | null
+  onboardingLoading: boolean
 }
 
 interface WebSocketContextType extends WebSocketState {
@@ -30,6 +36,11 @@ interface WebSocketContextType extends WebSocketState {
   openFile: (path: string) => void
   openFolder: (path: string) => void
   requestFilteredMetrics: (period: MetricsTimePeriod) => void
+  // Onboarding methods
+  requestOnboardingStep: () => void
+  submitOnboardingStep: (value: string | string[]) => void
+  skipOnboardingStep: () => void
+  goBackOnboardingStep: () => void
 }
 
 const defaultState: WebSocketState = {
@@ -53,6 +64,12 @@ const defaultState: WebSocketState = {
     'total': null,
   },
   cancellingTaskId: null,
+  // Onboarding state
+  needsHardOnboarding: false,
+  agentName: 'Agent',
+  onboardingStep: null,
+  onboardingError: null,
+  onboardingLoading: false,
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined)
@@ -134,6 +151,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           guiMode: data.guiMode || false,
           currentTask: data.currentTask || null,
           dashboardMetrics: data.dashboardMetrics || null,
+          needsHardOnboarding: data.needsHardOnboarding || false,
+          agentName: data.agentName || 'Agent',
         }))
         break
       }
@@ -271,6 +290,109 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         }
         break
       }
+
+      // Onboarding message handlers
+      case 'onboarding_step': {
+        const response = msg.data as unknown as OnboardingStepResponse
+        if (response.success) {
+          if (response.completed) {
+            // Onboarding already complete
+            setState(prev => ({
+              ...prev,
+              needsHardOnboarding: false,
+              onboardingStep: null,
+              onboardingLoading: false,
+              onboardingError: null,
+            }))
+          } else if (response.step) {
+            setState(prev => ({
+              ...prev,
+              onboardingStep: response.step!,
+              onboardingLoading: false,
+              onboardingError: null,
+            }))
+          }
+        } else {
+          setState(prev => ({
+            ...prev,
+            onboardingError: response.error || 'Failed to get step',
+            onboardingLoading: false,
+          }))
+        }
+        break
+      }
+
+      case 'onboarding_submit': {
+        const response = msg.data as unknown as OnboardingSubmitResponse
+        if (response.success && response.nextStep) {
+          setState(prev => ({
+            ...prev,
+            onboardingStep: response.nextStep!,
+            onboardingLoading: false,
+            onboardingError: null,
+          }))
+        } else if (!response.success) {
+          setState(prev => ({
+            ...prev,
+            onboardingError: response.error || 'Failed to submit',
+            onboardingLoading: false,
+          }))
+        }
+        break
+      }
+
+      case 'onboarding_skip': {
+        const response = msg.data as unknown as OnboardingSubmitResponse
+        if (response.success && response.nextStep) {
+          setState(prev => ({
+            ...prev,
+            onboardingStep: response.nextStep!,
+            onboardingLoading: false,
+            onboardingError: null,
+          }))
+        } else if (!response.success) {
+          setState(prev => ({
+            ...prev,
+            onboardingError: response.error || 'Cannot skip this step',
+            onboardingLoading: false,
+          }))
+        }
+        break
+      }
+
+      case 'onboarding_back': {
+        const response = msg.data as unknown as { success: boolean; step?: OnboardingStep; error?: string }
+        if (response.success && response.step) {
+          setState(prev => ({
+            ...prev,
+            onboardingStep: response.step!,
+            onboardingLoading: false,
+            onboardingError: null,
+          }))
+        } else if (!response.success) {
+          setState(prev => ({
+            ...prev,
+            onboardingError: response.error || 'Cannot go back',
+            onboardingLoading: false,
+          }))
+        }
+        break
+      }
+
+      case 'onboarding_complete': {
+        const response = msg.data as unknown as OnboardingCompleteResponse
+        if (response.success) {
+          setState(prev => ({
+            ...prev,
+            needsHardOnboarding: false,
+            onboardingStep: null,
+            onboardingLoading: false,
+            onboardingError: null,
+            agentName: response.agentName || 'Agent',
+          }))
+        }
+        break
+      }
     }
   }, [])
 
@@ -338,6 +460,35 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Onboarding methods
+  const requestOnboardingStep = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      setState(prev => ({ ...prev, onboardingLoading: true, onboardingError: null }))
+      wsRef.current.send(JSON.stringify({ type: 'onboarding_step_get' }))
+    }
+  }, [])
+
+  const submitOnboardingStep = useCallback((value: string | string[]) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      setState(prev => ({ ...prev, onboardingLoading: true, onboardingError: null }))
+      wsRef.current.send(JSON.stringify({ type: 'onboarding_step_submit', value }))
+    }
+  }, [])
+
+  const skipOnboardingStep = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      setState(prev => ({ ...prev, onboardingLoading: true, onboardingError: null }))
+      wsRef.current.send(JSON.stringify({ type: 'onboarding_skip' }))
+    }
+  }, [])
+
+  const goBackOnboardingStep = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      setState(prev => ({ ...prev, onboardingLoading: true, onboardingError: null }))
+      wsRef.current.send(JSON.stringify({ type: 'onboarding_back' }))
+    }
+  }, [])
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -349,6 +500,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         openFile,
         openFolder,
         requestFilteredMetrics,
+        requestOnboardingStep,
+        submitOnboardingStep,
+        skipOnboardingStep,
+        goBackOnboardingStep,
       }}
     >
       {children}

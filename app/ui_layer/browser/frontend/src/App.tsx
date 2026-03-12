@@ -7,8 +7,17 @@ import { DashboardPage } from './pages/Dashboard'
 import { ScreenPage } from './pages/Screen'
 import { WorkspacePage } from './pages/Workspace'
 import { SettingsPage } from './pages/Settings'
+import { OnboardingPage } from './pages/Onboarding'
+import { useWebSocket } from './contexts/WebSocketContext'
 
 function App() {
+  const { needsHardOnboarding } = useWebSocket()
+
+  // Show onboarding page if hard onboarding is needed
+  if (needsHardOnboarding) {
+    return <OnboardingPage />
+  }
+
   return (
     <Layout>
       <Routes>

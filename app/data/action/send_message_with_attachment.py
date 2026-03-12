@@ -5,7 +5,7 @@ from agent_core import action
         description="Send a message to the user with one or more file attachments. Use this when you need to share files (documents, images, reports, etc.) with the user. All files must exist at the specified paths.",
         default=True,
         action_sets=["core"],
-        parallelizable=False,
+        parallelizable=True,
         input_schema={
                 "message": {
                         "type": "string",

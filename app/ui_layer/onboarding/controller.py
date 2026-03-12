@@ -244,6 +244,8 @@ class OnboardingFlowController:
         provider = self._state.collected_data.get("provider", "openai")
         api_key = self._state.collected_data.get("api_key", "")
         agent_name = self._state.collected_data.get("agent_name", "Agent")
+        selected_mcp_servers = self._state.collected_data.get("mcp", [])
+        selected_skills = self._state.collected_data.get("skills", [])
 
         # Save provider configuration
         if provider and api_key:
@@ -252,6 +254,18 @@ class OnboardingFlowController:
         # Update controller state if available
         if self._controller:
             self._controller.state_store.dispatch("SET_PROVIDER", provider)
+
+        # Apply MCP server selections
+        if selected_mcp_servers:
+            from app.tui.mcp_settings import enable_mcp_server
+            for server_name in selected_mcp_servers:
+                enable_mcp_server(server_name)
+
+        # Apply skill selections
+        if selected_skills:
+            from app.tui.skill_settings import enable_skill
+            for skill_name in selected_skills:
+                enable_skill(skill_name)
 
         # Mark hard onboarding complete
         onboarding_manager.mark_hard_complete(agent_name=agent_name)

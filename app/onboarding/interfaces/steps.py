@@ -20,6 +20,8 @@ class StepOption:
     label: str          # Display label (e.g., "OpenAI")
     description: str = ""  # Optional description
     default: bool = False  # Whether this is the default selection
+    icon: str = ""  # Lucide icon name (e.g., "Folder", "Search")
+    requires_setup: bool = False  # Whether this option requires additional setup (API key, etc.)
 
 
 @dataclass
@@ -195,24 +197,50 @@ class MCPStep:
     """MCP server selection step."""
 
     name = "mcp"
-    title = "MCP Servers"
-    description = "Select which MCP servers to enable (optional)"
+    title = "Recommended MCP Servers"
+    description = "MCP servers are your agent's toolbox. Each one adds extra tools that let your agent work with apps like Gmail, Slack, or Notion on your behalf.\nItems marked 'Setup required' need API keys - configure them in Settings after onboarding."
     required = False
 
+    # Top 10 recommended MCP servers for onboarding (most popular/useful)
+    # Names must match exactly with names in mcp_config.json
+    # Format: {name: (icon, requires_setup)}
+    RECOMMENDED_SERVERS = {
+        "filesystem": ("Folder", False),           # Local file access - works out of the box
+        "brave-search": ("Search", True),          # Web search - needs BRAVE_API_KEY
+        "github": ("Github", True),                # Git/GitHub - needs GITHUB_PERSONAL_ACCESS_TOKEN
+        "playwright-mcp": ("Globe", False),        # Browser automation - works out of the box
+        "notion-mcp": ("FileText", True),          # Note-taking - needs NOTION_API_KEY
+        "slack-mcp": ("MessageSquare", True),      # Team communication - needs Slack OAuth
+        "gmail-mcp": ("Mail", True),               # Email - needs Google OAuth
+        "google-calendar-mcp": ("Calendar", True), # Calendar - needs Google OAuth
+        "todoist-mcp": ("CheckSquare", True),      # Task management - needs TODOIST_API_KEY
+        "obsidian-mcp": ("Gem", True),             # Knowledge management - needs Obsidian plugin
+    }
+
     def get_options(self) -> List[StepOption]:
-        """Get configured MCP servers."""
+        """Get top 10 recommended MCP servers for onboarding."""
         try:
             from app.tui.mcp_settings import list_mcp_servers
             servers = list_mcp_servers()
-            return [
-                StepOption(
-                    value=server["name"],
-                    label=server["name"].replace("-", " ").title(),
-                    description=server.get("description", f"MCP server: {server['name']}"),
-                    default=server.get("enabled", False)
-                )
-                for server in servers
-            ]
+
+            # Create a lookup by name
+            server_lookup = {s["name"]: s for s in servers}
+
+            # Return only recommended servers that exist in config
+            options = []
+            for name, (icon, requires_setup) in self.RECOMMENDED_SERVERS.items():
+                if name in server_lookup:
+                    server = server_lookup[name]
+                    label = server["name"].replace("-", " ").replace(" mcp", "").title()
+                    options.append(StepOption(
+                        value=server["name"],
+                        label=label,
+                        description=server.get("description", f"MCP server: {server['name']}"),
+                        default=server.get("enabled", False),
+                        icon=icon,
+                        requires_setup=requires_setup
+                    ))
+            return options
         except ImportError:
             return []
 
@@ -230,25 +258,50 @@ class SkillsStep:
     """Skills selection step."""
 
     name = "skills"
-    title = "Skills"
-    description = "Select which skills to enable (optional)"
+    title = "Recommended Skills"
+    description = "Skills teach your agent how to do specific tasks step-by-step. When you ask for help, your agent loads the right skill and follows its instructions to complete the task properly.\nItems marked 'Setup required' need their corresponding MCP server configured first."
     required = False
 
+    # Top 10 recommended skills for onboarding (most popular/useful)
+    # Format: {name: icon}
+    RECOMMENDED_SKILLS = {
+        "research-assistant": "FlaskConical",
+        "writing-assistant": "Pencil",
+        "task-planner": "ClipboardList",
+        "brave-search": "Search",
+        "gmail": "Mail",
+        "google-drive": "Cloud",
+        "notion": "FileText",
+        "obsidian": "Gem",
+        "github": "Github",
+        "google-sheets": "Sheet",
+    }
+
     def get_options(self) -> List[StepOption]:
-        """Get available skills from skill manager."""
+        """Get top 10 recommended skills for onboarding."""
         try:
             from app.tui.skill_settings import list_skills
             skills = list_skills()
-            return [
-                StepOption(
-                    value=skill["name"],
-                    label=skill["name"].replace("-", " ").title(),
-                    description=skill.get("description", ""),
-                    default=skill.get("enabled", False)
-                )
-                for skill in skills
-                if skill.get("user_invocable", True)  # Only show user-invocable skills
-            ]
+
+            # Create a lookup by name (only user-invocable skills)
+            skill_lookup = {
+                s["name"]: s for s in skills
+                if s.get("user_invocable", True)
+            }
+
+            # Return only recommended skills that exist
+            options = []
+            for name, icon in self.RECOMMENDED_SKILLS.items():
+                if name in skill_lookup:
+                    skill = skill_lookup[name]
+                    options.append(StepOption(
+                        value=skill["name"],
+                        label=skill['name'].replace('-', ' ').title(),
+                        description=skill.get("description", ""),
+                        default=skill.get("enabled", False),
+                        icon=icon
+                    ))
+            return options
         except ImportError:
             return []
 

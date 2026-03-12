@@ -9,11 +9,13 @@ Usage:
     python run.py --gui       # Run with GUI mode enabled (AI can control VM)
 
 Options:
-    --gui           Enable GUI mode (optional, requires: python install.py --gui)
-    --tui           Use TUI (terminal UI) interface instead of browser
-    --cli           Use CLI (command line) interface
-    --conda         Use conda environment (overrides config setting)
-    --no-conda      Don't use conda (overrides config setting)
+    --gui                     Enable GUI mode (optional, requires: python install.py --gui)
+    --tui                     Use TUI (terminal UI) interface instead of browser
+    --cli                     Use CLI (command line) interface
+    --conda                   Use conda environment (overrides config setting)
+    --no-conda                Don't use conda (overrides config setting)
+    --frontend-port PORT      Set frontend port (default: 7925)
+    --backend-port PORT       Set backend port (default: 7926)
 
 Note: The installation method (conda/pip) is saved from install.py and reused here.
 """
@@ -49,6 +51,33 @@ OMNIPARSER_SERVER_URL = os.getenv("OMNIPARSER_BASE_URL", "http://localhost:7861"
 # ==========================================
 # HELPER FUNCTIONS
 # ==========================================
+def parse_port_arg(args: list, flag: str, default: int) -> int:
+    """Parse a port argument from command line args.
+
+    Args:
+        args: List of command line arguments
+        flag: The flag to look for (e.g., '--frontend-port')
+        default: Default port value if flag not found
+
+    Returns:
+        The port number (either from args or default)
+    """
+    for i, arg in enumerate(args):
+        if arg == flag and i + 1 < len(args):
+            try:
+                return int(args[i + 1])
+            except ValueError:
+                print(f"Warning: Invalid port value for {flag}, using default {default}")
+                return default
+        elif arg.startswith(f"{flag}="):
+            try:
+                return int(arg.split("=", 1)[1])
+            except ValueError:
+                print(f"Warning: Invalid port value for {flag}, using default {default}")
+                return default
+    return default
+
+
 def _wrap_windows_bat(cmd_list: list[str]) -> list[str]:
     if sys.platform != "win32":
         return cmd_list
@@ -149,7 +178,7 @@ def wait_for_server(url: str, timeout: int = 180) -> bool:
 # BROWSER FRONTEND
 # ==========================================
 FRONTEND_DIR = os.path.join(BASE_DIR, "app", "ui_layer", "browser", "frontend")
-FRONTEND_PORT = 5173
+FRONTEND_PORT = 7925
 FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}"
 
 # Global list to track background processes for cleanup
@@ -249,7 +278,7 @@ def open_browser(url: str):
         print(f"Could not open browser automatically: {e}")
         print(f"Please open {url} manually in your browser.")
 
-BACKEND_PORT = 8080
+BACKEND_PORT = 7926
 BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
 
 # ==========================================
@@ -351,7 +380,21 @@ def launch_agent_background(env_name: Optional[str], use_conda: bool, silent: bo
 
     # Filter flags (--browser passes through to agent)
     skip_flags = {"--gui", "--conda", "--no-conda", "--tui"}
-    pass_args = [a for a in sys.argv[1:] if a not in skip_flags]
+    # Also skip port flags and their values
+    pass_args = []
+    skip_next = False
+    for a in sys.argv[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if a in skip_flags:
+            continue
+        if a in ("--frontend-port", "--backend-port"):
+            skip_next = True
+            continue
+        if a.startswith("--frontend-port=") or a.startswith("--backend-port="):
+            continue
+        pass_args.append(a)
 
     # Ensure --browser is in args (for default mode when no flags given)
     if "--browser" not in pass_args:
@@ -509,7 +552,21 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
 
     # Filter flags (--cli and --tui pass through to agent)
     skip_flags = {"--gui", "--conda", "--no-conda", "--browser"}
-    pass_args = [a for a in sys.argv[1:] if a not in skip_flags]
+    # Also skip port flags and their values
+    pass_args = []
+    skip_next = False
+    for a in sys.argv[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if a in skip_flags:
+            continue
+        if a in ("--frontend-port", "--backend-port"):
+            skip_next = True
+            continue
+        if a.startswith("--frontend-port=") or a.startswith("--backend-port="):
+            continue
+        pass_args.append(a)
 
     print(f"Starting CraftBot...\n")
 
@@ -537,7 +594,8 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
 # MAIN
 # ==========================================
 if __name__ == "__main__":
-    args = set(sys.argv[1:])
+    args_list = sys.argv[1:]
+    args = set(args_list)
 
     # Parse flags
     gui_mode = "--gui" in args
@@ -545,6 +603,12 @@ if __name__ == "__main__":
     cli_mode = "--cli" in args
     conda_flag = "--conda" in args
     no_conda_flag = "--no-conda" in args
+
+    # Parse port arguments (override defaults)
+    FRONTEND_PORT = parse_port_arg(args_list, "--frontend-port", FRONTEND_PORT)
+    BACKEND_PORT = parse_port_arg(args_list, "--backend-port", BACKEND_PORT)
+    FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}"
+    BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
 
     # Browser mode is default (unless --tui or --cli specified)
     browser_mode = not tui_mode and not cli_mode
@@ -565,6 +629,10 @@ if __name__ == "__main__":
     os.environ["USE_CONDA"] = str(use_conda)
     os.environ["GUI_MODE_ENABLED"] = str(gui_mode)
     os.environ["USE_OMNIPARSER"] = str(gui_mode and gui_installed)
+    # Set port environment variables for frontend (Vite) and backend
+    os.environ["VITE_PORT"] = str(FRONTEND_PORT)
+    os.environ["VITE_BACKEND_PORT"] = str(BACKEND_PORT)
+    os.environ["BROWSER_PORT"] = str(BACKEND_PORT)
 
     # Determine mode string for display (only print for non-browser modes)
     if not browser_mode:

@@ -994,6 +994,20 @@ class AgentBase:
             action_name = decision.get("action_name")
             action_params = decision.get("parameters", {})
 
+            # Check if action was marked as error (e.g., dropped due to parallel constraints)
+            if "_error" in decision:
+                error_msg = decision.get("_error")
+                logger.warning(f"Action '{action_name}' has error: {error_msg}")
+                # Log to event stream so agent sees the error
+                if self.event_stream_manager:
+                    self.event_stream_manager.log(
+                        event_type="action_error",
+                        event=f"Action {action_name} failed: {error_msg}",
+                        display_message=f"{action_name} → failed",
+                        action_name=action_name,
+                    )
+                continue
+
             if not action_name:
                 continue
 
