@@ -176,6 +176,53 @@ def cleanup_background_processes():
 # Register cleanup on exit
 atexit.register(cleanup_background_processes)
 
+def _try_install_nodejs_linux(silent: bool = False) -> bool:
+    """
+    Attempt to auto-install Node.js on Linux systems (including Kali).
+    Returns True if successful, False otherwise.
+    """
+    if sys.platform == "win32":
+        return False
+    
+    # Check if node is already installed
+    if shutil.which("node") and shutil.which("npm"):
+        return True
+    
+    if not silent:
+        print("\n🔧 Attempting to install Node.js...")
+    
+    # Detect package manager and install
+    package_managers = {
+        "apt-get": ["sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install", "-y", "nodejs", "npm"],
+        "apt": ["sudo", "apt", "update", "&&", "sudo", "apt", "install", "-y", "nodejs", "npm"],
+        "dnf": ["sudo", "dnf", "install", "-y", "nodejs", "npm"],
+        "yum": ["sudo", "yum", "install", "-y", "nodejs", "npm"],
+        "pacman": ["sudo", "pacman", "-Sy", "nodejs", "npm"],
+        "zypper": ["sudo", "zypper", "install", "-y", "nodejs", "npm"],
+    }
+    
+    for pm, cmd in package_managers.items():
+        if shutil.which(pm.split()[0]):
+            if not silent:
+                print(f"   Found {pm}, installing Node.js...")
+            try:
+                full_cmd = " ".join(cmd)
+                result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=300)
+                if result.returncode == 0:
+                    if not silent:
+                        print("✓ Node.js installed successfully")
+                    # Small delay to ensure PATH is updated
+                    time.sleep(1)
+                    return True
+                else:
+                    if not silent:
+                        print(f"   ⚠ {pm} installation failed, trying next...")
+            except Exception as e:
+                if not silent:
+                    print(f"   ⚠ Error with {pm}: {e}, trying next...")
+    
+    return False
+
 def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
     """Launch the frontend dev server for browser mode."""
     if not os.path.exists(FRONTEND_DIR):
@@ -198,14 +245,22 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
     # Find npm command
     npm_cmd = shutil.which("npm")
     if not npm_cmd:
-        if not silent:
-            print("Error: npm not found in PATH")
-            print("\nNode.js is required for browser mode.")
-            print("Install from: https://nodejs.org/ (choose LTS version)")
-            print("\nAfter installation:")
-            print("  1. Restart your terminal")
-            print("  2. Run: python run.py")
-        return None
+        # Try to auto-install Node.js on Linux
+        if sys.platform != "win32":
+            if not silent:
+                print("Node.js not found. Attempting auto-install on Linux...")
+            if _try_install_nodejs_linux(silent=silent):
+                npm_cmd = shutil.which("npm")
+        
+        if not npm_cmd:
+            if not silent:
+                print("Error: npm not found in PATH")
+                print("\nNode.js is required for browser mode.")
+                print("Install from: https://nodejs.org/ (choose LTS version)")
+                print("\nAfter installation:")
+                print("  1. Restart your terminal")
+                print("  2. Run: python run.py")
+            return None
 
     # Build command for npm run dev
     if sys.platform == "win32":
@@ -230,30 +285,6 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
             print("Error: npm command not found")
             print("Install Node.js from: https://nodejs.org/")
         return None
-    except Exception as e:
-        if not silent:
-            print(f"Error starting frontend: {e}")
-        return None
-        return None
-
-    # Build command for npm run dev
-    if sys.platform == "win32":
-        # On Windows, use cmd.exe to run npm
-        cmd = ["cmd.exe", "/c", "npm", "run", "dev"]
-    else:
-        cmd = [npm_cmd, "run", "dev"]
-
-    try:
-        # Start frontend in background
-        process = subprocess.Popen(
-            cmd,
-            cwd=FRONTEND_DIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=os.environ.copy(),
-        )
-        _background_processes.append(process)
-        return process
     except Exception as e:
         if not silent:
             print(f"Error starting frontend: {e}")

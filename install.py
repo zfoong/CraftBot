@@ -558,6 +558,72 @@ def verify_conda_env(env_name: str) -> bool:
     except Exception as e:
         return False
 
+def install_nodejs_linux():
+    """
+    Automatically install Node.js on Linux systems (including Kali).
+    Detects the package manager (apt, pacman, yum) and installs accordingly.
+    """
+    if sys.platform == "win32":
+        return True  # Windows users should install Node.js manually from nodejs.org
+    
+    # Check if node is already installed
+    if shutil.which("node") and shutil.which("npm"):
+        print("✓ Node.js and npm are already installed")
+        return True
+    
+    print("\n🔧 Installing Node.js...")
+    
+    # Detect package manager
+    package_managers = {
+        "apt-get": ["sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install", "-y", "nodejs", "npm"],
+        "apt": ["sudo", "apt", "update", "&&", "sudo", "apt", "install", "-y", "nodejs", "npm"],
+        "dnf": ["sudo", "dnf", "install", "-y", "nodejs", "npm"],
+        "yum": ["sudo", "yum", "install", "-y", "nodejs", "npm"],
+        "pacman": ["sudo", "pacman", "-Sy", "nodejs", "npm"],
+        "zypper": ["sudo", "zypper", "install", "-y", "nodejs", "npm"],
+    }
+    
+    installed = False
+    for pm, cmd in package_managers.items():
+        if shutil.which(pm.split()[0]):
+            print(f"   Found {pm}, installing Node.js...")
+            try:
+                # For complex commands with &&, we need to use shell=True
+                full_cmd = " ".join(cmd)
+                result = subprocess.run(full_cmd, shell=True, capture=True, text=True, timeout=300)
+                if result.returncode == 0:
+                    print("✓ Node.js installed successfully")
+                    installed = True
+                    break
+                else:
+                    print(f"   ⚠ {pm} installation failed, trying next...")
+            except Exception as e:
+                print(f"   ⚠ Error with {pm}: {e}, trying next...")
+    
+    if not installed:
+        print("\n⚠ Could not automatically install Node.js")
+        print("\nManual installation options:")
+        print("  1. Install using NodeSource (Debian/Ubuntu/Kali):")
+        print("     curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -")
+        print("     sudo apt-get install -y nodejs")
+        print("\n  2. Install from official website: https://nodejs.org/ (LTS version)")
+        print("\n  3. After installation, restart your terminal and run:")
+        print("     python install.py")
+        return False
+    
+    # Verify installation
+    time.sleep(1)  # Give system time to register
+    if shutil.which("node") and shutil.which("npm"):
+        node_version = subprocess.run([shutil.which("node"), "--version"], capture=True, text=True)
+        npm_version = subprocess.run([shutil.which("npm"), "--version"], capture=True, text=True)
+        print(f"   Node.js {node_version.stdout.strip()}")
+        print(f"   npm {npm_version.stdout.strip()}")
+        return True
+    else:
+        print("⚠ Node.js verification failed - it may not be in PATH")
+        print("  Please restart your terminal and verify: node --version")
+        return False
+
 def install_playwright_browser():
     """Install Playwright Chromium browser for WhatsApp Web support."""
     print("\nInstalling Playwright Chromium browser...")
@@ -592,8 +658,27 @@ def install_browser_frontend():
         print("   Browser interface will not work")
         return False
 
-    # Check if npm is available
+    # Try to install Node.js on Linux if not already installed
     npm_cmd = shutil.which("npm")
+    if not npm_cmd and sys.platform != "win32":
+        print("\n🔧 Node.js not detected. Attempting automatic installation...")
+        if not install_nodejs_linux():
+            # If auto-install failed, show manual instructions
+            print("\n⚠ Warning: npm not found in PATH")
+            print("   Browser interface requires Node.js and npm.")
+            print("\n   📥 Install Node.js from: https://nodejs.org/")
+            print("      (Choose LTS version)")
+            print("\n   After installation:")
+            print("   1. Restart your terminal")
+            print("   2. Run: python install.py")
+            print("\n   Or manually install frontend:")
+            print("      cd app/ui_layer/browser/frontend")
+            print("      npm install")
+            return False
+        # Refresh npm_cmd after installation
+        npm_cmd = shutil.which("npm")
+    
+    # Final check for npm
     if not npm_cmd:
         print("\n⚠ Warning: npm not found in PATH")
         print("   Browser interface requires Node.js and npm.")
