@@ -192,14 +192,134 @@ def _wrap_windows_bat(cmd_list: list[str]) -> list[str]:
         return ["cmd.exe", "/d", "/c", exe] + cmd_list[1:]
     return cmd_list
 
+# ==========================================
+# DISK SPACE CHECKING (for Kali & other systems)
+# ==========================================
+def get_disk_space(path: str = ".") -> Tuple[float, float, float]:
+    """
+    Get disk space info for a path (total, used, free in GB).
+    Returns: (total_gb, used_gb, free_gb)
+    Silent failure - returns (0, 0, 0) if unable to check
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            free_bytes = ctypes.c_ulonglong(0)
+            ctypes.windll.kernel32.GetDiskFreeSpaceEx(ctypes.c_wchar_p(path), None, None, ctypes.pointer(free_bytes))
+            free_gb = free_bytes.value / (1024 ** 3)
+            # For Windows, we'll estimate total as free + a reasonable amount
+            total_gb = free_gb + 50  # Estimate
+            used_gb = 0
+        else:
+            # Unix/Linux/Mac
+            st = os.statvfs(path)
+            free_gb = (st.f_bavail * st.f_frsize) / (1024 ** 3)
+            total_gb = (st.f_blocks * st.f_frsize) / (1024 ** 3)
+            used_gb = ((st.f_blocks - st.f_bfree) * st.f_frsize) / (1024 ** 3)
+        
+        return total_gb, used_gb, free_gb
+    except Exception:
+        # Silently fail - disk space check is not critical
+        return 0, 0, 0
+
+def check_disk_space_for_installation(min_free_gb: float = 5.0) -> bool:
+    """
+    Check if there's enough disk space for installation.
+    Returns True if OK, False if insufficient space.
+    """
+    home_free_gb = get_disk_space(os.path.expanduser("~"))[2]
+    home_total_gb = get_disk_space(os.path.expanduser("~"))[0]
+    home_used_gb = get_disk_space(os.path.expanduser("~"))[1]
+    
+    if home_total_gb == 0:  # Couldn't get info
+        return True  # Assume it's okay
+    
+    percent_used = (home_used_gb / home_total_gb * 100) if home_total_gb > 0 else 0
+    
+    print("\n" + "="*60)
+    print(" 📊 Disk Space Check")
+    print("="*60)
+    print(f"Home directory: {os.path.expanduser('~')}")
+    print(f"Total space:   {home_total_gb:.1f} GB")
+    print(f"Used space:    {home_used_gb:.1f} GB ({percent_used:.1f}%)")
+    print(f"Free space:    {home_free_gb:.1f} GB")
+    
+    if home_free_gb < min_free_gb:
+        print(f"\n⚠️  WARNING: Low disk space ({home_free_gb:.1f} GB free, need {min_free_gb:.1f} GB)")
+        print("\nRecommended fixes:")
+        print("\n1. Clean up pip cache:")
+        print("   pip cache purge")
+        print("\n2. Clean up npm cache (if Node.js installed):")
+        print("   npm cache clean --force")
+        print("\n3. Remove old files/packages:")
+        print(f"   rm -rf ~/.cache/*  # On Linux/Mac")
+        print(f"   rmdir /s %LocalAppData%\\pip  # On Windows")
+        print("\n4. Use a different disk with more space:")
+        mkdir_path = "/mnt/large-disk/pip-tmp" if sys.platform != "win32" else "D:/pip-tmp"
+        print(f"   mkdir -p {mkdir_path}")
+        print(f"   TMPDIR={mkdir_path} python install.py")
+        print(f"\n5. Or continue anyway (may fail): ", end="")
+        
+        choice = input("Continue? (y/n): ").strip().lower()
+        if choice != 'y':
+            print("Installation cancelled. Please free up disk space and try again.")
+            return False
+        else:
+            print("\nAttempting installation anyway...\n")
+    
+    print("="*60 + "\n")
+    return True
+
+def suggest_cleanup_steps():
+    """Show cleanup steps if disk is full."""
+    print("\n" + "="*60)
+    print(" 🧹 Disk Space Cleanup Guide (for Kali & other systems)")
+    print("="*60)
+    print("\nTo free up disk space:\n")
+    
+    print("1. Clear pip cache (usually 1-5 GB):")
+    print("   pip cache purge\n")
+    
+    print("2. Clear npm cache (if Node.js installed):")
+    print("   npm cache clean --force\n")
+    
+    print("3. Clear system caches (Linux/Mac):")
+    print("   sudo apt-get clean      # Apt packages")
+    print("   sudo pacman -Sc         # Pacman packages")
+    print("   rm -rf ~/.cache/*       # User cache\n")
+    
+    print("4. Remove temporary files:")
+    print("   rm -rf /tmp/*           # System temp (Linux/Mac)")
+    print("   rmdir /s /q %temp%      # Windows temp\n")
+    
+    print("5. Check what's using space:")
+    print("   du -sh ~/*              # Home directory breakdown (Linux/Mac)")
+    print("   dir /-s C:\\             # Windows directory sizes\n")
+    
+    print("6. Use alternate location with more space:")
+    print("   mkdir -p /mnt/external-drive/pip-tmp")
+    print("   TMPDIR=/mnt/external-drive/pip-tmp python install.py\n")
+    
+    print("="*60 + "\n")
+
 def load_config() -> Dict[str, Any]:
-    if not os.path.exists(CONFIG_FILE):
-        return {}
+    """
+    Load configuration from file safely.
+    
+    SECURITY FIX: Use try-except instead of check-then-use to prevent TOCTOU race conditions.
+    This ensures atomic read operation.
+    """
     try:
         with open(CONFIG_FILE, 'r') as f:
             return json.load(f)
+    except FileNotFoundError:
+        # File doesn't exist - return empty config
+        return {}
     except json.JSONDecodeError:
         print(f"Warning: {CONFIG_FILE} is corrupted. Starting with empty config.")
+        return {}
+    except IOError as e:
+        print(f"Warning: Cannot read config: {e}")
         return {}
 
 def save_config_value(key: str, value: Any) -> None:
@@ -438,46 +558,180 @@ def verify_conda_env(env_name: str) -> bool:
     except Exception as e:
         return False
 
-def install_playwright_browser(use_conda: bool = False):
+def install_nodejs_linux():
+    """
+    Automatically install Node.js on Linux systems (including Kali).
+    Detects the package manager (apt, pacman, yum) and installs accordingly.
+    """
+    if sys.platform == "win32":
+        return True  # Windows users should install Node.js manually from nodejs.org
+    
+    # Check if node is already installed
+    if shutil.which("node") and shutil.which("npm"):
+        print("✓ Node.js and npm are already installed")
+        return True
+    
+    print("\n🔧 Installing Node.js...")
+    
+    # Detect package manager and prepare install commands
+    # Format: (package_manager, update_cmd, install_cmd)
+    package_managers = [
+        ("apt-get", ["sudo", "apt-get", "update"], ["sudo", "apt-get", "install", "-y", "nodejs", "npm"]),
+        ("apt", ["sudo", "apt", "update"], ["sudo", "apt", "install", "-y", "nodejs", "npm"]),
+        ("dnf", None, ["sudo", "dnf", "install", "-y", "nodejs", "npm"]),
+        ("yum", None, ["sudo", "yum", "install", "-y", "nodejs", "npm"]),
+        ("pacman", None, ["sudo", "pacman", "-Sy", "nodejs", "npm"]),
+        ("zypper", None, ["sudo", "zypper", "install", "-y", "nodejs", "npm"]),
+    ]
+    
+    installed = False
+    for pm_name, update_cmd, install_cmd in package_managers:
+        if shutil.which(pm_name.split()[0]):
+            print(f"   Found {pm_name}, installing Node.js...")
+            try:
+                # Run update command if available
+                if update_cmd:
+                    update_result = run_command(update_cmd, check=False, capture=True, quiet=True, show_error=False)
+                    if update_result and hasattr(update_result, 'returncode') and update_result.returncode != 0:
+                        print(f"   ⚠ Package manager update failed, continuing anyway...")
+                
+                # Run install command
+                install_result = run_command(install_cmd, check=False, capture=True, quiet=True, show_error=False)
+                
+                if install_result and hasattr(install_result, 'returncode') and install_result.returncode == 0:
+                    print("✓ Node.js installed successfully")
+                    installed = True
+                    break
+                else:
+                    print(f"   ⚠ {pm_name} installation failed, trying next...")
+            except Exception as e:
+                print(f"   ⚠ Error with {pm_name}: {str(e)[:100]}, trying next...")
+    
+    if not installed:
+        print("\n⚠ Could not automatically install Node.js")
+        print("\nOptions:")
+        print("  1. Enter sudo password when prompted")
+        print("  2. Manual installation via NodeSource (Debian/Ubuntu/Kali):")
+        print("     curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -")
+        print("     sudo apt-get install -y nodejs")
+        print("\n  3. Install from official website: https://nodejs.org/ (LTS version)")
+        print("\n  4. After installation, run: python install.py")
+        return False
+    
+    # Verify installation (with small delay)
+    time.sleep(1)
+    if shutil.which("node") and shutil.which("npm"):
+        try:
+            node_version = run_command([shutil.which("node"), "--version"], capture=True, quiet=True, show_error=False)
+            npm_version = run_command([shutil.which("npm"), "--version"], capture=True, quiet=True, show_error=False)
+            if node_version and hasattr(node_version, 'stdout'):
+                print(f"   Node.js {node_version.stdout.strip()}")
+            if npm_version and hasattr(npm_version, 'stdout'):
+                print(f"   npm {npm_version.stdout.strip()}")
+        except:
+            pass
+        return True
+    else:
+        print("⚠ Node.js verification failed - it may not be in PATH")
+        print("  Please restart your terminal and verify: node --version")
+        return False
+
+def install_playwright_browser():
     """Install Playwright Chromium browser for WhatsApp Web support."""
     print("\nInstalling Playwright Chromium browser...")
     try:
-        if use_conda:
-            conda_cmd = get_conda_command()
-            env_name = get_env_name_from_yml()
-            run_command([conda_cmd, "run", "-n", env_name, "python", "-m", "playwright", "install", "chromium"])
+        result = run_command([sys.executable, "-m", "playwright", "install", "chromium"], check=False, capture=True, show_error=False)
+        if result and hasattr(result, 'returncode') and result.returncode == 0:
+            print("✓ Playwright Chromium installed")
+            return True
         else:
-            run_command([sys.executable, "-m", "playwright", "install", "chromium"])
-        print("Playwright Chromium installed.")
+            # Playwright installation failed, but this is not critical for browser mode
+            print("⚠ Warning: Playwright browser installation failed")
+            if result and hasattr(result, 'stderr') and result.stderr:
+                # Only show first 300 chars of error
+                error_msg = result.stderr[:300].strip()
+                if error_msg:
+                    print(f"  Error details: {error_msg}")
+            print("  WhatsApp Web integration may not work")
+            print("  You can manually install later with: playwright install chromium")
+            return False
     except Exception as e:
-        print(f"Warning: Failed to install Playwright browser: {e}")
-        print("WhatsApp Web integration will not work until you run: playwright install chromium")
+        print(f"⚠ Warning: Failed to install Playwright browser: {e}")
+        print("  WhatsApp Web integration may not work")
+        print("  You can manually install later with: playwright install chromium")
+        return False
 
 def install_browser_frontend():
     """Install npm dependencies for the browser frontend."""
     frontend_dir = os.path.join(BASE_DIR, "app", "ui_layer", "browser", "frontend")
 
     if not os.path.exists(frontend_dir):
-        print(f"Warning: Browser frontend directory not found at {frontend_dir}")
+        print(f"\n⚠ Warning: Browser frontend directory not found at {frontend_dir}")
+        print("   Browser interface will not work")
         return False
 
-    # Check if npm is available
+    # Try to install Node.js on Linux if not already installed
     npm_cmd = shutil.which("npm")
+    if not npm_cmd and sys.platform != "win32":
+        print("\n🔧 Node.js not detected. Attempting automatic installation...")
+        if not install_nodejs_linux():
+            # If auto-install failed, show manual instructions
+            print("\n⚠ Warning: npm not found in PATH")
+            print("   Browser interface requires Node.js and npm.")
+            print("\n   📥 Install Node.js from: https://nodejs.org/")
+            print("      (Choose LTS version)")
+            print("\n   After installation:")
+            print("   1. Restart your terminal")
+            print("   2. Run: python install.py")
+            print("\n   Or manually install frontend:")
+            print("      cd app/ui_layer/browser/frontend")
+            print("      npm install")
+            return False
+        # Refresh npm_cmd after installation
+        npm_cmd = shutil.which("npm")
+    
+    # Final check for npm
     if not npm_cmd:
         print("\n⚠ Warning: npm not found in PATH")
         print("   Browser interface requires Node.js and npm.")
-        print("   Install from: https://nodejs.org/")
-        print("   Then run: npm install (in app/ui_layer/browser/frontend)")
+        print("\n   📥 Install Node.js from: https://nodejs.org/")
+        print("      (Choose LTS version)")
+        print("\n   After installation:")
+        print("   1. Restart your terminal")
+        print("   2. Run: python install.py")
+        print("\n   Or manually install frontend:")
+        print("      cd app/ui_layer/browser/frontend")
+        print("      npm install")
         return False
 
+    # Check if node_modules already exists
+    node_modules = os.path.join(frontend_dir, "node_modules")
+    if os.path.exists(node_modules):
+        print("\n✓ Browser frontend dependencies already installed")
+        return True
+
+    # Try to install
     print("\n🔧 Installing browser frontend dependencies...")
     try:
-        run_command_with_progress([npm_cmd, "install"], message="Installing npm packages", cwd=frontend_dir)
-        print("✓ Browser frontend dependencies installed")
-        return True
+        result = run_command_with_progress([npm_cmd, "install"], message="Installing npm packages", cwd=frontend_dir, check=False)
+        if result and hasattr(result, 'returncode') and result.returncode == 0:
+            print("✓ Browser frontend dependencies installed")
+            return True
+        else:
+            print("\n⚠ Warning: npm install command failed")
+            print("\n   Troubleshooting:")
+            print("   1. Make sure Node.js is installed: node --version")
+            print("   2. Check npm version: npm --version")
+            print("   3. Try manually: cd app/ui_layer/browser/frontend && npm install")
+            print("\n   If you still need help:")
+            print("   - Check Node.js/npm documentation: https://nodejs.org/")
+            print("   - Ensure internet connection is working")
+            return False
     except Exception as e:
         print(f"\n⚠ Warning: Failed to install browser frontend: {e}")
-        print("   You can manually run: cd app/ui_layer/browser/frontend && npm install")
+        print("\n   You can manually install with:")
+        print("   cd app/ui_layer/browser/frontend")
+        print("   npm install")
         return False
 
 def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
@@ -485,11 +739,94 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
         if not os.path.exists(requirements_file):
             print(f"Error: {requirements_file} not found.")
             sys.exit(1)
+        
         print("🔧 Installing core dependencies...")
-        run_command_with_progress([sys.executable, "-m", "pip", "install", "-r", requirements_file], 
-                                 "Installing packages")
-        print("✓ Core dependencies installed")
+        
+        # Setup environment with TMPDIR for pip cache management
+        # This helps on systems with limited space or PEP 668 issues
+        my_env = os.environ.copy()
+        tmp_dir = os.path.expanduser("~/pip-tmp")
+        my_env["TMPDIR"] = tmp_dir
+        
+        # Create temp directory if it doesn't exist
+        os.makedirs(tmp_dir, exist_ok=True)
+        
+        # First attempt with standard pip install
+        cmd = [sys.executable, "-m", "pip", "install", "-r", requirements_file]
+        result = run_command(cmd, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
+        
+        if result and hasattr(result, 'returncode') and result.returncode != 0:
+            # Check error output
+            error_output = ""
+            if hasattr(result, 'stderr'):
+                error_output = result.stderr
+            elif hasattr(result, 'stdout'):
+                error_output = result.stdout
+            
+            # Check for disk space errors
+            if "no space left on device" in error_output.lower() or "disk full" in error_output.lower():
+                print("\n❌ DISK SPACE ERROR - No space left on device\n")
+                print("This is a common issue on Kali Linux when installing large packages.\n")
+                print("Immediate fixes:\n")
+                print("1. Clear pip cache (usually frees 1-5 GB):")
+                print("   pip cache purge\n")
+                print("2. Clear npm cache (if installed):")
+                print("   npm cache clean --force\n")
+                print("3. Use alternate disk with more space:")
+                mkdir_cmd = "/mnt/external/pip-tmp" if sys.platform != "win32" else "D:/pip-tmp"
+                print(f"   mkdir -p {mkdir_cmd}")
+                print(f"   TMPDIR={mkdir_cmd} python install.py\n")
+                print("4. Check disk usage:")
+                check_cmd = "du -sh ~/*" if sys.platform != "win32" else "dir /-s C:\\"
+                print(f"   {check_cmd}\n")
+                suggest_cleanup_steps()
+                sys.exit(1)
+            
+            # Check for PEP 668 error
+            if "externally-managed-environment" in error_output or "externally managed" in error_output:
+                print("\n⚠️  PEP 668 Error Detected (externally-managed-environment)\n")
+                print("This usually happens on Kali Linux or other systems with managed Python.")
+                print("\nOptions to fix:\n")
+                print("Option 1 (Recommended): Use a virtual environment")
+                print("  python3 -m venv craftbot-env")
+                print("  source craftbot-env/bin/activate  # On Linux/macOS")
+                print("  .\\craftbot-env\\Scripts\\activate  # On Windows")
+                print("  python install.py\n")
+                
+                print("Option 2: Use conda (recommended for data science projects)")
+                print("  python install.py --conda\n")
+                
+                print("Option 3: Break system packages (not recommended)")
+                print("  Retrying with --break-system-packages flag...\n")
+                
+                # Retry with --break-system-packages
+                cmd_with_flag = [sys.executable, "-m", "pip", "install", "--break-system-packages", "-r", requirements_file]
+                result = run_command(cmd_with_flag, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
+                
+                if result and hasattr(result, 'returncode') and result.returncode == 0:
+                    print("✓ Core dependencies installed (with --break-system-packages)")
+                else:
+                    print("\n✗ Installation failed even with --break-system-packages")
+                    if hasattr(result, 'stderr') and result.stderr:
+                        print(f"\nError: {result.stderr[:500]}")
+                    print("\nPlease use Option 1 or Option 2 above.")
+                    sys.exit(1)
+            else:
+                # Different error
+                print("\n✗ Error installing core dependencies:")
+                if hasattr(result, 'stderr') and result.stderr:
+                    print(result.stderr[:1000])
+                print("\nTroubleshooting:")
+                print("  1. Check for disk space: " + ("df -h" if sys.platform != "win32" else "dir C:\\"))
+                print("  2. Clear pip cache: pip cache purge")
+                print("  3. Check your internet connection")
+                print("  4. Try: pip install --upgrade pip")
+                print("  5. Try with conda: python install.py --conda")
+                sys.exit(1)
+        else:
+            print("✓ Core dependencies installed")
     except Exception as e:
+        print(f"\n✗ Exception during setup: {e}")
         raise
 
 
@@ -520,7 +857,13 @@ def setup_omniparser(force_cpu: bool, use_conda: bool):
             full_cmd = [conda_cmd, "run", "-n", OMNIPARSER_ENV_NAME] + cmd_list
         else:
             full_cmd = cmd_list
+        
+        # Setup environment with TMPDIR for pip cache management
         local_env = env_extras.copy() if env_extras else {}
+        tmp_dir = os.path.expanduser("~/pip-tmp")
+        local_env["TMPDIR"] = tmp_dir
+        os.makedirs(tmp_dir, exist_ok=True)
+        
         run_command(full_cmd, cwd=work_dir, capture=capture_output, env_extras=local_env, quiet=capture_output)
 
     # Step 1: Repository setup
@@ -576,16 +919,16 @@ def setup_omniparser(force_cpu: bool, use_conda: bool):
             # Use pip for non-conda installation
             if force_cpu:
                 print("   (CPU-only mode)")
-                result = run_command(["pip", "install", "torch", "torchvision", "torchaudio"], capture=True, check=False)
+                result = run_command(["pip", "install", "torch", "torchvision", "torchaudio"], capture=True, check=False, env_extras={"TMPDIR": os.path.expanduser("~/pip-tmp")})
                 pytorch_installed = result.returncode == 0
             else:
                 # Try GPU version first
                 print("   (Attempting CUDA 12.1 GPU version)")
-                result = run_command(["pip", "install", "torch", "torchvision", "torchaudio", "torch-cuda==12.1"], capture=True, check=False)
+                result = run_command(["pip", "install", "torch", "torchvision", "torchaudio", "torch-cuda==12.1"], capture=True, check=False, env_extras={"TMPDIR": os.path.expanduser("~/pip-tmp")})
                 
                 if result.returncode != 0:
                     print("   ⚠ GPU version failed. Falling back to CPU-only mode...")
-                    result = run_command(["pip", "install", "torch", "torchvision", "torchaudio"], capture=True, check=False)
+                    result = run_command(["pip", "install", "torch", "torchvision", "torchaudio"], capture=True, check=False, env_extras={"TMPDIR": os.path.expanduser("~/pip-tmp")})
                     pytorch_installed = result.returncode == 0
                     if pytorch_installed:
                         print("   ✓ CPU-only PyTorch installed successfully")
@@ -595,31 +938,62 @@ def setup_omniparser(force_cpu: bool, use_conda: bool):
         if not pytorch_installed:
             print("\n✗ Error installing PyTorch")
             if hasattr(result, 'stderr') and result.stderr:
-                print(f"\n   Error details:\n   {result.stderr[:500]}")
+                error_msg = result.stderr[:500]
+                print(f"\n   Error details:\n   {error_msg}")
+                
+                # Check for specific errors
+                if "no space left on device" in error_msg.lower() or "disk" in error_msg.lower():
+                    print("\n⚠️  DISK SPACE ERROR detected")
+                    print("   PyTorch is very large (~5GB+). Your disk may be full.")
+                    print("\n   Solutions:")
+                    print("   1. Clear pip cache: pip cache purge")
+                    print("   2. Clear npm cache: npm cache clean --force")
+                    print("   3. Use alternate disk: TMPDIR=/mnt/large-disk/pip-tmp python install.py --gui")
+                    print("   4. Use conda (more efficient): python install.py --gui --conda")
+                
+                elif "externally-managed-environment" in error_msg or "externally managed" in error_msg:
+                    print("\n⚠️  PEP 668 Error: System-managed Python detected")
+                    print("   Use virtual environment or conda for GUI mode")
+                
+                elif "cuda" in error_msg.lower() or "gpu" in error_msg.lower():
+                    print("\n⚠️  CUDA/GPU Error detected")
+                    print("   Try CPU-only: python install.py --gui --cpu-only")
+                    print("   Or with conda: python install.py --gui --conda")
+            
             print("\n⚠️  Troubleshooting:")
-            print("   1. Check your internet connection")
-            print("   2. Try again with CPU-only mode: python install.py --gui --cpu-only")
-            print("   3. If issues persist, check PyTorch documentation")
+            print("   1. Check disk space: " + ("df -h" if sys.platform != "win32" else "dir C:\\"))
+            print("   2. Clear pip cache: pip cache purge")
+            print("   3. Try clearing system caches: " + ("sudo apt-get clean" if sys.platform != "win32" else "Disk Cleanup"))
+            print("   4. Try again with CPU-only mode: python install.py --gui --cpu-only")
+            print("   5. Use conda (recommended): python install.py --gui --conda")
+            print("   6. Check PyTorch documentation: https://pytorch.org/get-started/locally/")
             sys.exit(1)
 
         # Step 4: Install dependencies
         print("🔧 Installing dependencies...")
         deps = ["mkl==2024.0", "sympy==1.13.1", "transformers==4.51.0", "huggingface_hub[cli]", "hf_transfer"]
+        tmp_dir = os.path.expanduser("~/pip-tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        
         if use_conda:
             conda_cmd = get_conda_command()
-            result = run_command([conda_cmd, "run", "-n", OMNIPARSER_ENV_NAME, "pip", "install"] + deps, capture=True, check=False)
+            result = run_command([conda_cmd, "run", "-n", OMNIPARSER_ENV_NAME, "pip", "install"] + deps, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
         else:
-            result = run_command(["pip", "install"] + deps, capture=True, check=False)
+            result = run_command(["pip", "install"] + deps, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
         if result.returncode != 0:
             print("⚠ Warning: Some dependencies may have failed to install")
+            if hasattr(result, 'stderr') and result.stderr and "externally-managed" not in result.stderr:
+                error_snippet = result.stderr[:200].strip()
+                if error_snippet:
+                    print(f"  Details: {error_snippet}")
 
         req_txt = os.path.join(repo_path, "requirements.txt")
         if os.path.exists(req_txt):
             if use_conda:
                 conda_cmd = get_conda_command()
-                result = run_command([conda_cmd, "run", "-n", OMNIPARSER_ENV_NAME, "pip", "install", "-r", "requirements.txt"], cwd=repo_path, capture=True, check=False)
+                result = run_command([conda_cmd, "run", "-n", OMNIPARSER_ENV_NAME, "pip", "install", "-r", "requirements.txt"], cwd=repo_path, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
             else:
-                result = run_command(["pip", "install", "-r", "requirements.txt"], cwd=repo_path, capture=True, check=False)
+                result = run_command(["pip", "install", "-r", "requirements.txt"], cwd=repo_path, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
             if result.returncode != 0:
                 print("⚠ Warning: Some requirements may have failed to install")
 
@@ -798,6 +1172,11 @@ if __name__ == "__main__":
     else:
         print(" GUI:  Disabled")
     print("="*60 + "\n")
+
+    # Pre-flight check: Disk space (especially important for Kali)
+    min_space_needed = 8.0 if install_gui else 5.0  # GUI mode needs more space for torch
+    if not check_disk_space_for_installation(min_free_gb=min_space_needed):
+        sys.exit(1)
 
     # Step 1: Install core dependencies
     if use_conda:

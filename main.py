@@ -65,15 +65,27 @@ def kill_process_on_port(port: int):
 
     try:
         if current_os == "Windows":
-            find_cmd = f"netstat -ano | findstr TCP | findstr :{port_str}"
+            # SECURITY FIX: Use list-based subprocess call instead of shell=True
+            # This prevents command injection vulnerabilities
             try:
-                output = subprocess.check_output(find_cmd, shell=True, text=True, stderr=subprocess.DEVNULL)
+                # Use netstat without shell pipes - safer approach
+                output = subprocess.check_output(
+                    ["netstat", "-ano"],
+                    text=True,
+                    stderr=subprocess.DEVNULL
+                )
                 pids_to_kill = set()
                 for line in output.strip().split('\n'):
                     parts = line.strip().split()
-                    if len(parts) >= 5 and parts[-2] == "LISTENING":
+                    # Format: PROTO  LOCAL_ADDR  FOREIGN_ADDR  STATE  PID
+                    if len(parts) >= 5 and "LISTENING" in line and parts[-1].isdigit():
                         pid = parts[-1]
-                        if pid.isdigit() and int(pid) > 0: pids_to_kill.add(pid)
+                        try:
+                            pid_int = int(pid)
+                            if pid_int > 0:
+                                pids_to_kill.add(pid)
+                        except ValueError:
+                            continue
                 
                 if not pids_to_kill:
                      print(f"[*] Port {port} is free.")
@@ -81,7 +93,18 @@ def kill_process_on_port(port: int):
 
                 for pid in pids_to_kill:
                     print(f"[!] Found stale process (PID: {pid}) on port {port}. Killing it...")
-                    subprocess.run(f"taskkill /F /T /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    # SECURITY FIX: Use list-based call instead of f-string with shell=True
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", pid],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=5
+                        )
+                    except subprocess.TimeoutExpired:
+                        print(f"[!] Timeout killing PID {pid}")
+                    except Exception as e:
+                        print(f"[!] Error killing PID {pid}: {e}")
                 print(f"[*] Port {port} cleared.")
                 time.sleep(0.5)
             except subprocess.CalledProcessError:
@@ -116,17 +139,34 @@ def kill_process_on_port_quiet(port: int):
 
     try:
         if current_os == "Windows":
-            find_cmd = f"netstat -ano | findstr TCP | findstr :{port_str}"
+            # SECURITY FIX: Use list-based subprocess call instead of shell=True
             try:
-                output = subprocess.check_output(find_cmd, shell=True, text=True, stderr=subprocess.DEVNULL)
+                output = subprocess.check_output(
+                    ["netstat", "-ano"],
+                    text=True,
+                    stderr=subprocess.DEVNULL
+                )
                 pids_to_kill = set()
                 for line in output.strip().split('\n'):
                     parts = line.strip().split()
-                    if len(parts) >= 5 and parts[-2] == "LISTENING":
-                        pid = parts[-1]
-                        if pid.isdigit() and int(pid) > 0: pids_to_kill.add(pid)
+                    if len(parts) >= 5 and "LISTENING" in line and parts[-1].isdigit():
+                        try:
+                            pid_int = int(parts[-1])
+                            if pid_int > 0:
+                                pids_to_kill.add(parts[-1])
+                        except ValueError:
+                            continue
+                
                 for pid in pids_to_kill:
-                    subprocess.run(f"taskkill /F /T /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", pid],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=5
+                        )
+                    except (subprocess.TimeoutExpired, Exception):
+                        pass
             except subprocess.CalledProcessError:
                 pass
         else:

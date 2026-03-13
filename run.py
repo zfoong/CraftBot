@@ -87,12 +87,19 @@ def _wrap_windows_bat(cmd_list: list[str]) -> list[str]:
     return cmd_list
 
 def load_config() -> Dict[str, Any]:
-    if not os.path.exists(CONFIG_FILE):
-        return {}
+    """
+    Load configuration from file safely.
+    
+    SECURITY FIX: Use try-except instead of check-then-use to prevent TOCTOU race conditions.
+    """
     try:
         with open(CONFIG_FILE, 'r') as f:
             return json.load(f)
+    except FileNotFoundError:
+        return {}
     except json.JSONDecodeError:
+        return {}
+    except IOError:
         return {}
 
 def save_config_value(key: str, value: Any) -> None:
@@ -200,6 +207,60 @@ def cleanup_background_processes():
 # Register cleanup on exit
 atexit.register(cleanup_background_processes)
 
+def _try_install_nodejs_linux(silent: bool = False) -> bool:
+    """
+    Attempt to auto-install Node.js on Linux systems (including Kali).
+    Returns True if successful, False otherwise.
+    """
+    if sys.platform == "win32":
+        return False
+    
+    # Check if node is already installed
+    if shutil.which("node") and shutil.which("npm"):
+        return True
+    
+    if not silent:
+        print("\n🔧 Attempting to install Node.js...")
+    
+    # Detect package manager and prepare commands
+    package_managers = [
+        ("apt-get", ["sudo", "apt-get", "update"], ["sudo", "apt-get", "install", "-y", "nodejs", "npm"]),
+        ("apt", ["sudo", "apt", "update"], ["sudo", "apt", "install", "-y", "nodejs", "npm"]),
+        ("dnf", None, ["sudo", "dnf", "install", "-y", "nodejs", "npm"]),
+        ("yum", None, ["sudo", "yum", "install", "-y", "nodejs", "npm"]),
+        ("pacman", None, ["sudo", "pacman", "-Sy", "nodejs", "npm"]),
+        ("zypper", None, ["sudo", "zypper", "install", "-y", "nodejs", "npm"]),
+    ]
+    
+    for pm_name, update_cmd, install_cmd in package_managers.items():
+        if shutil.which(pm_name.split()[0]):
+            if not silent:
+                print(f"   Found {pm_name}, installing Node.js...")
+            try:
+                # Run update command if available
+                if update_cmd:
+                    try:
+                        result = subprocess.run(update_cmd, capture_output=True, text=True, timeout=300)
+                    except Exception:
+                        pass  # Update failed, but continue with install
+                
+                # Run install command
+                result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode == 0:
+                    if not silent:
+                        print("✓ Node.js installed successfully")
+                    # Small delay to ensure PATH is updated
+                    time.sleep(1)
+                    return True
+                else:
+                    if not silent:
+                        print(f"   ⚠ {pm_name} installation failed, trying next...")
+            except Exception as e:
+                if not silent:
+                    print(f"   ⚠ Error with {pm_name}: {str(e)[:100]}, trying next...")
+    
+    return False
+
 def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
     """Launch the frontend dev server for browser mode."""
     if not os.path.exists(FRONTEND_DIR):
@@ -213,16 +274,31 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
     if not os.path.exists(node_modules):
         if not silent:
             print("Error: Frontend dependencies not installed.")
-            print("Run 'python install.py' first to install all dependencies.")
+            print("\nTo fix this, run: python install.py")
+            print("\nOr manually install with:")
+            print("  cd app/ui_layer/browser/frontend")
+            print("  npm install")
         return None
 
     # Find npm command
     npm_cmd = shutil.which("npm")
     if not npm_cmd:
-        if not silent:
-            print("Error: npm not found in PATH")
-            print("Install Node.js from: https://nodejs.org/")
-        return None
+        # Try to auto-install Node.js on Linux
+        if sys.platform != "win32":
+            if not silent:
+                print("Node.js not found. Attempting auto-install on Linux...")
+            if _try_install_nodejs_linux(silent=silent):
+                npm_cmd = shutil.which("npm")
+        
+        if not npm_cmd:
+            if not silent:
+                print("Error: npm not found in PATH")
+                print("\nNode.js is required for browser mode.")
+                print("Install from: https://nodejs.org/ (choose LTS version)")
+                print("\nAfter installation:")
+                print("  1. Restart your terminal")
+                print("  2. Run: python run.py")
+            return None
 
     # Build command for npm run dev
     if sys.platform == "win32":
@@ -243,6 +319,11 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
         )
         _background_processes.append(process)
         return process
+    except FileNotFoundError:
+        if not silent:
+            print("Error: npm command not found")
+            print("Install Node.js from: https://nodejs.org/")
+        return None
     except Exception as e:
         if not silent:
             print(f"Error starting frontend: {e}")
@@ -305,6 +386,13 @@ def print_step(step_num: int, total: int, message: str, done: bool = False):
 def print_step_done():
     """Print checkmark for current step."""
     print("✓", flush=True)
+
+def print_progress_bar(percent: int, width: int = 40):
+    """Print a progress bar from 0-100%."""
+    filled = int(width * percent / 100)
+    bar = "█" * filled + "░" * (width - filled)
+    sys.stdout.write(f"\r  [{bar}] {percent:3d}%")
+    sys.stdout.flush()
 
 def print_ready_banner(url: str):
     """Print the final ready banner."""
@@ -400,9 +488,10 @@ def launch_agent_background(env_name: Optional[str], use_conda: bool, silent: bo
     if "--browser" not in pass_args:
         pass_args.append("--browser")
 
-    # Set environment variable for browser startup UI formatting
+    # Set environment variable for browser startup UI formatting and warning suppression
     agent_env = os.environ.copy()
     agent_env["BROWSER_STARTUP_UI"] = "1"
+    agent_env["PYTHONWARNINGS"] = "ignore"
 
     # Build command
     if use_conda and env_name:
@@ -676,17 +765,31 @@ if __name__ == "__main__":
         # Print browser mode header
         print_browser_header()
 
+        # Step 1: Start frontend server (0% -> 10%)
         # Step 1: Start frontend server
         print_step(1, 8, "Starting frontend server")
         frontend_process = launch_frontend(silent=True)
         if not frontend_process:
             print(" ✗")
             print("\nError: Failed to start browser frontend.")
-            print("Run 'python install.py' to install dependencies.")
+            print("\n" + "="*52)
+            print("TROUBLESHOOTING:")
+            print("="*52)
+            print("\n1. Make sure Node.js is installed:")
+            print("   → Download from: https://nodejs.org/ (LTS version)")
+            print("   → Verify: node --version && npm --version")
+            print("\n2. Install frontend dependencies:")
+            print("   → Run: python install.py")
+            print("\n3. Manually install (if above doesn't work):")
+            print("   → cd app/ui_layer/browser/frontend")
+            print("   → npm install")
+            print("\n4. Try running again:")
+            print("   → python run.py")
+            print("="*52 + "\n")
             sys.exit(1)
         print_step_done()
 
-        # Step 2: Start agent backend (agent will print steps 3-8)
+        # Step 2: Start agent backend
         print_step(2, 8, "Starting agent backend")
         agent_process = launch_agent_background(env_name, use_conda, silent=True)
         if not agent_process:
@@ -695,9 +798,48 @@ if __name__ == "__main__":
             sys.exit(1)
         print_step_done()
 
-        # Wait for frontend and backend to be ready (silent)
-        frontend_ready = wait_for_frontend_silent(timeout=30)
-        backend_ready = wait_for_backend_silent(timeout=60)
+        # Wait for services
+        print("\n  Initializing services")
+        
+        # Wait for frontend and backend to be ready
+        frontend_ready = False
+        backend_ready = False
+        
+        # Wait for frontend
+        frontend_start = time.time()
+        while time.time() - frontend_start < 30:
+            try:
+                with urllib.request.urlopen(FRONTEND_URL, timeout=2) as r:
+                    if r.status < 400:
+                        frontend_ready = True
+                        break
+            except urllib.error.HTTPError as e:
+                if e.code < 500:
+                    frontend_ready = True
+                    break
+            except:
+                pass
+            time.sleep(0.5)
+        
+        # Wait for backend
+        backend_start = time.time()
+        while time.time() - backend_start < 60:
+            try:
+                with urllib.request.urlopen(BACKEND_URL, timeout=2) as r:
+                    if r.status < 400:
+                        backend_ready = True
+                        break
+            except urllib.error.HTTPError as e:
+                if e.code < 500:
+                    backend_ready = True
+                    break
+            except:
+                pass
+            time.sleep(0.5)
+        
+        # Show progress bar only at 100% when ready
+        print_progress_bar(100)
+        print()  # New line after progress bar
 
         # Small delay to ensure agent's stdout is flushed before we print
         # The agent prints steps 3-8, and we want them to appear before the ready banner

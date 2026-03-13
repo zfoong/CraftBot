@@ -9,7 +9,9 @@
     "enabled": true
   },
   "model": {
-    "llm_provider": "byteplus",
-    "vlm_provider": "byteplus"
+    "llm_provider": "gemini",
+    "vlm_provider": "gemini",
+    "llm_model": "gemini-2.5-flash",
+    "vlm_model": "gemini-2.5-pro"
   }
 }

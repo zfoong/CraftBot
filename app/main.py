@@ -15,14 +15,21 @@ Run this before the app directory, using 'python -m app.main'
 # Must be done before any module calls logging.basicConfig()
 # ============================================================================
 import os as _os
+import warnings as _warnings
+import sys as _sys
 
 # Suppress Kitty graphics protocol detection (prevents garbage output like "Gi=...")
 # This tells Textual not to query for Kitty graphics support
 _os.environ.setdefault("KITTEN_NO_GRAPHICS", "1")
 _os.environ.setdefault("TEXTUAL_SCREENSHOT", "0")
 
+# Suppress all Python warnings during startup (DeprecationWarning, RuntimeWarning, etc.)
+_warnings.filterwarnings('ignore')
+
+# Suppress library-specific warnings
+_os.environ.setdefault("PYTHONWARNINGS", "ignore")
+
 import logging
-import sys as _sys
 
 def _suppress_console_logging_early() -> None:
     """
@@ -37,7 +44,12 @@ def _suppress_console_logging_early() -> None:
     if not root_logger.handlers:
         root_logger.addHandler(logging.NullHandler())
     # Set a high level to minimize processing
-    root_logger.setLevel(logging.WARNING)
+    root_logger.setLevel(logging.CRITICAL)
+    
+    # Also suppress warnings from specific noisy libraries
+    logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+    logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+    logging.getLogger("websockets").setLevel(logging.CRITICAL)
 
 _suppress_console_logging_early()
 # ============================================================================

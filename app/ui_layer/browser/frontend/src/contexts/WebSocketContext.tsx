@@ -79,6 +79,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const isConnectingRef = useRef<boolean>(false)
+  const reconnectCountRef = useRef<number>(0)
+  const maxReconnectAttemptsRef = useRef<number>(10)
 
   const connect = useCallback(() => {
     // Prevent duplicate connections (React StrictMode calls useEffect twice)
@@ -89,49 +91,82 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     // Close any existing connection before creating new one
     if (wsRef.current) {
-      wsRef.current.close()
+      try {
+        wsRef.current.close()
+      } catch (e) {
+        // Connection already closed
+      }
       wsRef.current = null
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/ws`
 
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
+    try {
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
 
-    ws.onopen = () => {
-      console.log('[WS] Connected')
-      isConnectingRef.current = false
-      setState(prev => ({ ...prev, connected: true }))
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const msg: WSMessage = JSON.parse(event.data)
-        handleMessage(msg)
-      } catch (err) {
-        console.error('[WS] Failed to parse message:', err)
+      ws.onopen = () => {
+        console.log('[WS] Connected')
+        isConnectingRef.current = false
+        reconnectCountRef.current = 0  // Reset reconnect counter on successful connection
+        setState(prev => ({ ...prev, connected: true }))
       }
-    }
 
-    ws.onclose = () => {
-      console.log('[WS] Disconnected')
+      ws.onmessage = (event) => {
+        try {
+          const msg: WSMessage = JSON.parse(event.data)
+          handleMessage(msg)
+        } catch (err) {
+          console.error('[WS] Failed to parse message:', err, 'Raw:', event.data)
+        }
+      }
+
+      ws.onclose = () => {
+        console.log('[WS] Disconnected, reconnectCount =', reconnectCountRef.current)
+        isConnectingRef.current = false
+        setState(prev => ({
+          ...prev,
+          connected: false,
+          status: { ...prev.status, message: 'Disconnected. Reconnecting...' },
+        }))
+
+        // Immediate first retry, then exponential backoff
+        let reconnectDelay = 500
+        if (reconnectCountRef.current > 0) {
+          // Exponential backoff after first disconnect
+          reconnectDelay = Math.min(1000 * Math.pow(1.5, reconnectCountRef.current - 1), 30000)
+        }
+        reconnectCountRef.current += 1
+
+        if (reconnectCountRef.current <= maxReconnectAttemptsRef.current) {
+          console.log(`[WS] Reconnection attempt ${reconnectCountRef.current}/${maxReconnectAttemptsRef.current} in ${reconnectDelay}ms`)
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            connect()
+          }, reconnectDelay)
+        } else {
+          console.error(`[WS] Failed to reconnect after ${maxReconnectAttemptsRef.current} attempts`)
+          setState(prev => ({
+            ...prev,
+            status: { ...prev.status, message: 'Connection failed - please refresh the page' },
+          }))
+        }
+      }
+
+      ws.onerror = (err) => {
+        console.error('[WS] Error:', err, '(Error object might be limited on some browsers)')
+        // Note: On some browsers, WebSocket error events don't contain detailed info
+        // The onclose handler will be called after onerror
+      }
+    } catch (err) {
+      console.error('[WS] Failed to create WebSocket:', err)
       isConnectingRef.current = false
-      setState(prev => ({
-        ...prev,
-        connected: false,
-        status: { ...prev.status, message: 'Disconnected. Reconnecting...' },
-      }))
-
-      // Reconnect after delay
+      // Retry connection
+      reconnectCountRef.current += 1
+      const reconnectDelay = Math.min(1000 * Math.pow(1.5, reconnectCountRef.current), 30000)
       reconnectTimeoutRef.current = window.setTimeout(() => {
         connect()
-      }, 2000)
-    }
-
-    ws.onerror = (err) => {
-      console.error('[WS] Error:', err)
-      isConnectingRef.current = false
+      }, reconnectDelay)
     }
   }, [])
 

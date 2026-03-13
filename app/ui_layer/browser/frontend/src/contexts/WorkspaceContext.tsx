@@ -79,6 +79,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const reconnectTimeoutRef = useRef<number | null>(null)
   const isConnectingRef = useRef<boolean>(false)
   const hasInitialLoadRef = useRef<boolean>(false)
+  const reconnectCountRef = useRef<number>(0)
+  const maxReconnectAttemptsRef = useRef<number>(10)
 
   // ─────────────────────────────────────────────────────────────────────
   // Message Handling
@@ -242,48 +244,77 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     isConnectingRef.current = true
 
     if (wsRef.current) {
-      wsRef.current.close()
+      try {
+        wsRef.current.close()
+      } catch (e) {
+        // Connection already closed
+      }
       wsRef.current = null
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/ws`
 
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
+    try {
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
 
-    ws.onopen = () => {
-      console.log('[Workspace] WebSocket connected')
-      isConnectingRef.current = false
-      setState(prev => ({ ...prev, connected: true }))
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const msg: WSMessage = JSON.parse(event.data)
-        // Only handle file-related messages
-        if (msg.type.startsWith('file_')) {
-          handleMessage(msg)
-        }
-      } catch (err) {
-        console.error('[Workspace] Failed to parse message:', err)
+      ws.onopen = () => {
+        console.log('[Workspace] WebSocket connected')
+        isConnectingRef.current = false
+        reconnectCountRef.current = 0  // Reset on successful connection
+        setState(prev => ({ ...prev, connected: true }))
       }
-    }
 
-    ws.onclose = () => {
-      console.log('[Workspace] WebSocket disconnected')
+      ws.onmessage = (event) => {
+        try {
+          const msg: WSMessage = JSON.parse(event.data)
+          // Only handle file-related messages
+          if (msg.type.startsWith('file_')) {
+            handleMessage(msg)
+          }
+        } catch (err) {
+          console.error('[Workspace] Failed to parse message:', err)
+        }
+      }
+
+      ws.onclose = () => {
+        console.log('[Workspace] WebSocket disconnected, reconnectCount =', reconnectCountRef.current)
+        isConnectingRef.current = false
+        setState(prev => ({ ...prev, connected: false }))
+
+        // Immediate first retry, then exponential backoff
+        let reconnectDelay = 500
+        if (reconnectCountRef.current > 0) {
+          // Exponential backoff after first disconnect
+          reconnectDelay = Math.min(1000 * Math.pow(1.5, reconnectCountRef.current - 1), 30000)
+        }
+        reconnectCountRef.current += 1
+
+        if (reconnectCountRef.current <= maxReconnectAttemptsRef.current) {
+          console.log(`[Workspace] Reconnecting in ${reconnectDelay}ms (attempt ${reconnectCountRef.current}/${maxReconnectAttemptsRef.current})`)
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            connect()
+          }, reconnectDelay)
+        } else {
+          console.error(`[Workspace] Failed to reconnect after ${maxReconnectAttemptsRef.current} attempts`)
+          setState(prev => ({ ...prev, error: 'Connection lost - please refresh the page' }))
+        }
+      }
+
+      ws.onerror = (err) => {
+        console.error('[Workspace] WebSocket error:', err, '(Error object might be limited on some browsers)')
+        // Note: The onclose handler will be called after onerror on most browsers
+      }
+    } catch (err) {
+      console.error('[Workspace] Failed to create WebSocket:', err)
       isConnectingRef.current = false
-      setState(prev => ({ ...prev, connected: false }))
-
-      // Reconnect after delay
+      // Retry connection
+      reconnectCountRef.current += 1
+      const reconnectDelay = Math.min(1000 * Math.pow(1.5, reconnectCountRef.current), 30000)
       reconnectTimeoutRef.current = window.setTimeout(() => {
         connect()
-      }, 2000)
-    }
-
-    ws.onerror = (err) => {
-      console.error('[Workspace] WebSocket error:', err)
-      isConnectingRef.current = false
+      }, reconnectDelay)
     }
   }, [handleMessage])
 

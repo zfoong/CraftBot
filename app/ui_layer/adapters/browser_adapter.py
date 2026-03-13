@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
+from aiohttp.client_exceptions import ClientConnectionResetError
+
 from agent_core.utils.logger import logger
 from app.config import AGENT_WORKSPACE_ROOT
 from app.ui_layer.adapters.base import InterfaceAdapter
@@ -805,33 +807,60 @@ class BrowserAdapter(InterfaceAdapter):
     async def _websocket_handler(self, request: "web.Request") -> "web.WebSocketResponse":
         """Handle WebSocket connections."""
         from aiohttp import web, WSMsgType
+        import asyncio
 
-        # Increase max message size to 100MB to allow multiple large attachments
-        ws = web.WebSocketResponse(max_msg_size=100 * 1024 * 1024)
-        await ws.prepare(request)
+        # Simple WebSocket configuration - no heartbeat (client handles reconnect)
+        ws = web.WebSocketResponse(
+            max_msg_size=100 * 1024 * 1024,
+            timeout=None,  # No timeout - let messages flow naturally
+        )
+        
+        try:
+            await ws.prepare(request)
+        except Exception as e:
+            print(f"[BROWSER ADAPTER] Failed to prepare WebSocket: {e}")
+            return ws
+        
         self._ws_clients.add(ws)
 
         # Send initial state
-        await ws.send_json({
-            "type": "init",
-            "data": self._get_initial_state(),
-        })
+        try:
+            initial_state = self._get_initial_state()
+            await ws.send_json({
+                "type": "init",
+                "data": initial_state,
+            })
+        except (ConnectionResetError, ClientConnectionResetError, RuntimeError) as e:
+            # Gracefully handle connection closing
+            self._ws_clients.discard(ws)
+            return ws
+        except Exception as e:
+            self._ws_clients.discard(ws)
+            return ws
 
+        # Message loop
         try:
             async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
-                    try:
+                try:
+                    if msg.type == WSMsgType.TEXT:
                         data = json.loads(msg.data)
                         await self._handle_ws_message(data)
-                    except json.JSONDecodeError:
-                        pass
-                    except Exception as e:
-                        # Log error but don't break the connection
-                        import traceback
-                        print(f"[BROWSER ADAPTER] Error handling WS message: {e}")
-                        traceback.print_exc()
-                elif msg.type == WSMsgType.ERROR:
-                    break
+                    elif msg.type == WSMsgType.ERROR:
+                        break
+                    elif msg.type == WSMsgType.CLOSE:
+                        break
+                except json.JSONDecodeError as e:
+                    # Continue on JSON errors, don't close connection
+                    pass
+                except Exception as e:
+                    # Continue on message errors, don't close connection
+                    pass
+        except asyncio.CancelledError:
+            pass
+        except (ClientConnectionResetError, ConnectionResetError):
+            pass  # Silently handle expected connection errors
+        except Exception as e:
+            pass
         finally:
             self._ws_clients.discard(ws)
 
@@ -3043,7 +3072,11 @@ class BrowserAdapter(InterfaceAdapter):
         for ws in self._ws_clients.copy():
             try:
                 await ws.send_str(json_msg)
+            except (ClientConnectionResetError, ConnectionResetError, RuntimeError):
+                # Silently handle expected connection errors
+                disconnected.add(ws)
             except Exception:
+                # Log unexpected errors
                 disconnected.add(ws)
 
         # Clean up disconnected clients

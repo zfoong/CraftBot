@@ -70,6 +70,7 @@ CraftBot awaits your orders, set up your own CraftBot now.
 - Python **3.10+**
 - `git` (required to clone the repository)
 - An API key for your chosen LLM provider (OpenAI, Gemini, or Anthropic)
+- `Node.js` **18+** (optional - only required for browser interface)
 - `conda` (optional - if not found, installer offers to auto-install Miniconda)
 
 ### Quick Install
@@ -88,11 +89,26 @@ python run.py
 
 That's it! The first run will guide you through setting up your API keys.
 
+**Note:** If you don't have Node.js installed, the installer will guide you with step-by-step instructions. You can also skip browser mode and use TUI instead (see modes below).
+
 ### What you can do right after?
 - Talk to the agent naturally
 - Ask it to perform complex multi-step tasks
 - Type `/help` to see available commands
 - Connect to Google, Slack, Notion, and more
+
+### 🖥️ Interface Modes
+
+CraftBot supports multiple UI modes. Choose based on your preference:
+
+| Mode | Command | Requirements | Best For |
+|------|---------|--------------|----------|
+| **Browser** | `python run.py` | Node.js 18+ | Modern web interface, easiest to use |
+| **TUI** | `python run.py --tui` | None | Terminal UI, no dependencies needed |
+| **CLI** | `python run.py --cli` | None | Command-line, lightweight |
+| **GUI** | `python run.py --gui` | `install.py --gui` | Desktop automation with visual feedback |
+
+**Browser mode** is the default and recommended. If you don't have Node.js, the installer will provide installation instructions or you can use **TUI mode** instead.
 
 ---
 
@@ -128,7 +144,7 @@ That's it! The first run will guide you through setting up your API keys.
 
 ## 🖥️ GUI Mode (Optional)
 
-GUI mode enables screen automation - the agent can see and interact with a desktop environment.
+GUI mode enables screen automation - the agent can see and interact with a desktop environment. This is optional and requires additional setup.
 
 ```bash
 # Install with GUI support (using pip, no conda required)
@@ -142,7 +158,7 @@ python run.py --gui
 ```
 
 > [!NOTE]
-> GUI mode is experimental and requires additional dependencies (~4GB for model weights).
+> GUI mode is experimental and requires additional dependencies (~4GB for model weights). If you don't need desktop automation, skip this and use Browser/TUI mode instead which has no additional dependencies.
 
 ---
 
@@ -160,7 +176,10 @@ python run.py --gui
 
 | Flag | Description |
 |------|-------------|
-| `--gui` | Enable GUI mode (requires `install.py --gui` first) |
+| (none) | Run in **Browser** mode (recommended, requires Node.js) |
+| `--tui` | Run in **Terminal UI** mode (no dependencies needed) |
+| `--cli` | Run in **CLI** mode (lightweight) |
+| `--gui` | Enable GUI automation mode (requires `install.py --gui` first) |
 
 **Installation Examples:**
 ```bash
@@ -183,18 +202,23 @@ python install.py --gui --conda
 python install.py --gui --conda --cpu-only
 ```
 
+**Running CraftBot:**
+
 ```powershell
-# Run with pip (no conda)
+# Browser mode (default, requires Node.js)
 python run.py
 
-# Run with GUI mode (pip, no conda)
+# TUI mode (no Node.js required)
+python run.py --tui
+
+# CLI mode (lightweight)
+python run.py --cli
+
+# With GPU/GUI mode
 python run.py --gui
 
-# Run with conda environment
+# With conda environment
 conda run -n craftbot python run.py
-
-# Run with GUI mode using conda
-conda run -n craftbot python run.py --gui
 
 # Or using full path if conda not in PATH
 &"$env:USERPROFILE\miniconda3\Scripts\conda.exe" run -n craftbot python run.py
@@ -202,29 +226,66 @@ conda run -n craftbot python run.py --gui
 
 **Linux/macOS (Bash):**
 ```bash
-# Run with pip (no conda)
+# Browser mode (default, requires Node.js)
 python run.py
 
-# Run with GUI mode (pip, no conda)
+# TUI mode (no Node.js required)
+python run.py --tui
+
+# CLI mode (lightweight)
+python run.py --cli
+
+# With GPU/GUI mode
 python run.py --gui
 
-# Run with conda environment
+# With conda environment
 conda run -n craftbot python run.py
-
-# Run with GUI mode using conda
-conda run -n craftbot python run.py --gui
 ```
 
 > [!NOTE]
-> After installation completes, exact launch commands will be displayed. Installation will automatically detect GPU availability and fall back to CPU-only mode if needed.
-
+> **Installation:** The installer now provides clear guidance if dependencies are missing. If Node.js is not found, you'll be prompted to install it or can switch to TUI mode. Installation automatically detects GPU availability and falls back to CPU-only mode if needed.
 
 > [!TIP]
 > **First-time setup:** CraftBot will guide you through an onboarding sequence to configure API keys, the agent's name, MCPs, and Skills.
 
+> [!NOTE]
+> **Playwright Chromium:** Optional for WhatsApp Web integration. If installation fails, the agent will still work fine for other tasks. Install manually later with: `playwright install chromium`
+
 ---
 
-## 🔐 OAuth Setup (Optional)
+## � Troubleshooting & Common Issues
+
+### Missing Node.js (for Browser Mode)
+If you see **"npm not found in PATH"** when running `python run.py`:
+1. Download from [nodejs.org](https://nodejs.org/) (choose LTS version)
+2. Install and restart your terminal
+3. Run `python run.py` again
+
+**Alternative:** Use TUI mode instead (no Node.js needed):
+```bash
+python run.py --tui
+```
+
+### Installation Fails with Dependencies
+The installer now provides detailed error messages with solutions. If installation fails:
+- **Check Python version:** Make sure you have Python 3.10+ (`python --version`)
+- **Check internet:** Dependencies are downloaded during installation
+- **Clear pip cache:** `pip install --upgrade pip` and try again
+
+### Playwright Installation Issues
+Playwright chromium installation is optional. If it fails:
+- The agent will **still work fine** for other tasks
+- You can skip it or install later: `playwright install chromium`
+- Only needed for WhatsApp Web integration
+
+### GPU/CUDA Issues
+The installer automatically detects GPU availability:
+- If CUDA installation fails, it falls back to CPU mode automatically
+- For manual CPU setup: `python install.py --gui --cpu-only`
+
+For detailed troubleshooting, see [INSTALLATION_FIX.md](INSTALLATION_FIX.md).
+
+---
 
 The agent can connect to various services using OAuth. Release builds come with embedded credentials, but you can also use your own.
 

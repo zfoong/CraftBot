@@ -101,6 +101,7 @@
 .content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--space-6);
 }
 
@@ -151,12 +152,32 @@
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
   color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.formGroup input {
+  cursor: text;
+}
+
+.formGroup select {
+  cursor: pointer;
+  appearance: auto;
+  background-image: none;
+  padding-right: var(--space-6);
+}
+
+.formGroup select option {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  padding: var(--space-2) var(--space-3);
 }
 
 .formGroup input:focus,
 .formGroup select:focus {
   outline: none;
   border-color: var(--color-primary);
+  background-color: var(--bg-tertiary);
 }
 
 .hint {
