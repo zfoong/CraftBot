@@ -38,6 +38,10 @@ MCPs and Skills, and external App integrations are supported.
 
 CraftBot awaits your orders. Set up your own CraftBot now.
 
+<div align="center">
+    <img src="assets/craftbot_overview.png" alt="CraftBot Overview" width="1280"/>
+</div>
+
 ---
 
 ## ✨ Features
