@@ -627,6 +627,40 @@ def launch_agent_background(env_name: Optional[str], use_conda: bool, silent: bo
     agent_env["BROWSER_STARTUP_UI"] = "1"
     agent_env["PYTHONWARNINGS"] = "ignore"
 
+    # When running as a PyInstaller frozen binary, run main() in a thread
+    # instead of spawning a subprocess (sys.executable is the binary itself)
+    if getattr(sys, 'frozen', False):
+        import threading
+
+        sys.argv = [sys.argv[0]] + pass_args
+        for k, v in agent_env.items():
+            os.environ[k] = v
+
+        def _run_agent():
+            try:
+                from main import main as main_entry
+                main_entry()
+            except Exception as e:
+                print(f"Agent error: {e}")
+
+        thread = threading.Thread(target=_run_agent, daemon=True)
+        thread.start()
+
+        # Return a dummy Popen-like object
+        class _AgentThread:
+            def __init__(self):
+                self.returncode = None
+            def poll(self):
+                return None if thread.is_alive() else 0
+            def terminate(self):
+                pass  # Thread will exit when main process exits (daemon=True)
+            def kill(self):
+                pass
+
+        dummy = _AgentThread()
+        _background_processes.append(dummy)
+        return dummy
+
     # Build command
     if use_conda and env_name:
         conda_exe = get_conda_command()
