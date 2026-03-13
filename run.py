@@ -384,8 +384,18 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
     # If running as a PyInstaller binary, serve pre-built static files
     # instead of launching npm dev server (node/npm won't be available)
     dist_dir = os.path.join(FRONTEND_DIR, "dist")
-    if getattr(sys, 'frozen', False) and os.path.exists(dist_dir):
-        return _launch_static_frontend(silent)
+    is_frozen = getattr(sys, 'frozen', False)
+
+    if is_frozen:
+        if os.path.exists(dist_dir):
+            return _launch_static_frontend(silent)
+        else:
+            # Binary mode but no dist folder bundled — can't start frontend
+            if not silent:
+                print(f"Error: Frontend dist not found at {dist_dir}")
+                print(f"  BASE_DIR: {BASE_DIR}")
+                print(f"  FRONTEND_DIR: {FRONTEND_DIR}")
+            return None
 
     if not os.path.exists(FRONTEND_DIR):
         if not silent:
@@ -905,7 +915,7 @@ if __name__ == "__main__":
         # Step 1: Start frontend server (0% -> 10%)
         # Step 1: Start frontend server
         print_step(1, 8, "Starting frontend server")
-        frontend_process = launch_frontend(silent=True)
+        frontend_process = launch_frontend(silent=not getattr(sys, 'frozen', False))
         if not frontend_process:
             print(" ✗")
             print("\nError: Failed to start browser frontend.")
