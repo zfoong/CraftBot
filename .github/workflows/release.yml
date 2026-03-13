@@ -31,8 +31,8 @@ jobs:
             dockerfile: docker/omniparser/Dockerfile
             context: .
           - image_suffix: desktop
-            dockerfile: core/gui/Dockerfile
-            context: core/gui
+            dockerfile: app/gui/Dockerfile
+            context: app/gui
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,7 +115,8 @@ jobs:
             --clean \
             --onefile \
             --name CraftBot \
-            --collect-submodules core \
+            --collect-submodules app \
+            --collect-submodules agent_core \
             --collect-submodules agents \
             --collect-submodules decorators \
             --collect-submodules chromadb \
@@ -137,12 +138,12 @@ jobs:
             --add-data ".env.example${{ matrix.data_sep }}." \
             --add-data "requirements.txt${{ matrix.data_sep }}." \
             --add-data "environment.yml${{ matrix.data_sep }}." \
-            --add-data "core/data${{ matrix.data_sep }}core/data" \
-            --add-data "core/gui/docker-compose.yaml${{ matrix.data_sep }}core/gui" \
-            --add-data "core/gui/Dockerfile${{ matrix.data_sep }}core/gui" \
-            --add-data "core/gui/custom-cont-init.d${{ matrix.data_sep }}core/gui/custom-cont-init.d" \
+            --add-data "app/data${{ matrix.data_sep }}app/data" \
+            --add-data "app/gui/docker-compose.yaml${{ matrix.data_sep }}app/gui" \
+            --add-data "app/gui/Dockerfile${{ matrix.data_sep }}app/gui" \
+            --add-data "app/gui/custom-cont-init.d${{ matrix.data_sep }}app/gui/custom-cont-init.d" \
             --add-data "agents${{ matrix.data_sep }}agents" \
-            start.py
+            run.py
 
       - name: Rename artifact
         shell: bash
