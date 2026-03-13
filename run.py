@@ -652,6 +652,8 @@ def launch_agent_background(env_name: Optional[str], use_conda: bool, silent: bo
                 self.returncode = None
             def poll(self):
                 return None if thread.is_alive() else 0
+            def wait(self):
+                thread.join()
             def terminate(self):
                 pass  # Thread will exit when main process exits (daemon=True)
             def kill(self):
