@@ -1822,16 +1822,21 @@ function ModelSettings() {
   const [provider, setProvider] = useState('anthropic')
   const [apiKeys, setApiKeys] = useState<Record<string, ApiKeyStatus>>({})
   const [baseUrls, setBaseUrls] = useState<Record<string, string>>({})
+  const [currentLlmModel, setCurrentLlmModel] = useState('')
+  const [currentVlmModel, setCurrentVlmModel] = useState('')
 
   // Form state
   const [newApiKey, setNewApiKey] = useState('')
   const [newBaseUrl, setNewBaseUrl] = useState('')
+  const [newLlmModel, setNewLlmModel] = useState('')
+  const [newVlmModel, setNewVlmModel] = useState('')
 
   // UI state
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
+  const [testBeforeSave, setTestBeforeSave] = useState(false)
 
   // Load data when connected
   useEffect(() => {
@@ -1849,6 +1854,8 @@ function ModelSettings() {
         const d = data as {
           success: boolean
           llm_provider: string
+          llm_model: string | null
+          vlm_model: string | null
           api_keys: Record<string, ApiKeyStatus>
           base_urls: Record<string, string>
         }
@@ -1856,12 +1863,20 @@ function ModelSettings() {
           setProvider(d.llm_provider || 'anthropic')
           setApiKeys(d.api_keys || {})
           setBaseUrls(d.base_urls || {})
+          // Load custom models if set, or initialize from current provider defaults
+          const currentProv = providers.find(p => p.id === (d.llm_provider || 'anthropic'))
+          setCurrentLlmModel(d.llm_model || currentProv?.llm_model || '')
+          setCurrentVlmModel(d.vlm_model || currentProv?.vlm_model || '')
+          setNewLlmModel('')
+          setNewVlmModel('')
         }
       }),
       onMessage('model_settings_update', (data: unknown) => {
         const d = data as {
           success: boolean
           llm_provider?: string
+          llm_model?: string | null
+          vlm_model?: string | null
           api_keys?: Record<string, ApiKeyStatus>
           base_urls?: Record<string, string>
           error?: string
@@ -1871,8 +1886,12 @@ function ModelSettings() {
           if (d.llm_provider) setProvider(d.llm_provider)
           if (d.api_keys) setApiKeys(d.api_keys)
           if (d.base_urls) setBaseUrls(d.base_urls)
+          if (d.llm_model !== undefined) setCurrentLlmModel(d.llm_model || '')
+          if (d.vlm_model !== undefined) setCurrentVlmModel(d.vlm_model || '')
           setNewApiKey('')
           setNewBaseUrl('')
+          setNewLlmModel('')
+          setNewVlmModel('')
           setHasChanges(false)
           showToast('success', 'Settings saved')
         } else {
@@ -1887,6 +1906,25 @@ function ModelSettings() {
           message: d.message,
           error: d.error,
         })
+        
+        // If this test is before save and it was successful, proceed with save
+        if (testBeforeSave && d.success) {
+          setTestBeforeSave(false)
+          setIsSaving(true)
+          send('model_settings_update', {
+            llmProvider: provider,
+            vlmProvider: provider,
+            llmModel: newLlmModel || currentLlmModel || undefined,
+            vlmModel: newVlmModel || currentVlmModel || undefined,
+            apiKey: newApiKey || undefined,
+            providerForKey: newApiKey ? provider : undefined,
+            baseUrl: newBaseUrl || undefined,
+            providerForUrl: newBaseUrl ? provider : undefined,
+          })
+        } else if (testBeforeSave && !d.success) {
+          // Test failed, don't save and reset the flag
+          setTestBeforeSave(false)
+        }
       }),
     ]
 
@@ -1894,7 +1932,7 @@ function ModelSettings() {
     send('model_settings_get')
 
     return () => cleanups.forEach(cleanup => cleanup())
-  }, [isConnected, send, onMessage])
+  }, [isConnected, send, onMessage, testBeforeSave, provider, newApiKey, newBaseUrl, providers])
 
   const currentProvider = providers.find(p => p.id === provider)
   const hasKey = apiKeys[provider]?.has_key || newApiKey.length > 0
@@ -1904,6 +1942,12 @@ function ModelSettings() {
     setProvider(newProvider)
     setNewApiKey('')
     setNewBaseUrl('')
+    // Reset model edits to current values when switching providers
+    const newProv = providers.find(p => p.id === newProvider)
+    setCurrentLlmModel(newProv?.llm_model || '')
+    setCurrentVlmModel(newProv?.vlm_model || '')
+    setNewLlmModel('')
+    setNewVlmModel('')
     setHasChanges(true)
   }
 
@@ -1922,14 +1966,13 @@ function ModelSettings() {
       return
     }
 
-    setIsSaving(true)
-    send('model_settings_update', {
-      llmProvider: provider,
-      vlmProvider: provider,
+    // Test connection before saving
+    setTestBeforeSave(true)
+    setIsTesting(true)
+    send('model_connection_test', {
+      provider,
       apiKey: newApiKey || undefined,
-      providerForKey: newApiKey ? provider : undefined,
-      baseUrl: newBaseUrl || undefined,
-      providerForUrl: newBaseUrl ? provider : undefined,
+      baseUrl: newBaseUrl || baseUrls[provider],
     })
   }
 
@@ -1957,20 +2000,30 @@ function ModelSettings() {
             </select>
           </div>
 
-          {/* Model Info */}
+          {/* Model Configuration */}
           {currentProvider && (
-            <div className={styles.modelInfo}>
-              <div className={styles.modelRow}>
-                <span className={styles.modelLabel}>LLM:</span>
-                <span className={styles.modelValue}>{currentProvider.llm_model || 'N/A'}</span>
+            <>
+              <div className={styles.formGroup}>
+                <label>LLM Model</label>
+                <input
+                  type="text"
+                  value={newLlmModel || currentLlmModel || ''}
+                  onChange={(e) => { setNewLlmModel(e.target.value); setHasChanges(true) }}
+                  placeholder={currentLlmModel || 'Enter LLM model name...'}
+                />
               </div>
               {currentProvider.has_vlm && (
-                <div className={styles.modelRow}>
-                  <span className={styles.modelLabel}>VLM:</span>
-                  <span className={styles.modelValue}>{currentProvider.vlm_model || 'N/A'}</span>
+                <div className={styles.formGroup}>
+                  <label>VLM Model</label>
+                  <input
+                    type="text"
+                    value={newVlmModel || currentVlmModel || ''}
+                    onChange={(e) => { setNewVlmModel(e.target.value); setHasChanges(true) }}
+                    placeholder={currentVlmModel || 'Enter VLM model name...'}
+                  />
                 </div>
               )}
-            </div>
+            </>
           )}
 
           {/* API Key */}
@@ -2028,12 +2081,17 @@ function ModelSettings() {
             <Button
               variant="primary"
               onClick={handleSave}
-              disabled={isSaving || needsKey || !hasChanges}
+              disabled={isSaving || isTesting || needsKey || !hasChanges}
             >
               {isSaving ? (
                 <>
                   <Loader2 size={14} className={styles.spinning} />
                   Saving...
+                </>
+              ) : isTesting && testBeforeSave ? (
+                <>
+                  <Loader2 size={14} className={styles.spinning} />
+                  Testing Connection...
                 </>
               ) : (
                 'Save'
@@ -2045,18 +2103,35 @@ function ModelSettings() {
 
       {/* Connection Test Result Modal */}
       {testResult && (
-        <div className={styles.modalOverlay} onClick={() => setTestResult(null)}>
+        <div className={styles.modalOverlay} onClick={() => { setTestResult(null); setTestBeforeSave(false) }}>
           <div className={styles.testResultModal} onClick={e => e.stopPropagation()}>
             <div className={`${styles.testResultIcon} ${testResult.success ? styles.success : styles.error}`}>
               {testResult.success ? <Check size={32} /> : <X size={32} />}
             </div>
             <h3 className={styles.testResultTitle}>
-              {testResult.success ? 'Connection Successful' : 'Connection Failed'}
+              {testResult.success ? (
+                testBeforeSave ? 'Connection and Configuration Successful' : 'Connection Successful'
+              ) : (
+                'Connection Failed'
+              )}
             </h3>
             <p className={styles.testResultMessage}>
-              {testResult.success ? testResult.message : (testResult.error || testResult.message)}
+              {testResult.success ? (
+                testBeforeSave ? (
+                  <div style={{ textAlign: 'center' }}>
+                    <div>{testResult.message}</div>
+                    <div style={{ marginTop: 12, fontWeight: 600, color: '#10b981' }}>
+                      ✓ Configuration saved successfully
+                    </div>
+                  </div>
+                ) : (
+                  testResult.message
+                )
+              ) : (
+                testResult.error || testResult.message
+              )}
             </p>
-            <Button variant="secondary" onClick={() => setTestResult(null)}>
+            <Button variant="secondary" onClick={() => { setTestResult(null); setTestBeforeSave(false) }}>
               Close
             </Button>
           </div>

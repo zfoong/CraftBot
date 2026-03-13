@@ -10,6 +10,8 @@
   },
   "model": {
     "llm_provider": "byteplus",
-    "vlm_provider": "byteplus"
+    "vlm_provider": "byteplus",
+    "llm_model": "kimi-k2-250905",
+    "vlm_model": "seed-1-6-250915"
   }
 }
