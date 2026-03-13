@@ -1,8 +1,8 @@
 {
-  "hard_completed": false,
+  "hard_completed": true,
   "soft_completed": false,
-  "hard_completed_at": "2026-03-12T12:32:30.396255",
+  "hard_completed_at": "2026-03-13T00:17:22.146354",
   "soft_completed_at": "2026-03-12T04:16:04.238929",
   "user_name": null,
-  "agent_name": "CraftBot"
+  "agent_name": "My owner is an ASS"
 }

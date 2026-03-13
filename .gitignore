@@ -37,4 +37,4 @@ debug_images
 **/dist
 **/release
 **/*wwebjs*
-app/data/.usage/
+app/data/.usage/*

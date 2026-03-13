@@ -1001,8 +1001,8 @@ class AgentBase:
                 # Log to event stream so agent sees the error
                 if self.event_stream_manager:
                     self.event_stream_manager.log(
-                        event_type="action_error",
-                        event=f"Action {action_name} failed: {error_msg}",
+                        kind="action_error",
+                        message=f"Action {action_name} failed: {error_msg}",
                         display_message=f"{action_name} → failed",
                         action_name=action_name,
                     )
