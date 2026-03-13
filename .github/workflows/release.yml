@@ -167,6 +167,7 @@ jobs:
             --add-data "app/gui/Dockerfile${{ matrix.data_sep }}app/gui" \
             --add-data "app/gui/custom-cont-init.d${{ matrix.data_sep }}app/gui/custom-cont-init.d" \
             --add-data "agents${{ matrix.data_sep }}agents" \
+            --add-data "skills${{ matrix.data_sep }}skills" \
             run.py
 
       - name: Rename artifact

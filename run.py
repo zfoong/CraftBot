@@ -66,6 +66,7 @@ def _bootstrap_frozen():
         "app/data",
         "agents",
         "assets",
+        "skills",
     ]
     # Individual files to bootstrap
     files_to_copy = [
