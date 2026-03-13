@@ -1,6 +1,6 @@
 
 <div align="center">
-    <img src="assets/WCA_README_banner.png" alt="CraftOS Banner" width="1280"/>
+    <img src="assets/craftbot_readme_banner.png" alt="CraftBot Banner" width="1280"/>
 </div>
 <br>
 <div align="center">
@@ -37,24 +37,19 @@ CraftBot is your Personal AI Assistant that lives inside your machine and works 
 </h3>
 
 It autonomously interprets tasks, plans actions, and executes them to achieve your goals.
+It learns your preferences and objectives, proactively helping you plan and initiate tasks to achieve your life goals.
+MCPs and Skills, and external App integrations are supported. 
 
-Set up CraftBot on your machine or a separate environment. Interact with it via the TUI or from anywhere through your favorite messaging apps. Extend the agent's capabilities with MCPs and Skills, and connect to tools like Google Workspace, Slack, Notion, and Telegram to expand its reach. CraftBot intelligently switches between CLI mode for standard tasks and GUI mode when screen interaction is required (GUI mode runs in an isolated environment so it won't disturb your work).
-
-CraftBot awaits your orders, set up your own CraftBot now.
+CraftBot awaits your orders. Set up your own CraftBot now.
 
 ---
 
 ## ✨ Features
 
-- **CLI/GUI Mode** — Agent intelligently switches between CLI and GUI mode based on task complexity. GUI mode enables full desktop automation with screen capture, mouse/keyboard control, and window management.
-- **Multi-LLM Support** — Flexible LLM provider system supporting OpenAI, Google Gemini, Anthropic Claude, BytePlus, and local Ollama models. Easily switch between providers.
-- **37+ Built-in Actions** — Comprehensive action library including:
-  - **File Operations**: Find, read, write, grep, and convert files
-  - **Web Capabilities**: HTTP requests, web search, PDF generation, image generation
-  - **GUI Automation**: Mouse clicks, keyboard input, screenshots, window control
-  - **Application Control**: Open apps, manage windows, clipboard operations
-- **Persistent Memory** — RAG-based semantic memory system powered by ChromaDB. The agent remembers context across sessions with intelligent retrieval and incremental updates.
-- **External tools integration** — Connect to Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord, and Telegram (more to come!) with embedded credentials and OAuth support.
+- **Bring Your Own Key (BYOK)** — Flexible LLM provider system supporting OpenAI, Google Gemini, Anthropic Claude, BytePlus, and local Ollama models. Easily switch between providers.
+- **Memory System** — Distill and consolidate events that happened through the day at midnight.
+- **Proactive Agent** — Learn your preferences, habits, and life goals. Then, perform planning and initiate tasks (with approval, of course) to help you improve in life.
+- **External Tools Integration** — Connect to Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord, and Telegram (more to come!) with embedded credentials and OAuth support.
 - **MCP** — Model Context Protocol integration for extending agent capabilities with external tools and services.
 - **Skills** — Extensible skill framework with built-in skills for task planning, research, code review, git operations, and more.
 - **Cross-Platform** — Full support for Windows and Linux with platform-specific code variants and Docker containerization.
@@ -62,7 +57,13 @@ CraftBot awaits your orders, set up your own CraftBot now.
 > [!IMPORTANT]
 > **Note for GUI mode:** The GUI mode is still in experimental phase. This means you may encounter issues when the agent switches to GUI mode. We are actively improving this feature.
 
+<div align="center">
+    <img src="assets/craftbot_readme_features.png" alt="CraftBot Banner" width="1280"/>
+	<img src="assets/craftbot_features_custom.png" alt="CraftBot Banner" width="1280"/>
+</div>
+
 ---
+
 
 ## 🧰 Getting Started
 
@@ -98,6 +99,10 @@ That's it! The first run will guide you through setting up your API keys.
 - Connect to Google, Slack, Notion, and more
 
 ### 🖥️ Interface Modes
+
+<div align="center">
+    <img src="assets/WCA_README_banner.png" alt="CraftOS Banner" width="1280"/>
+</div>
 
 CraftBot supports multiple UI modes. Choose based on your preference:
 
@@ -138,7 +143,7 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 - [ ] **External Tool integration** — Still adding more!
 - [X] **MCP Layer** — Done.
 - [X] **Skill Layer** — Done.
-- [ ] **Proactive Behaviour** — Pending
+- [X] **Proactive Behaviour** — Pending
 
 ---
 
