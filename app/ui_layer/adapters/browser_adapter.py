@@ -820,24 +820,19 @@ class BrowserAdapter(InterfaceAdapter):
             return ws
         
         self._ws_clients.add(ws)
-        print(f"[BROWSER ADAPTER] WebSocket client connected. Total clients: {len(self._ws_clients)}")
 
         # Send initial state
         try:
             initial_state = self._get_initial_state()
-            print(f"[BROWSER ADAPTER] Sending initial state")
             await ws.send_json({
                 "type": "init",
                 "data": initial_state,
             })
-            print(f"[BROWSER ADAPTER] Initial state sent successfully")
         except (ConnectionResetError, ClientConnectionResetError, RuntimeError) as e:
-            # Gracefully handle connection closing - don't show traceback for expected errors
-            print(f"[BROWSER ADAPTER] Connection closed before initial state could be sent")
+            # Gracefully handle connection closing
             self._ws_clients.discard(ws)
             return ws
         except Exception as e:
-            print(f"[BROWSER ADAPTER] Error sending initial state: {e}")
             self._ws_clients.discard(ws)
             return ws
 
@@ -849,28 +844,23 @@ class BrowserAdapter(InterfaceAdapter):
                         data = json.loads(msg.data)
                         await self._handle_ws_message(data)
                     elif msg.type == WSMsgType.ERROR:
-                        print(f"[BROWSER ADAPTER] WebSocket error: {ws.exception()}")
                         break
                     elif msg.type == WSMsgType.CLOSE:
-                        print(f"[BROWSER ADAPTER] Client initiated close")
                         break
                 except json.JSONDecodeError as e:
-                    print(f"[BROWSER ADAPTER] JSON parse error: {e}")
                     # Continue on JSON errors, don't close connection
+                    pass
                 except Exception as e:
-                    print(f"[BROWSER ADAPTER] Error handling message: {e}")
-                    import traceback
-                    traceback.print_exc()
                     # Continue on message errors, don't close connection
+                    pass
         except asyncio.CancelledError:
-            print(f"[BROWSER ADAPTER] WebSocket cancelled")
+            pass
         except (ClientConnectionResetError, ConnectionResetError):
             pass  # Silently handle expected connection errors
         except Exception as e:
-            print(f"[BROWSER ADAPTER] WebSocket loop error: {e}")
+            pass
         finally:
             self._ws_clients.discard(ws)
-            print(f"[BROWSER ADAPTER] WebSocket client disconnected. Total clients: {len(self._ws_clients)}")
 
         return ws
 

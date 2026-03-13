@@ -691,7 +691,8 @@ if __name__ == "__main__":
         # Print browser mode header
         print_browser_header()
 
-        # Step 1: Start frontend server (0% -> 15%)
+        # Step 1: Start frontend server (0% -> 10%)
+        # Step 1: Start frontend server
         print_step(1, 8, "Starting frontend server")
         frontend_process = launch_frontend(silent=True)
         if not frontend_process:
@@ -713,9 +714,8 @@ if __name__ == "__main__":
             print("="*52 + "\n")
             sys.exit(1)
         print_step_done()
-        print_progress_bar(15)
 
-        # Step 2: Start agent backend (15% -> 30%)
+        # Step 2: Start agent backend
         print_step(2, 8, "Starting agent backend")
         agent_process = launch_agent_background(env_name, use_conda, silent=True)
         if not agent_process:
@@ -723,16 +723,15 @@ if __name__ == "__main__":
             print("\nError: Failed to start agent backend.")
             sys.exit(1)
         print_step_done()
-        print_progress_bar(30)
 
-        # Wait for services (30% -> 100%)
+        # Wait for services
         print("\n  Initializing services")
-        print_progress_bar(30)
         
-        # Wait for frontend and backend to be ready (update progress)
+        # Wait for frontend and backend to be ready
         frontend_ready = False
         backend_ready = False
         
+        # Wait for frontend
         frontend_start = time.time()
         while time.time() - frontend_start < 30:
             try:
@@ -746,12 +745,9 @@ if __name__ == "__main__":
                     break
             except:
                 pass
-            print_progress_bar(30 + int((time.time() - frontend_start) / 30 * 20))
             time.sleep(0.5)
         
-        if not frontend_ready:
-            print_progress_bar(50)
-        
+        # Wait for backend
         backend_start = time.time()
         while time.time() - backend_start < 60:
             try:
@@ -765,9 +761,9 @@ if __name__ == "__main__":
                     break
             except:
                 pass
-            print_progress_bar(50 + int((time.time() - backend_start) / 60 * 50))
             time.sleep(0.5)
         
+        # Show progress bar only at 100% when ready
         print_progress_bar(100)
         print()  # New line after progress bar
 
