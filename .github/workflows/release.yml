@@ -117,7 +117,7 @@ jobs:
         run: |
           cd app/ui_layer/browser/frontend
           npm install
-          npm run build
+          npx vite build
 
       - name: Create default config.json
         shell: bash
