@@ -6,6 +6,7 @@ import platform
 import time
 import socket
 import signal
+import threading
 import shutil # Needed for lsof check on Linux/macOS
 
 # --- CONFIGURATION ---
@@ -189,7 +190,8 @@ def main():
     # Tell this Python wrapper script to completely ignore SIGINT (Ctrl+C).
     # It will not raise KeyboardInterrupt. It will just keep doing what it's doing.
     # The child process will still receive the signal from the terminal driver.
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
     # ------------------------------
 
     # Check if GUI mode is enabled
