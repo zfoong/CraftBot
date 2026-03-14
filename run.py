@@ -30,9 +30,13 @@ import urllib.request
 import urllib.error
 import webbrowser
 import atexit
+import warnings
 from typing import Tuple, Optional, Dict, Any, List
 
 multiprocessing.freeze_support()
+
+# Suppress requests library dependency warnings
+warnings.filterwarnings('ignore', message='.*urllib3.*chardet.*charset_normalizer.*')
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -541,14 +545,23 @@ def is_conda_installed() -> Tuple[bool, str, Optional[str]]:
         ]
         
         for base_path in common_paths:
+            if not os.path.exists(base_path):
+                continue
+            # Check condabin\conda.bat
             conda_bat = os.path.join(base_path, "condabin", "conda.bat")
             if os.path.exists(conda_bat):
                 return True, conda_bat, base_path
+            # Check Scripts\conda.exe
+            conda_exe2 = os.path.join(base_path, "Scripts", "conda.exe")
+            if os.path.exists(conda_exe2):
+                return True, conda_exe2, base_path
         
         # Also check current Python directory
         for base in [os.path.dirname(os.path.dirname(sys.executable))]:
             if os.path.exists(os.path.join(base, "condabin", "conda.bat")):
                 return True, base, base
+            if os.path.exists(os.path.join(base, "Scripts", "conda.exe")):
+                return True, os.path.join(base, "Scripts", "conda.exe"), base
 
     return False, "", None
 
@@ -583,9 +596,14 @@ def get_conda_command() -> str:
         ]
         
         for base_path in common_paths:
+            # Check condabin\conda.bat
             conda_bat = os.path.join(base_path, "condabin", "conda.bat")
             if os.path.exists(conda_bat):
                 return conda_bat
+            # Check Scripts\conda.exe
+            conda_exe2 = os.path.join(base_path, "Scripts", "conda.exe")
+            if os.path.exists(conda_exe2):
+                return conda_exe2
     
     # Fallback to just "conda" (will work if it's in PATH)
     return "conda"

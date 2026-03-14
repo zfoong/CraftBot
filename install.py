@@ -25,7 +25,16 @@ import subprocess
 import shutil
 import time
 import threading
+import warnings
 from typing import Tuple, Optional, Dict, Any
+
+# Fix UTF-8 encoding on Windows
+import io
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+# Suppress requests library dependency warnings
+warnings.filterwarnings('ignore', message='.*urllib3.*chardet.*charset_normalizer.*')
 
 multiprocessing.freeze_support()
 
@@ -384,10 +393,13 @@ def run_command(cmd_list: list[str], cwd: Optional[str] = None, check: bool = Tr
 # ENVIRONMENT SETUP
 # ==========================================
 def is_conda_installed() -> Tuple[bool, str, Optional[str]]:
+    """Find conda installation - checks PATH first, then common locations."""
+    
+    # Try PATH first
     conda_exe = shutil.which("conda")
     if conda_exe:
         conda_base_path = os.path.dirname(os.path.dirname(conda_exe))
-        return True, f"Found at {conda_exe}", conda_base_path
+        return True, f"Found in PATH at {conda_exe}", conda_base_path
 
     if sys.platform == "win32":
         # Check common Miniconda/Anaconda installation paths
@@ -400,11 +412,30 @@ def is_conda_installed() -> Tuple[bool, str, Optional[str]]:
             "C:\\Miniconda3",
             "C:\\anaconda3",
             "C:\\Anaconda3",
+            os.path.join(os.path.expanduser("~"), "miniconda"),
+            os.path.join(os.path.expanduser("~"), "Miniconda"),
+            "C:\\Programs\\miniconda3",
+            "C:\\Program Files\\miniconda3",
         ]
         
+        # For each path, check multiple possible locations
         for base_path in common_paths:
+            if not os.path.exists(base_path):
+                continue
+            
+            # Check condabin\conda.bat (standard location)
             conda_bat = os.path.join(base_path, "condabin", "conda.bat")
             if os.path.exists(conda_bat):
+                return True, f"Found at {base_path}", base_path
+            
+            # Check Scripts\conda.exe (alternative location after recent installs)
+            conda_exe2 = os.path.join(base_path, "Scripts", "conda.exe")
+            if os.path.exists(conda_exe2):
+                return True, f"Found at {base_path}", base_path
+            
+            # Check Library\bin\conda.exe (another alternative)
+            conda_exe3 = os.path.join(base_path, "Library", "bin", "conda.exe")
+            if os.path.exists(conda_exe3):
                 return True, f"Found at {base_path}", base_path
         
         # Also check current Python directory
@@ -416,7 +447,20 @@ def is_conda_installed() -> Tuple[bool, str, Optional[str]]:
         for base_path in potential_base_paths:
             activate_bat = os.path.join(base_path, "Scripts", "activate.bat")
             condabin_bat = os.path.join(base_path, "condabin", "conda.bat")
-            if os.path.exists(activate_bat) or os.path.exists(condabin_bat):
+            conda_exe2 = os.path.join(base_path, "Scripts", "conda.exe")
+            if os.path.exists(activate_bat) or os.path.exists(condabin_bat) or os.path.exists(conda_exe2):
+                return True, f"Found at {base_path}", base_path
+    else:
+        # Linux/Mac
+        common_paths = [
+            os.path.expanduser("~/miniconda3"),
+            os.path.expanduser("~/anaconda3"),
+            "/opt/miniconda3",
+            "/usr/local/miniconda3",
+        ]
+        for base_path in common_paths:
+            conda_exe = os.path.join(base_path, "bin", "conda")
+            if os.path.exists(conda_exe):
                 return True, f"Found at {base_path}", base_path
 
     return False, "Not found", None
@@ -443,13 +487,28 @@ def install_miniconda():
     
     # Detect OS and architecture
     if sys.platform == "win32":
-        # Windows
+        # Windows - handle long paths
         if sys.maxsize > 2**32:
             url = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
             installer = os.path.join(BASE_DIR, "Miniconda-installer.exe")
         else:
             url = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86.exe"
             installer = os.path.join(BASE_DIR, "Miniconda-installer.exe")
+        
+        # Warn about long paths
+        if len(installer) > 260:
+            print("⚠️  WARNING: Installation path is very long (>260 characters)")
+            print(f"   Current path: {BASE_DIR}")
+            print(f"   Installer path: {installer}")
+            print("\n📋 To fix this issue:")
+            print("   1. Move project to shorter path: C:\\CraftBot")
+            print("   2. Or enable Windows long paths (requires admin):")
+            print("      powershell -Command \"New-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' -Name 'LongPathsEnabled' -Value 1 -Force\"")
+            print("   3. Or use virtual environment instead:")
+            print("      python -m venv craftbot-env")
+            print("      .\\craftbot-env\\Scripts\\activate")
+            print("      python install.py")
+            sys.exit(1)
     elif sys.platform == "linux":
         # Linux
         if sys.maxsize > 2**32:
@@ -477,21 +536,67 @@ def install_miniconda():
             print("🔧 Running Miniconda installer...")
             print("   An installation dialog will appear. Select:")
             print("   - Add Miniconda to PATH (important!)")
-            print("   - Install for current user\n")
-            sp.run([installer], check=True)
+            print("   - Install for current user")
+            print("   - Standard installation directory\n")
+            
+            # Run installer with error handling
+            try:
+                result = sp.run([installer], timeout=600)
+                if result.returncode != 0:
+                    print(f"\n❌ Installer exited with error code {result.returncode}")
+                    print("\n📋 Troubleshooting:")
+                    print("   1. Check if you have admin rights")
+                    print("   2. Ensure disk space available (1-2 GB)")
+                    print("   3. Listen for error messages in the installer window")
+                    print("   4. Try manual installation: https://conda.io/miniconda")
+                    print("   5. Or use virtual environment: python -m venv craftbot-env")
+                    if os.path.exists(installer):
+                        os.remove(installer)
+                    return False
+            except sp.TimeoutExpired:
+                print(f"\n❌ Installer timed out (took >10 minutes)")
+                if os.path.exists(installer):
+                    os.remove(installer)
+                return False
+            
             print("\n✓ Miniconda installed!")
-            print("   Please restart your terminal and run the installation again.\n")
-            os.remove(installer)
+            print("   IMPORTANT: Please restart your terminal!")
+            print("   Then run: python install.py --conda\n")
+            if os.path.exists(installer):
+                os.remove(installer)
             return True
         else:
             print("🔧 Running Miniconda installer...")
-            sp.run(["bash", installer, "-b", "-p", os.path.expanduser("~/miniconda3")], check=True)
-            print("✓ Miniconda installed!")
-            print("   Please add conda to PATH, then restart terminal and run installation again.\n")
-            os.remove(installer)
-            return True
+            try:
+                result = sp.run(
+                    ["bash", installer, "-b", "-p", os.path.expanduser("~/miniconda3")],
+                    timeout=600
+                )
+                if result.returncode != 0:
+                    print(f"❌ Installer exited with error code {result.returncode}")
+                    if os.path.exists(installer):
+                        os.remove(installer)
+                    return False
+                
+                print("✓ Miniconda installed!")
+                print("   Please run: ~/miniconda3/bin/conda init")
+                print("   Then restart terminal and run: python install.py --conda\n")
+                if os.path.exists(installer):
+                    os.remove(installer)
+                return True
+            except sp.TimeoutExpired:
+                print(f"❌ Installer timed out")
+                if os.path.exists(installer):
+                    os.remove(installer)
+                return False
+    
     except Exception as e:
         print(f"❌ Miniconda installation failed: {e}")
+        print("\n📋 Alternative options:")
+        print("   1. Manual installation: https://conda.io/miniconda")
+        print("   2. Use virtual environment:")
+        print("      python -m venv craftbot-env")
+        print("      python install.py")
         if os.path.exists(installer):
             try:
                 os.remove(installer)
@@ -526,9 +631,26 @@ def get_conda_command() -> str:
         ]
         
         for base_path in common_paths:
+            # Check condabin\conda.bat
             conda_bat = os.path.join(base_path, "condabin", "conda.bat")
             if os.path.exists(conda_bat):
                 return conda_bat
+            
+            # Check Scripts\conda.exe
+            conda_exe2 = os.path.join(base_path, "Scripts", "conda.exe")
+            if os.path.exists(conda_exe2):
+                return conda_exe2
+    else:
+        # Linux/Mac
+        common_paths = [
+            os.path.expanduser("~/miniconda3"),
+            os.path.expanduser("~/anaconda3"),
+            "/opt/miniconda3",
+        ]
+        for base_path in common_paths:
+            conda_exe = os.path.join(base_path, "bin", "conda")
+            if os.path.exists(conda_exe):
+                return conda_exe
     
     # Fallback to just "conda" (will work if it's in PATH)
     return "conda"
@@ -767,62 +889,78 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
             if "no space left on device" in error_output.lower() or "disk full" in error_output.lower():
                 print("\n❌ DISK SPACE ERROR - No space left on device\n")
                 print("This is a common issue on Kali Linux when installing large packages.\n")
-                print("Immediate fixes:\n")
-                print("1. Clear pip cache (usually frees 1-5 GB):")
-                print("   pip cache purge\n")
-                print("2. Clear npm cache (if installed):")
-                print("   npm cache clean --force\n")
-                print("3. Use alternate disk with more space:")
-                mkdir_cmd = "/mnt/external/pip-tmp" if sys.platform != "win32" else "D:/pip-tmp"
-                print(f"   mkdir -p {mkdir_cmd}")
-                print(f"   TMPDIR={mkdir_cmd} python install.py\n")
-                print("4. Check disk usage:")
-                check_cmd = "du -sh ~/*" if sys.platform != "win32" else "dir /-s C:\\"
-                print(f"   {check_cmd}\n")
-                suggest_cleanup_steps()
+                print("Quick fixes:")
+                print("  1. pip cache purge                         # Free 1-5 GB")
+                print("  2. npm cache clean --force                 # If Node.js installed")
+                if sys.platform != "win32":
+                    print("  3. sudo apt-get clean                       # Clear system packages")
+                print("\nOr use alternate location:")
+                mkdir_cmd = "/mnt/external/pip-tmp" if sys.platform != "win32" else "D:\\pip-tmp"
+                print(f"  mkdir -p {mkdir_cmd}")
+                print(f"  TMPDIR={mkdir_cmd} python install.py\n")
+                print("📖 Full guide: See INSTALLATION_TROUBLESHOOTING.md")
+                sys.exit(1)
+            
+            # Check for greenlet compilation error
+            if "greenlet" in error_output.lower() and "build" in error_output.lower():
+                print("\n❌ GREENLET COMPILATION ERROR\n")
+                print("Greenlet has issues compiling on Windows with Python 3.9+\n")
+                print("Solutions (in order of preference):")
+                print("  1. Use conda (handles pre-compiled packages):")
+                print("     python install.py --conda\n")
+                print("  2. Create virtual environment:")
+                print("     python -m venv craftbot-env")
+                print("     .\\craftbot-env\\Scripts\\activate  # Windows")
+                print("     source craftbot-env/bin/activate  # Linux/Mac")
+                print("     python install.py\n")
+                print("  3. Install C++ build tools and retry:")
+                print("     https://visualstudio.microsoft.com/downloads/")
+                print("\n📖 Full guide: See INSTALLATION_TROUBLESHOOTING.md")
                 sys.exit(1)
             
             # Check for PEP 668 error
             if "externally-managed-environment" in error_output or "externally managed" in error_output:
                 print("\n⚠️  PEP 668 Error Detected (externally-managed-environment)\n")
                 print("This usually happens on Kali Linux or other systems with managed Python.")
-                print("\nOptions to fix:\n")
+                print("\nOptions to fix (in order of preference):\n")
                 print("Option 1 (Recommended): Use a virtual environment")
                 print("  python3 -m venv craftbot-env")
                 print("  source craftbot-env/bin/activate  # On Linux/macOS")
                 print("  .\\craftbot-env\\Scripts\\activate  # On Windows")
                 print("  python install.py\n")
                 
-                print("Option 2: Use conda (recommended for data science projects)")
+                print("Option 2: Use conda (recommended for data science)")
                 print("  python install.py --conda\n")
                 
                 print("Option 3: Break system packages (not recommended)")
-                print("  Retrying with --break-system-packages flag...\n")
-                
-                # Retry with --break-system-packages
-                cmd_with_flag = [sys.executable, "-m", "pip", "install", "--break-system-packages", "-r", requirements_file]
-                result = run_command(cmd_with_flag, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
-                
-                if result and hasattr(result, 'returncode') and result.returncode == 0:
-                    print("✓ Core dependencies installed (with --break-system-packages)")
-                else:
-                    print("\n✗ Installation failed even with --break-system-packages")
-                    if hasattr(result, 'stderr') and result.stderr:
-                        print(f"\nError: {result.stderr[:500]}")
-                    print("\nPlease use Option 1 or Option 2 above.")
-                    sys.exit(1)
-            else:
-                # Different error
-                print("\n✗ Error installing core dependencies:")
-                if hasattr(result, 'stderr') and result.stderr:
-                    print(result.stderr[:1000])
-                print("\nTroubleshooting:")
-                print("  1. Check for disk space: " + ("df -h" if sys.platform != "win32" else "dir C:\\"))
-                print("  2. Clear pip cache: pip cache purge")
-                print("  3. Check your internet connection")
-                print("  4. Try: pip install --upgrade pip")
-                print("  5. Try with conda: python install.py --conda")
+                print("  python install.py --force\n")
+                print("📖 Full guide: See INSTALLATION_TROUBLESHOOTING.md")
                 sys.exit(1)
+            
+            # Check for lxml error
+            if "lxml" in error_output.lower() and "html_clean" in error_output:
+                print("\n❌ LXML COMPATIBILITY ERROR\n")
+                print("lxml 4.8.0 doesn't provide the 'html_clean' extra\n")
+                print("Fix: Use conda (handles pre-compiled packages):")
+                print("  python install.py --conda\n")
+                print("Or upgrade lxml:")
+                print("  pip install --upgrade lxml>=4.9.3\n")
+                print("📖 Full guide: See INSTALLATION_TROUBLESHOOTING.md")
+                sys.exit(1)
+            
+            # Different error
+            print("\n✗ Error installing core dependencies:")
+            if hasattr(result, 'stderr') and result.stderr:
+                error_preview = result.stderr[:500]
+                print(error_preview)
+            print("\nTroubleshooting:")
+            print("  1. Check for disk space: " + ("df -h" if sys.platform != "win32" else "dir C:\\"))
+            print("  2. Clear pip cache: pip cache purge")
+            print("  3. Check your internet connection")
+            print("  4. Try: pip install --upgrade pip")
+            print("  5. Try with conda: python install.py --conda")
+            print("  6. See INSTALLATION_TROUBLESHOOTING.md for detailed help")
+            sys.exit(1)
         else:
             print("✓ Core dependencies installed")
     except Exception as e:
@@ -1144,6 +1282,82 @@ def show_api_setup_instructions():
 
 
 # ==========================================
+# PRE-FLIGHT CHECKS & FIXES
+# ==========================================
+def run_preflight_checks():
+    """Run pre-installation checks and suggest fixes."""
+    issues = []
+    
+    # Check Python version
+    py_version = sys.version_info
+    if py_version >= (3, 9) and sys.platform == "win32":
+        issues.append("greenlet-windows")
+    
+    # Check for corrupted opencv
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "list"],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if "pencv-python" in result.stdout or ("opencv-python" in result.stdout and "pencv" in result.stdout):
+            subprocess.run(
+                [sys.executable, "-m", "pip", "uninstall", "opencv-python", "-y"],
+                capture_output=True
+            )
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "opencv-python", "--no-cache-dir"],
+                capture_output=True,
+                timeout=60
+            )
+            issues.append("opencv-corrupted")
+    except:
+        pass
+    
+    # Check disk space
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            free_bytes = ctypes.c_ulonglong(0)
+            ctypes.windll.kernel32.GetDiskFreeSpaceEx(
+                ctypes.c_wchar_p("."),
+                None, None, ctypes.pointer(free_bytes)
+            )
+            free_gb = free_bytes.value / (1024 ** 3)
+        else:
+            st = os.statvfs(".")
+            free_gb = (st.f_bavail * st.f_frsize) / (1024 ** 3)
+        
+        if free_gb < 5:
+            issues.append("low-disk-space")
+    except:
+        pass
+    
+    return issues
+
+def preinstall_greenlet_fix_windows():
+    """Pre-emptively fix greenlet on Windows to prevent compilation errors."""
+    if sys.platform != "win32" or sys.version_info < (3, 9):
+        return
+    
+    print("🔧 Pre-installing greenlet (binary) to prevent compilation errors...")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "--only-binary", ":all:", "greenlet"],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if result.returncode == 0:
+            print("✓ Greenlet pre-installed")
+        else:
+            print("⚠ Greenlet pre-install skipped (may try to compile during main install)")
+    except:
+        print("⚠ Greenlet pre-install failed (will continue anyway)")
+
+
+# ==========================================
 # MAIN
 # ==========================================
 if __name__ == "__main__":
@@ -1172,6 +1386,16 @@ if __name__ == "__main__":
     else:
         print(" GUI:  Disabled")
     print("="*60 + "\n")
+    
+    # Run pre-flight checks (non-blocking)
+    try:
+        run_preflight_checks()
+    except Exception as e:
+        print(f"⚠ Pre-flight check error: {e}")
+    
+    # Pre-fix greenlet on Windows before main installation
+    if not use_conda and sys.platform == "win32":
+        preinstall_greenlet_fix_windows()
 
     # Pre-flight check: Disk space (especially important for Kali)
     min_space_needed = 8.0 if install_gui else 5.0  # GUI mode needs more space for torch
@@ -1182,29 +1406,24 @@ if __name__ == "__main__":
     if use_conda:
         is_installed, reason, conda_base = is_conda_installed()
         if not is_installed:
-            print("❌ Error: Conda not found")
-            print("\nOptions:")
-            print("  1. Auto-install Miniconda (recommended)")
-            print("  2. Install manually from https://conda.io/")
-            print("  3. Use without conda: python install.py\n")
+            print("\n⚠️  Conda not found - auto-installing Miniconda...")
+            print("(This will take 2-3 minutes)\n")
             
-            # Ask user if they want to auto-install
-            choice = input("Select option (1-3): ").strip()
-            if choice == "1":
-                install_miniconda()
-                # Refresh conda detection after installation
-                is_installed, reason, conda_base = is_conda_installed()
-                if not is_installed:
-                    print("❌ Miniconda installation failed. Please install manually.")
-                    sys.exit(1)
-            elif choice == "3":
-                print("✓ Proceeding with pip installation (no conda)\n")
-                use_conda = False
-                # Update config to reflect the user's choice
-                save_config_value("use_conda", False)
-            else:
-                print("\n❌ Please install conda from https://conda.io/ or select option 3 to use pip\n")
+            # Auto-install Miniconda without prompting
+            install_miniconda()
+            
+            # Refresh conda detection after installation
+            is_installed, reason, conda_base = is_conda_installed()
+            if not is_installed:
+                print("\n❌ Miniconda installation failed.")
+                print("Please manually install from: https://conda.io/")
+                print("Then restart your terminal and run: python install.py --conda\n")
                 sys.exit(1)
+            else:
+                print(f"\n✓ Miniconda installed successfully!")
+                print(f"⚠️  IMPORTANT: Please restart your terminal!")
+                print(f"Then run: python install.py --conda\n")
+                sys.exit(0)
 
     # After user choice, setup the appropriate environment
     if use_conda:
@@ -1218,7 +1437,7 @@ if __name__ == "__main__":
         print()
 
     # Install Playwright browser (needed for WhatsApp Web)
-    install_playwright_browser(use_conda=use_conda)
+    install_playwright_browser()
 
     # Install browser frontend dependencies
     install_browser_frontend()

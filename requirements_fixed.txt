@@ -1,0 +1,71 @@
+# CraftBot Core Dependencies - Optimized for Windows/Linux compatibility
+# Version: 2.0 - Fixed for greenlet and lxml compatibility
+
+# Core HTTP & Data
+requests>=2.31.0
+pyyaml>=6.0
+loguru>=0.7.0
+nest-asyncio>=1.6.0
+pymongo>=4.16.0
+tzlocal>=5.0
+chardet>=5.2.0
+
+# Image & Media Processing
+pillow>=10.0.0
+qrcode>=7.4.2
+pytesseract>=0.3.13
+mss>=10.0.0
+
+# Web & Scraping
+aiohttp>=3.9.0
+beautifulsoup4>=4.12.0
+# Fixed: lxml 4.9+ has the html_clean extra properly packaged
+lxml>=4.9.3
+trafilatura>=1.6.0
+
+# LLM & AI
+openai>=1.3.0
+google-generativeai>=0.3.0
+anthropic>=0.7.0
+chromadb>=0.4.0
+tiktoken>=0.5.0
+langgraph>=0.0.50
+
+# Graph & DB
+neo4j>=5.14.0
+
+# HTTP & Web Utilities
+httpx>=0.25.0
+httpx-sse>=0.4.0
+websockets>=12.0
+
+# Document Processing
+markdown2>=2.4.9
+python-docx>=0.8.11
+docling>=1.16.0
+
+# Bot & Automation
+fake-useragent>=1.4.0
+fpdf2>=2.7.0
+googlesearch-python>=1.2.3
+pyautogui>=0.9.53
+pygetwindow>=0.0.9
+tenacity>=8.2.3
+
+# Data & ML
+scikit-learn>=1.3.0
+watchdog>=3.0.0
+
+# Communication
+telethon>=1.31.0
+croniter>=2.0.0
+playwright>=1.40.0
+
+# CLI & UI
+textual>=0.38.0
+textual-image>=0.8.0
+pyperclip>=1.8.2
+gradio_client>=0.9.0
+
+# Environment
+python-dotenv>=1.0.0

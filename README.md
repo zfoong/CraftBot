@@ -87,9 +87,20 @@ python install.py
 python run.py
 ```
 
+**With Conda (recommended for better compatibility):**
+```bash
+# Install with conda environment
+python install.py --conda
+
+# Run the agent with conda environment
+conda run -n craftbot python run.py
+```
+
 That's it! The first run will guide you through setting up your API keys.
 
 **Note:** If you don't have Node.js installed, the installer will guide you with step-by-step instructions. You can also skip browser mode and use TUI instead (see modes below).
+
+**Conda environment name:** `craftbot` - Use this with `conda run -n craftbot <command>` to run any command in the CraftBot environment.
 
 ### What you can do right after?
 - Talk to the agent naturally
@@ -146,16 +157,6 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 
 GUI mode enables screen automation - the agent can see and interact with a desktop environment. This is optional and requires additional setup.
 
-```bash
-# Install with GUI support (using pip, no conda required)
-python install.py --gui
-
-# Install with GUI support and conda
-python install.py --gui --conda
-
-# Run with GUI mode
-python run.py --gui
-```
 
 > [!NOTE]
 > GUI mode is experimental and requires additional dependencies (~4GB for model weights). If you don't need desktop automation, skip this and use Browser/TUI mode instead which has no additional dependencies.
@@ -217,7 +218,14 @@ python run.py --cli
 # With GPU/GUI mode
 python run.py --gui
 
-# With conda environment
+# With conda environment (RECOMMENDED - cleanest output)
+.\run.bat
+
+# With conda environment and specific mode
+.\run.bat --tui
+.\run.bat --cli
+
+# Or manual conda command
 conda run -n craftbot python run.py
 
 # Or using full path if conda not in PATH
@@ -254,7 +262,14 @@ conda run -n craftbot python run.py
 ---
 
 ## � Troubleshooting & Common Issues
-
+### Conda Setup Issues
+If you installed with conda (`python install.py --conda`):
+- **Environment name:** `craftbot` (automatically created)
+- **Easiest way to run:** `.\run.bat` (auto-suppresses warnings)
+- **Run with specific mode:** `.\run.bat --tui` or `.\run.bat --cli`
+- **Manual conda command:** `conda run -n craftbot python run.py`
+- **Activate manually:** `conda activate craftbot` then `python run.py`
+- **Check if created:** `conda env list` (look for `craftbot` in the list)
 ### Missing Node.js (for Browser Mode)
 If you see **"npm not found in PATH"** when running `python run.py`:
 1. Download from [nodejs.org](https://nodejs.org/) (choose LTS version)

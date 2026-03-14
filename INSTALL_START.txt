@@ -1,0 +1,18 @@
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║           🚀 CRAFTBOT INSTALLATION - START HERE 🚀           ║
+║                                                               ║
+║  Before doing ANYTHING else, run this ONE command:           ║
+║                                                               ║
+║         python auto_setup.py                                 ║
+║                                                               ║
+║  This script automatically:                                  ║
+║  ✓ Detects your Python environment                           ║
+║  ✓ Fixes broken packages                                     ║
+║  ✓ Creates virtual environment if needed                     ║
+║  ✓ Pre-installs problem packages                             ║
+║  ✓ Tells you exactly what to do next                         ║
+║                                                               ║
+║  For detailed info, see: START_HERE.md                       ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
