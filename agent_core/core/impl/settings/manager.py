@@ -112,6 +112,8 @@ class SettingsManager:
         """
         self._settings_path = Path(settings_path) if settings_path else DEFAULT_SETTINGS_PATH
         self._load_settings()
+
+        self._sync_to_environ()
         logger.info(f"[SETTINGS] Initialized from {self._settings_path}")
 
     def _load_settings(self) -> None:
