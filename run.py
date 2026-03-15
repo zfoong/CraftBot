@@ -34,8 +34,8 @@ from typing import Tuple, Optional, Dict, Any, List
 
 multiprocessing.freeze_support()
 
-from dotenv import load_dotenv
-load_dotenv()
+# Configuration is loaded from settings.json via the agent startup
+# No .env file is used - all settings come from app/config/settings.json
 
 # --- Base directory ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

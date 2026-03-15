@@ -22,7 +22,7 @@
   },
   "endpoints": {
     "remote_model_url": "",
-    "byteplus_base_url": "",
+    "byteplus_base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
     "google_api_base": "",
     "google_api_version": ""
   },

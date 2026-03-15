@@ -119,6 +119,8 @@ class AgentBase:
         data_dir: str = "app/data",
         chroma_path: str = "./chroma_db",
         llm_provider: str = "anthropic",
+        llm_api_key: str | None = None,
+        llm_base_url: str | None = None,
         deferred_init: bool = False,
     ) -> None:
         """
@@ -131,6 +133,8 @@ class AgentBase:
                 RAG components.
             llm_provider: Provider name passed to :class:`LLMInterface` and
                 :class:`VLMInterface`.
+            llm_api_key: API key for the LLM provider.
+            llm_base_url: Base URL for the LLM provider (optional).
             deferred_init: If True, allow LLM/VLM initialization to be deferred
                 until API key is configured (useful for first-time setup).
         """
@@ -143,10 +147,17 @@ class AgentBase:
         # LLM + prompt plumbing (may be deferred if API key not yet configured)
         self.llm = LLMInterface(
             provider=llm_provider,
+            api_key=llm_api_key,
+            base_url=llm_base_url,
             db_interface=self.db_interface,
             deferred=deferred_init,
         )
-        self.vlm = VLMInterface(provider=llm_provider, deferred=deferred_init)
+        self.vlm = VLMInterface(
+            provider=llm_provider,
+            api_key=llm_api_key,
+            base_url=llm_base_url,
+            deferred=deferred_init,
+        )
 
         self.event_stream_manager = EventStreamManager(
             self.llm,
@@ -2163,6 +2174,7 @@ class AgentBase:
         *,
         provider: str | None = None,
         api_key: str = "",
+        base_url: str | None = None,
         interface_mode: str = "tui",
     ) -> None:
         """
@@ -2173,6 +2185,7 @@ class AgentBase:
                 chat starts; defaults to the provider configured during
                 initialization.
             api_key: Optional API key presented in the interface for convenience.
+            base_url: Optional base URL for the provider.
             interface_mode: "tui" for Textual interface, "cli" for command line.
         """
         # Check if browser startup UI is active

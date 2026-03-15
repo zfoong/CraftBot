@@ -77,8 +77,9 @@ def save_settings_to_json(provider: str, api_key: str) -> bool:
         if not _save_settings(settings):
             return False
 
-        # Also sync to os.environ for current session
-        _sync_to_environ(provider, api_key)
+        # Reload settings cache so changes take effect
+        from app.config import reload_settings
+        reload_settings()
 
         logger.info(f"[SETTINGS] Saved provider={provider} to settings.json")
         return True
@@ -86,17 +87,6 @@ def save_settings_to_json(provider: str, api_key: str) -> bool:
     except Exception as e:
         logger.error(f"[SETTINGS] Failed to save to settings.json: {e}")
         return False
-
-
-def _sync_to_environ(provider: str, api_key: str) -> None:
-    """Sync provider and API key to os.environ for current session."""
-    os.environ["LLM_PROVIDER"] = provider
-    os.environ["VLM_PROVIDER"] = provider
-
-    if api_key:
-        api_key_env = get_api_key_env_name(provider)
-        if api_key_env:
-            os.environ[api_key_env] = api_key
 
 
 # Keep old function name as alias for backwards compatibility

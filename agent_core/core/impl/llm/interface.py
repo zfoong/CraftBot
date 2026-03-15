@@ -67,6 +67,8 @@ class LLMInterface:
         *,
         provider: Optional[str] = None,
         model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         temperature: float = 0.0,
         max_tokens: int = 8000,
         deferred: bool = False,
@@ -81,6 +83,10 @@ class LLMInterface:
         self._anthropic_client = None
         self._initialized = False
         self._deferred = deferred
+
+        # Store for reinitialization
+        self._init_api_key = api_key
+        self._init_base_url = base_url
 
         # Hooks for runtime-specific behavior
         self._get_token_count = get_token_count or (lambda: 0)
@@ -97,6 +103,8 @@ class LLMInterface:
             provider=provider,
             interface=InterfaceType.LLM,
             model_override=model,
+            api_key=api_key,
+            base_url=base_url,
             deferred=deferred,
         )
 
@@ -138,11 +146,18 @@ class LLMInterface:
         """Check if the LLM client is properly initialized."""
         return self._initialized
 
-    def reinitialize(self, provider: Optional[str] = None) -> bool:
-        """Reinitialize the LLM client with current environment variables.
+    def reinitialize(
+        self,
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ) -> bool:
+        """Reinitialize the LLM client with new settings.
 
         Args:
             provider: Optional provider override. If None, uses current provider.
+            api_key: Optional API key. If None, uses stored key.
+            base_url: Optional base URL. If None, uses stored URL.
 
         Returns:
             True if initialization was successful, False otherwise.
@@ -151,12 +166,17 @@ class LLMInterface:
         from app.models.types import InterfaceType
 
         target_provider = provider or self.provider
+        target_api_key = api_key or self._init_api_key
+        target_base_url = base_url or self._init_base_url
+
         try:
             logger.info(f"[LLM] Reinitializing with provider: {target_provider}")
             ctx = ModelFactory.create(
                 provider=target_provider,
                 interface=InterfaceType.LLM,
                 model_override=None,
+                api_key=target_api_key,
+                base_url=target_base_url,
                 deferred=False,
             )
 
