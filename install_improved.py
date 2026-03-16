@@ -556,6 +556,13 @@ class InstallationManager:
         print(" 📦 Installing Dependencies")
         print("="*60 + "\n")
         
+        # Upgrade pip first to avoid installation issues with old pip versions
+        try:
+            upgrade_cmd = [python_exe, "-m", "pip", "install", "--upgrade", "pip"]
+            subprocess.run(upgrade_cmd, timeout=300, capture_output=True)
+        except Exception:
+            pass
+        
         try:
             cmd = [python_exe, "-m", "pip", "install", "-r", REQUIREMENTS_FILE]
             

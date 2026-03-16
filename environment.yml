@@ -17,6 +17,8 @@ dependencies:
   - aiohttp=3.13.3
   - beautifulsoup4=4.14.3
   - chardet=5.2.0
+  - charset-normalizer>=3.0.0
+  - urllib3<3.0.0
   - lxml=6.0.2
   - scikit-learn=1.7.2
   - pip:

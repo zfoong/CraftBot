@@ -660,12 +660,19 @@ def setup_conda_environment(env_name: str, yml_path: str = YML_FILE):
     try:
         print(f"🔧 Setting up conda environment '{env_name}'...")
         result = run_command_with_progress([conda_cmd, "env", "update", "-f", yml_path, "-n", env_name], "Installing dependencies via conda", check=False)
-        if result and hasattr(result, 'returncode') and result.returncode == 0:
+        
+        # Verify environment was actually created (ignore warnings)
+        if verify_conda_env(env_name):
+            # Upgrade pip in the conda environment
+            run_command([conda_cmd, "run", "-n", env_name, "python", "-m", "pip", "install", "--upgrade", "pip"], quiet=True, check=False)
             print("✓ Conda environment ready")
+            return True
         else:
-            print("\n✗ Failed to set up conda environment")
-            if result and hasattr(result, 'stderr'):
-                print(result.stderr[:500])
+            print("\n✗ Failed to create conda environment")
+            print("  Please try one of the following:")
+            print(f"  1. Manually delete: conda env remove -n {env_name}")
+            print(f"  2. Try again: python install.py --conda")
+            print("  3. Use pip instead: python install.py")
             sys.exit(1)
     except Exception as e:
         print(f"\n✗ Error setting up conda environment: {e}")
@@ -760,27 +767,13 @@ def install_nodejs_linux():
 
 def install_playwright_browser():
     """Install Playwright Chromium browser for WhatsApp Web support."""
-    print("\nInstalling Playwright Chromium browser...")
     try:
-        result = run_command([sys.executable, "-m", "playwright", "install", "chromium"], check=False, capture=True, show_error=False)
+        result = run_command([sys.executable, "-m", "playwright", "install", "chromium"], check=False, quiet=True, show_error=False)
         if result and hasattr(result, 'returncode') and result.returncode == 0:
-            print("✓ Playwright Chromium installed")
             return True
         else:
-            # Playwright installation failed, but this is not critical for browser mode
-            print("⚠ Warning: Playwright browser installation failed")
-            if result and hasattr(result, 'stderr') and result.stderr:
-                # Only show first 300 chars of error
-                error_msg = result.stderr[:300].strip()
-                if error_msg:
-                    print(f"  Error details: {error_msg}")
-            print("  WhatsApp Web integration may not work")
-            print("  You can manually install later with: playwright install chromium")
             return False
-    except Exception as e:
-        print(f"⚠ Warning: Failed to install Playwright browser: {e}")
-        print("  WhatsApp Web integration may not work")
-        print("  You can manually install later with: playwright install chromium")
+    except Exception:
         return False
 
 def install_browser_frontend():
@@ -861,6 +854,10 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
         if not os.path.exists(requirements_file):
             print(f"Error: {requirements_file} not found.")
             sys.exit(1)
+        
+        # Upgrade pip first to avoid installation issues with old pip versions
+        upgrade_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "pip"]
+        run_command(upgrade_cmd, quiet=True, check=False)
         
         print("🔧 Installing core dependencies...")
         
@@ -1341,20 +1338,16 @@ def preinstall_greenlet_fix_windows():
     if sys.platform != "win32" or sys.version_info < (3, 9):
         return
     
-    print("🔧 Pre-installing greenlet (binary) to prevent compilation errors...")
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", "--upgrade", "--only-binary", ":all:", "greenlet"],
-            capture_output=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             text=True,
             timeout=120
         )
-        if result.returncode == 0:
-            print("✓ Greenlet pre-installed")
-        else:
-            print("⚠ Greenlet pre-install skipped (may try to compile during main install)")
     except:
-        print("⚠ Greenlet pre-install failed (will continue anyway)")
+        pass
 
 
 # ==========================================
@@ -1383,8 +1376,6 @@ if __name__ == "__main__":
         print(" Mode: Global pip")
     if install_gui:
         print(" GUI:  Enabled (OmniParser)")
-    else:
-        print(" GUI:  Disabled")
     print("="*60 + "\n")
     
     # Run pre-flight checks (non-blocking)
@@ -1429,9 +1420,7 @@ if __name__ == "__main__":
     if use_conda:
         env_name = get_env_name_from_yml()
         setup_conda_environment(env_name)
-        print(f"✓ Verifying conda environment...")
-        verify_conda_env(env_name)
-        print("✓ Environment verified\n")
+        print()
     else:
         setup_pip_environment()
         print()
@@ -1453,6 +1442,12 @@ if __name__ == "__main__":
     print("="*60)
     print(" ✅ Installation Complete!")
     print("="*60)
-    print("\n🚀 Starting CraftBot Browser Interface...\n")
+    
+    # Auto-launch after installation
+    if use_conda:
+        print("\n🚀 Launching CraftBot with conda environment...\n")
+    else:
+        print("\n🚀 Launching CraftBot...\n")
+    
     launch_agent_after_install(install_gui, use_conda)
 
