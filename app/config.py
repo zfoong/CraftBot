@@ -205,7 +205,7 @@ from agent_core import get_credential
 
 # Google (PKCE - only client_id required, secret kept for backwards compatibility)
 GOOGLE_CLIENT_ID: str = get_credential("google", "client_id", "GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET: str = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_CLIENT_SECRET: str = get_credential("google", "client_secret", "GOOGLE_CLIENT_SECRET")
 
 # LinkedIn (requires both client_id and client_secret)
 LINKEDIN_CLIENT_ID: str = get_credential("linkedin", "client_id", "LINKEDIN_CLIENT_ID")
@@ -223,8 +223,8 @@ TELEGRAM_SHARED_BOT_TOKEN: str = os.environ.get("TELEGRAM_SHARED_BOT_TOKEN", "")
 TELEGRAM_SHARED_BOT_USERNAME: str = os.environ.get("TELEGRAM_SHARED_BOT_USERNAME", "")
 
 # Telegram API credentials for MTProto user login (from https://my.telegram.org)
-TELEGRAM_API_ID: str = os.environ.get("TELEGRAM_API_ID", "")
-TELEGRAM_API_HASH: str = os.environ.get("TELEGRAM_API_HASH", "")
+TELEGRAM_API_ID: str = get_credential("telegram", "api_id", "TELEGRAM_API_ID")
+TELEGRAM_API_HASH: str = get_credential("telegram", "api_hash", "TELEGRAM_API_HASH")
 
 # Notion (requires both client_id and client_secret - no PKCE support)
 NOTION_SHARED_CLIENT_ID: str = get_credential("notion", "client_id", "NOTION_SHARED_CLIENT_ID")
