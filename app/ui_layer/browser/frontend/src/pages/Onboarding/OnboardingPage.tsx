@@ -330,7 +330,11 @@ export function OnboardingPage() {
                     icon={<ChevronRight size={16} />}
                     iconPosition="right"
                   >
-                    {isLastStep ? 'Finish' : 'Next'}
+                    {onboardingLoading && onboardingStep?.name === 'api_key'
+                      ? 'Testing API Key...'
+                      : isLastStep
+                        ? 'Finish'
+                        : 'Next'}
                   </Button>
                 </div>
               </div>

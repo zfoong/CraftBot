@@ -3,7 +3,7 @@
     "agent_name": "CraftBot"
   },
   "proactive": {
-    "enabled": false
+    "enabled": true
   },
   "memory": {
     "enabled": true

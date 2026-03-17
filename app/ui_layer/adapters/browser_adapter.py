@@ -1310,6 +1310,28 @@ class BrowserAdapter(InterfaceAdapter):
                 })
                 return
 
+            # For API key step, test the connection before proceeding
+            step = controller.get_current_step()
+            if step.name == "api_key":
+                provider = controller.get_collected_data().get("provider", "openai")
+                # Remote/Ollama provider doesn't require API key validation
+                if provider != "remote" and value:
+                    test_result = test_connection(
+                        provider=provider,
+                        api_key=value,
+                    )
+                    if not test_result.get("success"):
+                        error_msg = test_result.get("error") or test_result.get("message") or "Connection test failed"
+                        await self._broadcast({
+                            "type": "onboarding_submit",
+                            "data": {
+                                "success": False,
+                                "error": f"Invalid API key: {error_msg}",
+                                "index": controller.current_step_index,
+                            },
+                        })
+                        return
+
             # Submit the value
             controller.submit_step_value(value)
 

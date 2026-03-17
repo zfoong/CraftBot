@@ -49,6 +49,7 @@ from app.config import (
 
 from app.internal_action_interface import InternalActionInterface
 from app.llm import LLMInterface, LLMCallType
+from agent_core.core.impl.llm.errors import classify_llm_error
 from app.vlm_interface import VLMInterface
 from app.database_interface import DatabaseInterface
 from app.logger import logger
@@ -1159,12 +1160,15 @@ class AgentBase:
         if not session_to_use or not self.event_stream_manager:
             return
 
+        # Get user-friendly error message
+        user_message = classify_llm_error(error)
+
         try:
             logger.debug("[REACT ERROR] Logging to event stream")
             self.event_stream_manager.log(
                 "error",
                 f"[REACT] {type(error).__name__}: {error}\n{tb}",
-                display_message=None,
+                display_message=user_message,
                 task_id=session_to_use,
             )
             self.state_manager.bump_event_stream()

@@ -41,6 +41,38 @@ from agent_core.core.hooks import (
 from agent_core.utils.logger import logger
 
 
+# Models that do NOT support assistant message prefill
+# These require output_config.format for structured JSON output
+_ANTHROPIC_NO_PREFILL_PATTERNS = (
+    "claude-opus-4",      # Claude Opus 4.x (4.5, 4.6, etc.)
+    "claude-sonnet-4",    # Claude Sonnet 4.x (4.5, 4.6, etc.)
+    "claude-3-7",         # Claude 3.7 Sonnet
+    "claude-3.7",         # Alternative naming
+)
+
+
+def _model_supports_prefill(model: str) -> bool:
+    """Check if an Anthropic model supports assistant message prefill.
+
+    Newer Claude models (4.x, 3.7) do not support prefilling.
+    Older models (3.5 Sonnet, 3 Opus) still support it.
+
+    Args:
+        model: The model identifier string.
+
+    Returns:
+        True if the model supports prefill, False otherwise.
+    """
+    if not model:
+        return True  # Default to supporting prefill for safety
+
+    model_lower = model.lower()
+    for pattern in _ANTHROPIC_NO_PREFILL_PATTERNS:
+        if pattern in model_lower:
+            return False
+    return True
+
+
 class LLMInterface:
     """LLM interface with multi-provider support and hook-based customization.
 
@@ -1515,14 +1547,12 @@ class LLMInterface:
             if not self._anthropic_client:
                 raise RuntimeError("Anthropic client was not initialised.")
 
-            # Build the message with optional system prompt
-            # Use JSON prefilling to enforce JSON output
+            # Build the message - rely on system prompt for JSON formatting
             message_kwargs: Dict[str, Any] = {
                 "model": self.model,
                 "max_tokens": self.max_tokens,
                 "messages": [
                     {"role": "user", "content": user_prompt},
-                    {"role": "assistant", "content": "{"},  # JSON prefilling
                 ],
             }
 
@@ -1561,8 +1591,7 @@ class LLMInterface:
                 if block.type == "text":
                     content += block.text
 
-            # Prepend the prefilled '{' to complete JSON
-            content = "{" + content.strip()
+            content = content.strip()
 
             # Token usage from Anthropic response
             token_count_input = response.usage.input_tokens

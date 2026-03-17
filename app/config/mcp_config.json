@@ -1262,7 +1262,7 @@
         "AMADEUS_API_KEY": "",
         "AMADEUS_API_SECRET": ""
       },
-      "enabled": false
+      "enabled": true
     },
     {
       "name": "booking-mcp",
