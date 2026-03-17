@@ -3,19 +3,44 @@
 LLM Error Classification Module.
 
 Provides user-friendly error messages for LLM-related failures.
-Technical details are preserved in logs while users see clear,
-actionable messages.
+Uses proper exception types and HTTP status codes - no string pattern matching.
 """
 
 from __future__ import annotations
+
+from typing import Optional
+
+# Import provider exception types
+try:
+    import openai
+except ImportError:
+    openai = None
+
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+
+# User-friendly messages
+MSG_AUTH = "Unable to connect to AI service. Please check your API key in Settings."
+MSG_MODEL = "The selected AI model is not available. Please check your model settings."
+MSG_CONFIG = "AI service configuration error. The selected model may not support required features."
+MSG_RATE_LIMIT = "AI service is rate-limited. Please wait a moment and try again."
+MSG_SERVICE = "AI service is temporarily unavailable. Please try again later."
+MSG_CONNECTION = "Unable to reach AI service. Please check your internet connection."
+MSG_GENERIC = "An error occurred with the AI service. Please check your LLM configuration."
 
 
 def classify_llm_error(error: Exception) -> str:
     """Classify an LLM error and return a user-friendly message.
 
-    Analyzes the error to determine the root cause and returns
-    an appropriate message for end users. Technical details
-    should be logged separately.
+    Uses exception types and HTTP status codes for classification.
 
     Args:
         error: The exception from the LLM call.
@@ -23,134 +48,113 @@ def classify_llm_error(error: Exception) -> str:
     Returns:
         A user-friendly error message.
     """
-    error_str = str(error).lower()
-    error_type = type(error).__name__.lower()
+    # Check OpenAI exceptions
+    if openai is not None:
+        msg = _classify_openai_error(error)
+        if msg:
+            return msg
 
-    # Authentication issues (API key wrong/missing/expired)
-    if _is_auth_error(error_str, error_type):
-        return "Unable to connect to AI service. Please check your API key in Settings."
+    # Check Anthropic exceptions
+    if anthropic is not None:
+        msg = _classify_anthropic_error(error)
+        if msg:
+            return msg
 
-    # Model not supported or not found
-    if _is_model_error(error_str, error_type):
-        return "The selected AI model is not available. Please check your model settings."
+    # Check requests exceptions (BytePlus, remote/Ollama)
+    if requests is not None:
+        msg = _classify_requests_error(error)
+        if msg:
+            return msg
 
-    # Bad configuration (invalid parameters, unsupported features)
-    if _is_config_error(error_str, error_type):
-        return "AI service configuration error. The selected model may not support required features."
-
-    # Rate limiting
-    if _is_rate_limit_error(error_str, error_type):
-        return "AI service is rate-limited. Please wait a moment and try again."
-
-    # Service unavailable (server errors, maintenance)
-    if _is_service_error(error_str, error_type):
-        return "AI service is temporarily unavailable. Please try again later."
-
-    # Connection/network issues
-    if _is_connection_error(error_str, error_type):
-        return "Unable to reach AI service. Please check your internet connection."
+    # Check for status_code attribute on any exception
+    status_code = _get_status_code(error)
+    if status_code:
+        return _message_from_status_code(status_code)
 
     # Generic fallback
-    return "An error occurred with the AI service. Please check your LLM configuration."
+    return MSG_GENERIC
 
 
-def _is_auth_error(error_str: str, error_type: str) -> bool:
-    """Check if error is authentication-related."""
-    auth_patterns = [
-        "401",
-        "403",
-        "unauthorized",
-        "authentication",
-        "invalid_api_key",
-        "invalid api key",
-        "api key",
-        "apikey",
-        "credential",
-        "permission denied",
-        "access denied",
-    ]
-    auth_types = ["authenticationerror", "permissionerror"]
-    return any(p in error_str for p in auth_patterns) or error_type in auth_types
+def _classify_openai_error(error: Exception) -> Optional[str]:
+    """Classify OpenAI SDK exceptions."""
+    if isinstance(error, openai.AuthenticationError):
+        return MSG_AUTH
+    if isinstance(error, openai.PermissionDeniedError):
+        return MSG_AUTH
+    if isinstance(error, openai.NotFoundError):
+        return MSG_MODEL
+    if isinstance(error, openai.BadRequestError):
+        return MSG_CONFIG
+    if isinstance(error, openai.RateLimitError):
+        return MSG_RATE_LIMIT
+    if isinstance(error, openai.InternalServerError):
+        return MSG_SERVICE
+    if isinstance(error, openai.APIConnectionError):
+        return MSG_CONNECTION
+    if isinstance(error, openai.APITimeoutError):
+        return MSG_CONNECTION
+    if isinstance(error, openai.APIStatusError):
+        return _message_from_status_code(error.status_code)
+    return None
 
 
-def _is_model_error(error_str: str, error_type: str) -> bool:
-    """Check if error is model-related."""
-    model_patterns = [
-        "model_not_found",
-        "model not found",
-        "does not exist",
-        "invalid model",
-        "unknown model",
-        "no such model",
-        "model is not available",
-    ]
-    # 404 specifically for model endpoints
-    if "404" in error_str and "model" in error_str:
-        return True
-    return any(p in error_str for p in model_patterns)
+def _classify_anthropic_error(error: Exception) -> Optional[str]:
+    """Classify Anthropic SDK exceptions."""
+    if isinstance(error, anthropic.AuthenticationError):
+        return MSG_AUTH
+    if isinstance(error, anthropic.PermissionDeniedError):
+        return MSG_AUTH
+    if isinstance(error, anthropic.NotFoundError):
+        return MSG_MODEL
+    if isinstance(error, anthropic.BadRequestError):
+        return MSG_CONFIG
+    if isinstance(error, anthropic.RateLimitError):
+        return MSG_RATE_LIMIT
+    if isinstance(error, anthropic.InternalServerError):
+        return MSG_SERVICE
+    if isinstance(error, anthropic.APIConnectionError):
+        return MSG_CONNECTION
+    if isinstance(error, anthropic.APITimeoutError):
+        return MSG_CONNECTION
+    if isinstance(error, anthropic.APIStatusError):
+        return _message_from_status_code(error.status_code)
+    return None
 
 
-def _is_config_error(error_str: str, error_type: str) -> bool:
-    """Check if error is configuration-related."""
-    config_patterns = [
-        "400",
-        "bad request",
-        "invalid_request",
-        "invalid request",
-        "invalid parameter",
-        "json_schema",
-        "output_config",
-        "not supported",
-        "unsupported",
-    ]
-    config_types = ["badrequesterror", "validationerror"]
-    return any(p in error_str for p in config_patterns) or error_type in config_types
+def _classify_requests_error(error: Exception) -> Optional[str]:
+    """Classify requests library exceptions (for BytePlus/Ollama)."""
+    if isinstance(error, requests.exceptions.HTTPError):
+        if error.response is not None:
+            return _message_from_status_code(error.response.status_code)
+        return MSG_SERVICE
+    if isinstance(error, requests.exceptions.ConnectionError):
+        return MSG_CONNECTION
+    if isinstance(error, requests.exceptions.Timeout):
+        return MSG_CONNECTION
+    return None
 
 
-def _is_rate_limit_error(error_str: str, error_type: str) -> bool:
-    """Check if error is rate-limit-related."""
-    rate_patterns = [
-        "429",
-        "rate_limit",
-        "rate limit",
-        "too many requests",
-        "quota exceeded",
-        "throttl",
-    ]
-    rate_types = ["ratelimiterror"]
-    return any(p in error_str for p in rate_patterns) or error_type in rate_types
+def _get_status_code(error: Exception) -> Optional[int]:
+    """Extract HTTP status code from exception if available."""
+    # Check for status_code attribute
+    if hasattr(error, "status_code"):
+        return getattr(error, "status_code", None)
+    # Check for response.status_code (requests-style)
+    if hasattr(error, "response") and hasattr(error.response, "status_code"):
+        return error.response.status_code
+    return None
 
 
-def _is_service_error(error_str: str, error_type: str) -> bool:
-    """Check if error is service-availability-related."""
-    service_patterns = [
-        "500",
-        "502",
-        "503",
-        "504",
-        "internal server error",
-        "service unavailable",
-        "bad gateway",
-        "gateway timeout",
-        "overloaded",
-        "maintenance",
-    ]
-    service_types = ["internalservererror", "serviceunavailableerror"]
-    return any(p in error_str for p in service_patterns) or error_type in service_types
-
-
-def _is_connection_error(error_str: str, error_type: str) -> bool:
-    """Check if error is connection-related."""
-    conn_patterns = [
-        "timeout",
-        "timed out",
-        "connection refused",
-        "connection error",
-        "connection reset",
-        "network",
-        "unreachable",
-        "dns",
-        "resolve",
-    ]
-    conn_types = ["connectionerror", "timeouterror", "connecttimeout"]
-    return any(p in error_str for p in conn_patterns) or error_type in conn_types
+def _message_from_status_code(status_code: int) -> str:
+    """Map HTTP status code to user-friendly message."""
+    if status_code == 401 or status_code == 403:
+        return MSG_AUTH
+    if status_code == 404:
+        return MSG_MODEL
+    if status_code == 400:
+        return MSG_CONFIG
+    if status_code == 429:
+        return MSG_RATE_LIMIT
+    if 500 <= status_code < 600:
+        return MSG_SERVICE
+    return MSG_GENERIC
