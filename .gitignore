@@ -46,3 +46,4 @@ app/config/settings.json
 **/USER.md
 **/onboarding_config.json
 **/config.json
+!build_template.py
