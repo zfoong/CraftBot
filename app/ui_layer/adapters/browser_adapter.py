@@ -738,17 +738,21 @@ class BrowserAdapter(InterfaceAdapter):
             if assets_path.exists():
                 self._app.router.add_static("/assets/", assets_path)
 
-            # Serve favicon
-            favicon_path = frontend_dist / "favicon.svg"
-            if favicon_path.exists():
-                self._app.router.add_get(
-                    "/favicon.svg",
-                    lambda _: web.FileResponse(favicon_path)
-                )
+            # Serve static files from dist/ (public/ files copied by Vite build)
+            # This must come before the SPA catch-all so images, fonts, etc. are served directly
+            _dist = frontend_dist  # capture for closure
 
-            # Serve index.html for all non-API routes (SPA routing)
+            async def _static_or_spa(request: web.Request) -> web.StreamResponse:
+                """Serve static file from dist/ if it exists, otherwise index.html for SPA routing."""
+                req_path = request.match_info.get("path", "")
+                if req_path:
+                    file_path = _dist / req_path
+                    if file_path.is_file():
+                        return web.FileResponse(file_path)
+                return web.FileResponse(_dist / "index.html")
+
             self._app.router.add_get("/", self._spa_handler)
-            self._app.router.add_get("/{path:.*}", self._spa_handler)
+            self._app.router.add_get("/{path:.*}", _static_or_spa)
         else:
             # Fallback to inline HTML for development without build
             self._app.router.add_get("/", self._index_handler)

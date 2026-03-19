@@ -93,6 +93,7 @@ fi
 
 # Launch the agent in the background
 cd "$AGENT_DIR"
+export GUI_MODE_ENABLED=False
 echo "[e2b-start] Launching python3 -m app.main --browser ..." | tee -a "$LOG_FILE"
 nohup python3 -m app.main --browser >> "$LOG_FILE" 2>&1 &
 AGENT_PID=$!
