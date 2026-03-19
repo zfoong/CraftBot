@@ -143,6 +143,8 @@ def build_template(template_name: str) -> str:
     template = (
         template
         .copy(".", "/home/user/agent/")
+        # Remove credentials/data that should not be in the template
+        .run_cmd("rm -rf /home/user/agent/.credentials /home/user/agent/agent_file_system /home/user/agent/chroma_db_memory")
         .run_cmd(
             "cd /home/user/agent/app/ui_layer/browser/frontend"
             " && npm install --legacy-peer-deps"

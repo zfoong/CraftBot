@@ -17,6 +17,8 @@ dist
 .pytype
 __pypackages__
 chroma_db_memory
+.credentials
+agent_file_system
 build_template.py
 e2b.toml
 scripts/
