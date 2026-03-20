@@ -2,7 +2,7 @@ from agent_core import action
 
 @action(
     name="run_python",
-    description="This action takes a single Python code snippet as input and executes it in a fresh environment. Missing packages are automatically detected and installed when ImportError occurs. This action is intended for cases when the AI agent needs to create a one-off solution dynamically.",
+    description="Execute a Python code snippet in an isolated environment. Missing packages are auto-installed. Use print() to return results.",
     execution_mode="sandboxed",
     mode="CLI",
     default=True,
@@ -10,165 +10,86 @@ from agent_core import action
     input_schema={
         "code": {
             "type": "string",
-            "example": "import requests\nprint(requests.get('https://example.com').text)",
-            "description": "The Python code snippet to execute. Missing packages will be automatically installed on ImportError. The input code MUST NOT have any malicious code, the code MUST BE SANDBOXED. The code must be production code with the highest level of quality. DO NOT give any placeholder code or fabricated data. You MUST NOT handle exception with system exit. The result of the code return to the agent can only be returned with 'print'."
+            "example": "print('Hello World')",
+            "description": "Python code to execute. Use print() to output results."
         }
     },
     output_schema={
         "status": {
             "type": "string",
-            "example": "success",
-            "description": "'success' if the script ran without errors; otherwise 'error'."
+            "description": "'success' or 'error'"
         },
         "stdout": {
             "type": "string",
-            "example": "Hello, World!",
-            "description": "Captured standard output from the script execution."
+            "description": "Output from print() statements"
         },
         "stderr": {
             "type": "string",
-            "example": "Traceback (most recent call last): ...",
-            "description": "Captured standard error from the script execution (empty if no error)."
+            "description": "Error output (if any)"
         },
         "message": {
             "type": "string",
-            "example": "Script executed successfully.",
-            "description": "A short message indicating the result of the script execution. Only present if status is 'error'."
+            "description": "Error message (only if status is 'error')"
         }
     },
-    requirement=["traceback"],
-    test_payload={
-        "code": "import subprocess, sys\nsubprocess.check_call([sys.executable, '-m', 'pip', 'install', '--quiet', 'requests'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\nimport requests\nprint(requests.get('https://example.com').text)",
-        "simulated_mode": True
-    }
+    requirement=[],
+    test_payload={"code": "print('test')", "simulated_mode": True}
 )
 def create_and_run_python_script(input_data: dict) -> dict:
-    import json
     import sys
-    import subprocess
     import io
     import traceback
+    import subprocess
     import re
-    import importlib
 
-    code_snippet = input_data.get("code", "")
-    
-    def _ensure_utf8_stdio() -> None:
-        """Force stdout/stderr to UTF-8 so Unicode output doesn't break on Windows consoles."""
-        for stream_name in ("stdout", "stderr"):
-            stream = getattr(sys, stream_name, None)
-            if hasattr(stream, "reconfigure"):
-                try:
-                    stream.reconfigure(encoding="utf-8", errors="replace")
-                except Exception:
-                    return {
-                        "status": "error",
-                        "stdout": "",
-                        "stderr": "",
-                        "message": "The 'utf-8' not supported."
-                    }
+    code = input_data.get("code", "").strip()
 
-    _ensure_utf8_stdio()    
+    if not code:
+        return {"status": "error", "stdout": "", "stderr": "", "message": "No code provided"}
 
-    if not code_snippet.strip():
-        return {
-            "status": "error",
-            "stdout": "",
-            "stderr": "",
-            "message": "The 'code' field is required."
-        }
+    # Capture stdout/stderr
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+    old_stdout, old_stderr = sys.stdout, sys.stderr
 
-    stdout_capture = io.StringIO()
-    stderr_capture = io.StringIO()
-
-    def _install_package(pkg_name: str) -> bool:
+    def install_package(pkg):
         try:
             subprocess.check_call(
-                [sys.executable, '-m', 'pip', 'install', '--quiet', pkg_name],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=60
+                [sys.executable, '-m', 'pip', 'install', '--quiet', pkg],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60
             )
             return True
-        except Exception:
+        except:
             return False
 
-    def _extract_imports(code: str) -> set:
-        imports = set()
-        # Match: import module, import module as alias, from module import ...
-        patterns = [
-            r'^import\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)',
-            r'^from\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\s+import',
-        ]
-        for line in code.split('\n'):
-            line = line.strip()
-            if line.startswith('#') or not line:
-                continue
-            for pattern in patterns:
-                match = re.match(pattern, line)
-                if match:
-                    module = match.group(1).split('.')[0]  # Get top-level module
-                    # Skip stdlib modules
-                    if module not in ['json', 'sys', 'os', 'io', 'subprocess', 'traceback', 're', 'importlib', 
-                                      'urllib', 'collections', 'datetime', 'time', 'pathlib', 'tempfile']:
-                        imports.add(module)
-        return imports
-
     try:
-        original_stdout = sys.stdout
-        original_stderr = sys.stderr
-        sys.stdout = stdout_capture
-        sys.stderr = stderr_capture
+        sys.stdout, sys.stderr = stdout_buf, stderr_buf
 
-        # Pre-install packages detected from imports (optional optimization)
-        # This helps but we'll also handle ImportError at runtime
-        detected_imports = _extract_imports(code_snippet)
-        for pkg in detected_imports:
+        # Simple exec with retry for missing modules
+        for attempt in range(3):
             try:
-                importlib.import_module(pkg)
-            except ImportError:
-                _install_package(pkg)
-
-        exec_globals = {}
-        max_retries = 3
-        retry_count = 0
-        
-        while retry_count < max_retries:
-            try:
-                exec(code_snippet, exec_globals)
-                break  # Success, exit retry loop
+                exec(code, {"__builtins__": __builtins__})
+                break
             except ModuleNotFoundError as e:
-                # Extract module name from error message
-                module_match = re.search(r"No module named ['\"]([^'\"]+)['\"]", str(e))
-                if module_match:
-                    missing_module = module_match.group(1).split('.')[0]  # Get top-level module
-                    if retry_count < max_retries - 1:
-                        # Try to install the missing module
-                        if _install_package(missing_module):
-                            retry_count += 1
-                            continue  # Retry execution
-                # If we can't install or max retries reached, raise the original error
-                raise
-            except Exception:
-                # For non-ImportError exceptions, don't retry
+                match = re.search(r"No module named ['\"]([^'\"]+)['\"]", str(e))
+                if match and attempt < 2:
+                    pkg = match.group(1).split('.')[0]
+                    if install_package(pkg):
+                        continue
                 raise
 
-        sys.stdout = original_stdout
-        sys.stderr = original_stderr
-
+        sys.stdout, sys.stderr = old_stdout, old_stderr
         return {
             "status": "success",
-            "stdout": stdout_capture.getvalue().strip(),
-            "stderr": stderr_capture.getvalue().strip()
+            "stdout": stdout_buf.getvalue().strip(),
+            "stderr": stderr_buf.getvalue().strip()
         }
 
     except Exception:
-        sys.stdout = original_stdout
-        sys.stderr = original_stderr
-
+        sys.stdout, sys.stderr = old_stdout, old_stderr
         return {
             "status": "error",
-            "stdout": stdout_capture.getvalue().strip(),
-            "stderr": stderr_capture.getvalue().strip(),
+            "stdout": stdout_buf.getvalue().strip(),
+            "stderr": stderr_buf.getvalue().strip(),
             "message": traceback.format_exc()
         }

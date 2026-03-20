@@ -1,24 +1,25 @@
 {
   "general": {
-    "agent_name": "CraftBot"
+    "agent_name": "CraftBot",
+    "os_language": "en"
   },
   "proactive": {
-    "enabled": false
+    "enabled": true
   },
   "memory": {
     "enabled": true
   },
   "model": {
-    "llm_provider": "gemini",
-    "vlm_provider": "gemini",
-    "llm_model": null,
-    "vlm_model": null
+    "llm_provider": "byteplus",
+    "vlm_provider": "byteplus",
+    "llm_model": "kimi-k2-250905",
+    "vlm_model": "seed-1-6-250915"
   },
   "api_keys": {
     "openai": "",
     "anthropic": "",
     "google": "",
-    "byteplus": ""
+    "byteplus": "6aa60576-c6ef-4835-a77a-f7e51d0637ef"
   },
   "endpoints": {
     "remote_model_url": "",
