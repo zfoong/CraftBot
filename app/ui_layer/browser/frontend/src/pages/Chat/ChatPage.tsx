@@ -488,7 +488,7 @@ export function ChatPage() {
                 >
                   <StatusIndicator status={task.status} size="sm" />
                   <span className={styles.taskName}>{task.name}</span>
-                  {task.status === 'running' && (
+                  {(task.status === 'running' || task.status === 'waiting') && (
                     <IconButton
                       size="sm"
                       variant="ghost"
