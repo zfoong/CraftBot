@@ -465,9 +465,8 @@ class TriggerQueue:
                 if t.session_id == session_id:
                     t.fire_at = time.time()
                     if message:
-                        t.next_action_description += (
-                            f"\n\n[NEW USER MESSAGE]: {message}"
-                        )
+                        # Store in payload instead of polluting the description
+                        t.payload["pending_user_message"] = message
                         if platform:
                             t.payload["pending_platform"] = platform
                     found = True
@@ -481,9 +480,8 @@ class TriggerQueue:
             if session_id in self._active:
                 t = self._active[session_id]
                 if message:
-                    t.next_action_description += (
-                        f"\n\n[NEW USER MESSAGE]: {message}"
-                    )
+                    # Store in payload instead of polluting the description
+                    t.payload["pending_user_message"] = message
                     if platform:
                         t.payload["pending_platform"] = platform
                 logger.debug(f"[FIRE] Attached message to active trigger for session {session_id}")
@@ -528,9 +526,9 @@ class TriggerQueue:
         """
         Extract and remove any pending user message from an active trigger.
 
-        When fire() attaches a message to an active trigger via
-        '[NEW USER MESSAGE]: ...', this method extracts that message
-        so it can be carried forward to the next trigger.
+        When fire() attaches a message to an active trigger's payload,
+        this method extracts that message so it can be carried forward
+        to the next trigger.
 
         Args:
             session_id: The session to check for pending messages.
@@ -542,23 +540,14 @@ class TriggerQueue:
             return None, None
 
         trigger = self._active[session_id]
-        marker = "\n\n[NEW USER MESSAGE]:"
-        desc = trigger.next_action_description
 
-        if marker not in desc:
-            return None, None
-
-        # Extract the message
-        idx = desc.index(marker)
-        message = desc[idx + len(marker):].strip()
-
-        # Extract and remove the platform from payload
+        # Extract and remove the message from payload
+        message = trigger.payload.pop("pending_user_message", None)
         platform = trigger.payload.pop("pending_platform", None)
 
-        # Remove the message from the trigger to avoid duplication
-        trigger.next_action_description = desc[:idx]
+        if message:
+            logger.debug(f"[TRIGGER] Extracted pending user message for session {session_id}: {message[:50]}...")
 
-        logger.debug(f"[TRIGGER] Extracted pending user message for session {session_id}: {message[:50]}...")
         return message, platform
 
     # =================================================================

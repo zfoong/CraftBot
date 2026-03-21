@@ -582,21 +582,17 @@ class AgentBase:
         )
 
     def _extract_user_message_from_trigger(self, trigger: Trigger) -> Optional[str]:
-        """Extract user message that was appended by triggers.fire().
+        """Extract user message that was stored by triggers.fire().
 
         When a message is routed to an existing session, the fire() method
-        appends it as '[NEW USER MESSAGE]: {message}' to next_action_description.
-        This message needs to be recorded to the event stream so the LLM can see it.
+        stores it in the trigger's payload. This message needs to be recorded
+        to the event stream so the LLM can see it.
 
         Returns:
             The user message if found, None otherwise.
         """
-        marker = "[NEW USER MESSAGE]:"
-        desc = trigger.next_action_description
-        if marker in desc:
-            idx = desc.index(marker) + len(marker)
-            return desc[idx:].strip()
-        return None
+        payload = trigger.payload or {}
+        return payload.get("pending_user_message")
 
     async def _initialize_session(self, gui_mode: bool | None, session_id: str) -> None:
         """Initialize the agent session and set current task ID.
@@ -1308,15 +1304,16 @@ class AgentBase:
 
             # Check if there's a pending user message from fire() that needs to be carried forward
             pending_message, pending_platform = self.triggers.pop_pending_user_message(new_session_id)
-            if pending_message:
-                next_action_desc = f"Perform the next best action for the task based on the todos and event stream\n\n[NEW USER MESSAGE]: {pending_message}"
-            else:
-                next_action_desc = "Perform the next best action for the task based on the todos and event stream"
 
-            # Build payload with platform if available
+            # Keep description clean - pending messages go in payload
+            next_action_desc = "Perform the next best action for the task based on the todos and event stream"
+
+            # Build payload - carry forward pending message if present
             trigger_payload = {"gui_mode": STATE.gui_mode}
+            if pending_message:
+                trigger_payload["pending_user_message"] = pending_message
             if pending_platform:
-                trigger_payload["platform"] = pending_platform
+                trigger_payload["pending_platform"] = pending_platform
 
             # Build and enqueue trigger safely
             try:
