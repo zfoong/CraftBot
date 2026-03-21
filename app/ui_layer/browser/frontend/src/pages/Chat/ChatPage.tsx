@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, KeyboardEvent, useCallback, ChangeEvent, useMemo } from 'react'
-import { Send, Paperclip, X, Loader2, File, AlertCircle } from 'lucide-react'
+import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useLocation } from 'react-router-dom'
 import { useWebSocket } from '../../contexts/WebSocketContext'
@@ -35,7 +35,7 @@ const formatFileSize = (bytes: number): string => {
 }
 
 export function ChatPage() {
-  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen } = useWebSocket()
+  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen, replyTarget, setReplyTarget, clearReplyTarget } = useWebSocket()
 
   // Derive agent status from actions and messages
   const status = useDerivedAgentStatus({
@@ -213,15 +213,52 @@ export function ChatPage() {
     }
   }, [isResizing])
 
+  // Handle reply from chat message
+  const handleChatReply = useCallback((
+    sessionId: string | undefined,
+    displayName: string,
+    fullContent: string
+  ) => {
+    setReplyTarget({
+      type: 'chat',
+      sessionId,
+      displayName,
+      originalContent: fullContent,
+    })
+    inputRef.current?.focus()
+  }, [setReplyTarget])
+
+  // Handle reply from task panel
+  const handleTaskReply = useCallback((taskId: string, taskName: string) => {
+    setReplyTarget({
+      type: 'task',
+      sessionId: taskId,
+      displayName: taskName,
+      originalContent: `Task: ${taskName}`,
+    })
+    inputRef.current?.focus()
+  }, [setReplyTarget])
+
   const handleSend = () => {
     // Don't send if there are validation errors
     if (!attachmentValidation.valid) return
 
     if (input.trim() || pendingAttachments.length > 0) {
-      sendMessage(input.trim(), pendingAttachments.length > 0 ? pendingAttachments : undefined)
+      // Include reply context if replying to a message/task
+      const replyContext = replyTarget ? {
+        sessionId: replyTarget.sessionId,
+        originalMessage: replyTarget.originalContent,
+      } : undefined
+
+      sendMessage(
+        input.trim(),
+        pendingAttachments.length > 0 ? pendingAttachments : undefined,
+        replyContext
+      )
       setInput('')
       setPendingAttachments([])
       setAttachmentError(null)
+      clearReplyTarget()  // Clear reply target after sending
       // Reset textarea height after clearing input
       if (inputRef.current) {
         inputRef.current.style.height = 'auto'
@@ -370,6 +407,7 @@ export function ChatPage() {
                       message={message}
                       onOpenFile={openFile}
                       onOpenFolder={openFolder}
+                      onReply={handleChatReply}
                     />
                   </div>
                 )
@@ -414,6 +452,23 @@ export function ChatPage() {
                   title="Dismiss"
                 >
                   <X size={12} />
+                </button>
+              </div>
+            )}
+
+            {/* Reply bar - shows when replying to a message/task */}
+            {replyTarget && (
+              <div className={styles.replyBar}>
+                <Reply size={14} />
+                <span className={styles.replyText}>
+                  Replying to: <em>{replyTarget.displayName}</em>
+                </span>
+                <button
+                  className={styles.replyCancel}
+                  onClick={clearReplyTarget}
+                  title="Cancel reply"
+                >
+                  <X size={14} />
                 </button>
               </div>
             )}
@@ -489,24 +544,37 @@ export function ChatPage() {
                   <StatusIndicator status={task.status} size="sm" />
                   <span className={styles.taskName}>{task.name}</span>
                   {(task.status === 'running' || task.status === 'waiting') && (
-                    <IconButton
-                      size="sm"
-                      variant="ghost"
-                      className={styles.taskCancelBtn}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        cancelTask(task.id)
-                      }}
-                      disabled={cancellingTaskId === task.id}
-                      title="Cancel Task"
-                      icon={
-                        cancellingTaskId === task.id ? (
-                          <Loader2 size={12} className={styles.spinning} />
-                        ) : (
-                          <X size={12} />
-                        )
-                      }
-                    />
+                    <>
+                      <IconButton
+                        size="sm"
+                        variant="ghost"
+                        className={styles.taskReplyBtn}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleTaskReply(task.id, task.name)
+                        }}
+                        title="Reply to Task"
+                        icon={<Reply size={12} />}
+                      />
+                      <IconButton
+                        size="sm"
+                        variant="ghost"
+                        className={styles.taskCancelBtn}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          cancelTask(task.id)
+                        }}
+                        disabled={cancellingTaskId === task.id}
+                        title="Cancel Task"
+                        icon={
+                          cancellingTaskId === task.id ? (
+                            <Loader2 size={12} className={styles.spinning} />
+                          ) : (
+                            <X size={12} />
+                          )
+                        }
+                      />
+                    </>
                   )}
                 </div>
                 {selectedTaskId === task.id && (

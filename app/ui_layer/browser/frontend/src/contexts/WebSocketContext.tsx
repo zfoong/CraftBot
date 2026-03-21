@@ -10,6 +10,20 @@ interface PendingAttachment {
   content: string  // base64
 }
 
+// Reply target for reply-to-chat/task feature
+interface ReplyTarget {
+  type: 'chat' | 'task'
+  sessionId?: string       // May be undefined for old messages without session tracking
+  displayName: string      // Truncated preview for UI display
+  originalContent: string  // Full content for agent context
+}
+
+// Reply context sent with message
+interface ReplyContext {
+  sessionId?: string
+  originalMessage: string
+}
+
 interface WebSocketState {
   connected: boolean
   messages: ChatMessage[]
@@ -29,10 +43,12 @@ interface WebSocketState {
   onboardingLoading: boolean
   // Unread message tracking
   lastSeenMessageId: string | null
+  // Reply state for reply-to-chat/task feature
+  replyTarget: ReplyTarget | null
 }
 
 interface WebSocketContextType extends WebSocketState {
-  sendMessage: (content: string, attachments?: PendingAttachment[]) => void
+  sendMessage: (content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => void
   sendCommand: (command: string) => void
   clearMessages: () => void
   cancelTask: (taskId: string) => void
@@ -46,6 +62,9 @@ interface WebSocketContextType extends WebSocketState {
   goBackOnboardingStep: () => void
   // Unread message tracking
   markMessagesAsSeen: () => void
+  // Reply-to-chat/task methods
+  setReplyTarget: (target: ReplyTarget) => void
+  clearReplyTarget: () => void
 }
 
 // Initialize lastSeenMessageId from localStorage
@@ -86,6 +105,8 @@ const defaultState: WebSocketState = {
   onboardingLoading: false,
   // Unread message tracking
   lastSeenMessageId: getInitialLastSeenMessageId(),
+  // Reply state
+  replyTarget: null,
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined)
@@ -462,12 +483,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [connect])
 
-  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[]) => {
+  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'message',
         content,
-        attachments: attachments || []
+        attachments: attachments || [],
+        replyContext: replyContext || null,
       }))
     }
   }, [])
@@ -557,6 +579,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // Set reply target for reply-to-chat/task feature
+  const setReplyTarget = useCallback((target: ReplyTarget) => {
+    setState(prev => ({ ...prev, replyTarget: target }))
+  }, [])
+
+  // Clear reply target
+  const clearReplyTarget = useCallback(() => {
+    setState(prev => ({ ...prev, replyTarget: null }))
+  }, [])
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -573,6 +605,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         skipOnboardingStep,
         goBackOnboardingStep,
         markMessagesAsSeen,
+        setReplyTarget,
+        clearReplyTarget,
       }}
     >
       {children}

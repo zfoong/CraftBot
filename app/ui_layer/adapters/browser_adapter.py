@@ -238,6 +238,7 @@ class BrowserChatComponent(ChatComponentProtocol):
                     style=message.style,
                     timestamp=message.timestamp,
                     attachments=attachments_data,
+                    task_session_id=message.task_session_id,
                 )
                 self._storage.insert_message(stored)
             except Exception:
@@ -264,6 +265,10 @@ class BrowserChatComponent(ChatComponentProtocol):
                 }
                 for att in message.attachments
             ]
+
+        # Include task session ID for reply feature
+        if message.task_session_id:
+            message_data["taskSessionId"] = message.task_session_id
 
         await self._adapter._broadcast({
             "type": "chat_message",
@@ -676,6 +681,36 @@ class BrowserAdapter(InterfaceAdapter):
         """Get the metrics collector for dashboard data."""
         return self._metrics_collector
 
+    async def submit_message(
+        self,
+        message: str,
+        reply_context: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Submit a message from the user with optional reply context.
+
+        Overrides base class to handle reply-to-chat/task feature.
+        Appends reply context to the message before routing to the agent.
+
+        Args:
+            message: The user's input message
+            reply_context: Optional dict with {sessionId?: str, originalMessage: str}
+        """
+        agent_context = message
+
+        # Add reply context note (similar to attachment_note pattern)
+        if reply_context and reply_context.get("originalMessage"):
+            reply_note = f"\n\n[REPLYING TO PREVIOUS AGENT MESSAGE]:\n{reply_context['originalMessage']}"
+            agent_context = message + reply_note
+
+        # Pass to controller with target session ID if replying
+        target_session_id = reply_context.get("sessionId") if reply_context else None
+        await self._controller.submit_message(
+            agent_context,
+            self._adapter_id,
+            target_session_id=target_session_id
+        )
+
     def _handle_task_start(self, event: UIEvent) -> None:
         """Handle task start event with metrics tracking."""
         # Call parent implementation
@@ -874,16 +909,17 @@ class BrowserAdapter(InterfaceAdapter):
         msg_type = data.get("type")
 
         if msg_type == "message":
-            # User sent a message (may include attachments)
+            # User sent a message (may include attachments and/or reply context)
             content = data.get("content", "")
             attachments = data.get("attachments", [])
+            reply_context = data.get("replyContext")  # {sessionId?: str, originalMessage: str}
 
             if attachments:
                 # Message with attachments - use custom handler
-                await self._handle_chat_message_with_attachments(content, attachments)
+                await self._handle_chat_message_with_attachments(content, attachments, reply_context)
             elif content:
                 # Regular message without attachments - use normal flow
-                await self.submit_message(content)
+                await self.submit_message(content, reply_context)
 
         elif msg_type == "chat_attachment_upload":
             # Upload attachment for chat message
@@ -3660,8 +3696,13 @@ class BrowserAdapter(InterfaceAdapter):
                 },
             })
 
-    async def _handle_chat_message_with_attachments(self, content: str, attachments: List[Dict[str, Any]]) -> None:
-        """Handle user chat message with attachments."""
+    async def _handle_chat_message_with_attachments(
+        self,
+        content: str,
+        attachments: List[Dict[str, Any]],
+        reply_context: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Handle user chat message with attachments and optional reply context."""
         import uuid
         from app.ui_layer.state.ui_state import AgentStateType
         from app.ui_layer.events import UIEvent, UIEventType
@@ -3726,6 +3767,11 @@ class BrowserAdapter(InterfaceAdapter):
             # (This is what the agent sees in the event stream - includes file paths)
             agent_context = content + attachment_note
 
+            # Add reply context note (similar to attachment_note pattern)
+            if reply_context and reply_context.get("originalMessage"):
+                reply_note = f"\n\n[REPLYING TO PREVIOUS AGENT MESSAGE]:\n{reply_context['originalMessage']}"
+                agent_context = agent_context + reply_note
+
             if not agent_context.strip():
                 return
 
@@ -3751,6 +3797,10 @@ class BrowserAdapter(InterfaceAdapter):
                 "sender": {"id": self._adapter_id or "user", "type": "user"},
                 "gui_mode": self._controller._state_store.state.gui_mode,
             }
+            # Include target session ID if replying to a specific session
+            if reply_context and reply_context.get("sessionId"):
+                payload["target_session_id"] = reply_context["sessionId"]
+
             await self._controller._agent._handle_chat_message(payload)
 
         except Exception as e:

@@ -442,3 +442,24 @@
     word-break: break-word;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Reply Button Styles
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Task reply button - shown on hover */
+.taskReplyBtn {
+  opacity: 0;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.taskItem:hover .taskReplyBtn {
+  opacity: 1;
+}
+
+.taskReplyBtn:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
