@@ -19,6 +19,7 @@ export interface ChatMessage {
   timestamp: number
   messageId: string
   attachments?: Attachment[]
+  taskSessionId?: string  // Links message to a task session for reply feature
 }
 
 // ─────────────────────────────────────────────────────────────────────

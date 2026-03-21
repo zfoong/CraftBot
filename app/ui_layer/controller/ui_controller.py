@@ -219,7 +219,12 @@ class UIController:
     # Message Handling
     # ─────────────────────────────────────────────────────────────────────
 
-    async def submit_message(self, message: str, adapter_id: str = "") -> None:
+    async def submit_message(
+        self,
+        message: str,
+        adapter_id: str = "",
+        target_session_id: Optional[str] = None
+    ) -> None:
         """
         Handle user input from any interface.
 
@@ -228,6 +233,7 @@ class UIController:
         Args:
             message: The user's input message
             adapter_id: ID of the adapter that sent the message
+            target_session_id: Optional session ID for direct reply (bypasses routing)
         """
         if not message.strip():
             return
@@ -268,6 +274,10 @@ class UIController:
             "sender": {"id": adapter_id or "user", "type": "user"},
             "gui_mode": self._state_store.state.gui_mode,
         }
+        # Include target session ID for direct reply (bypasses routing LLM)
+        if target_session_id:
+            payload["target_session_id"] = target_session_id
+
         await self._agent._handle_chat_message(payload)
 
     # ─────────────────────────────────────────────────────────────────────

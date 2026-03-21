@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { ChevronRight, XCircle, ArrowLeft } from 'lucide-react'
+import { ChevronRight, XCircle, ArrowLeft, Reply } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { StatusIndicator, Badge, Button, IconButton } from '../../components/ui'
 import type { ActionItem } from '../../types'
@@ -271,7 +272,8 @@ const MIN_PANEL_WIDTH = 200
 const MAX_PANEL_WIDTH = 600
 
 export function TasksPage() {
-  const { actions, cancelTask, cancellingTaskId } = useWebSocket()
+  const { actions, cancelTask, cancellingTaskId, setReplyTarget } = useWebSocket()
+  const navigate = useNavigate()
   const [selectedItem, setSelectedItem] = useState<ActionItem | null>(null)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
 
@@ -281,6 +283,17 @@ export function TasksPage() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const tasks = actions.filter(a => a.itemType === 'task')
+
+  // Handle reply to task - set reply target and navigate to chat
+  const handleTaskReply = useCallback((task: ActionItem) => {
+    setReplyTarget({
+      type: 'task',
+      sessionId: task.id,
+      displayName: task.name,
+      originalContent: `Task: ${task.name}`,
+    })
+    navigate('/chat')
+  }, [setReplyTarget, navigate])
 
   // Get all items (actions + reasoning) for a task
   const getItemsForTask = (taskId: string) =>
@@ -387,6 +400,19 @@ export function TasksPage() {
                     />
                     <StatusIndicator status={task.status} size="sm" />
                     <span className={styles.itemName}>{task.name}</span>
+                    {(task.status === 'running' || task.status === 'waiting') && (
+                      <IconButton
+                        size="sm"
+                        variant="ghost"
+                        className={styles.taskReplyBtn}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleTaskReply(task)
+                        }}
+                        title="Reply to Task"
+                        icon={<Reply size={12} />}
+                      />
+                    )}
                     <Badge
                       variant={
                         task.status === 'completed' ? 'success' :

@@ -1525,6 +1525,59 @@ class AgentBase:
                 # Local TUI/CLI message
                 platform = "CraftBot TUI"
 
+            # Direct reply bypass - skip routing LLM when target_session_id is provided
+            target_session_id = payload.get("target_session_id")
+            if target_session_id:
+                logger.info(f"[CHAT] Direct reply to session {target_session_id}")
+
+                # Fire the target trigger directly, bypassing routing LLM
+                fired = await self.triggers.fire(
+                    target_session_id, message=chat_content, platform=platform
+                )
+
+                if fired:
+                    logger.info(f"[CHAT] Successfully resumed session {target_session_id}")
+
+                    # Reset task status from "waiting" to "running" when user replies
+                    if self.ui_controller:
+                        from app.ui_layer.events import UIEvent, UIEventType
+
+                        self.ui_controller.event_bus.emit(
+                            UIEvent(
+                                type=UIEventType.TASK_UPDATE,
+                                data={
+                                    "task_id": target_session_id,
+                                    "status": "running",
+                                },
+                            )
+                        )
+
+                        # Check if there are still other tasks waiting
+                        triggers = await self.triggers.list_triggers()
+                        has_waiting_tasks = any(
+                            getattr(t, 'waiting_for_reply', False)
+                            for t in triggers
+                            if t.session_id != target_session_id
+                        )
+                        if not has_waiting_tasks:
+                            self.ui_controller.event_bus.emit(
+                                UIEvent(
+                                    type=UIEventType.AGENT_STATE_CHANGED,
+                                    data={
+                                        "state": "working",
+                                        "status_message": "Agent is working...",
+                                    },
+                                )
+                            )
+
+                    return  # Task will resume with user message in event stream
+
+                # If fire() returns False, no waiting trigger found for this session
+                # Fall through to normal routing (conversation mode)
+                logger.warning(
+                    f"[CHAT] Session {target_session_id} not found or expired, falling through to normal routing"
+                )
+
             # Check active tasks — route message to matching session if possible
             # Use active_task_ids from state_manager (not just triggers in queue) to ensure
             # all running tasks are visible for routing, not just those waiting in queue

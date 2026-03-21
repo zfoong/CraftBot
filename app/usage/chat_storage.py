@@ -33,6 +33,7 @@ class StoredChatMessage:
     style: str
     timestamp: float
     attachments: Optional[List[Dict[str, Any]]] = None
+    task_session_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -45,6 +46,8 @@ class StoredChatMessage:
         }
         if self.attachments:
             result["attachments"] = self.attachments
+        if self.task_session_id:
+            result["taskSessionId"] = self.task_session_id
         return result
 
 
@@ -101,6 +104,16 @@ class ChatStorage:
                 ON chat_messages(message_id)
             """)
 
+            # Migration: Add task_session_id column if it doesn't exist
+            cursor.execute("PRAGMA table_info(chat_messages)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if "task_session_id" not in columns:
+                cursor.execute("""
+                    ALTER TABLE chat_messages
+                    ADD COLUMN task_session_id TEXT
+                """)
+                logger.info("[ChatStorage] Migrated: added task_session_id column")
+
             conn.commit()
 
     def insert_message(self, message: StoredChatMessage) -> int:
@@ -117,8 +130,8 @@ class ChatStorage:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO chat_messages
-                (message_id, sender, content, style, timestamp, attachments)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (message_id, sender, content, style, timestamp, attachments, task_session_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 message.message_id,
                 message.sender,
@@ -126,6 +139,7 @@ class ChatStorage:
                 message.style,
                 message.timestamp,
                 json.dumps(message.attachments) if message.attachments else None,
+                message.task_session_id,
             ))
             conn.commit()
             return cursor.lastrowid
@@ -148,7 +162,7 @@ class ChatStorage:
         with sqlite3.connect(self._db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT message_id, sender, content, style, timestamp, attachments
+                SELECT message_id, sender, content, style, timestamp, attachments, task_session_id
                 FROM chat_messages
                 ORDER BY timestamp ASC
                 LIMIT ? OFFSET ?
@@ -163,6 +177,7 @@ class ChatStorage:
                     style=row[3],
                     timestamp=row[4],
                     attachments=json.loads(row[5]) if row[5] else None,
+                    task_session_id=row[6],
                 )
                 for row in rows
             ]
@@ -181,7 +196,7 @@ class ChatStorage:
             cursor = conn.cursor()
             # Get last N messages ordered by timestamp DESC, then reverse
             cursor.execute("""
-                SELECT message_id, sender, content, style, timestamp, attachments
+                SELECT message_id, sender, content, style, timestamp, attachments, task_session_id
                 FROM chat_messages
                 ORDER BY timestamp DESC
                 LIMIT ?
@@ -196,6 +211,7 @@ class ChatStorage:
                     style=row[3],
                     timestamp=row[4],
                     attachments=json.loads(row[5]) if row[5] else None,
+                    task_session_id=row[6],
                 )
                 for row in rows
             ]
