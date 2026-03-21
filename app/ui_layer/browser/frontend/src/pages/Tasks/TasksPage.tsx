@@ -449,7 +449,7 @@ export function TasksPage() {
               </div>
               {selectedItem.itemType === 'task' && (
                 <div className={styles.detailActions}>
-                  {selectedItem.status === 'running' ? (
+                  {(selectedItem.status === 'running' || selectedItem.status === 'waiting') ? (
                     <Button
                       variant="ghost"
                       size="sm"

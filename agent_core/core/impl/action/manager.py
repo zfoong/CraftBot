@@ -180,17 +180,6 @@ class ActionManager:
         if not parent_id and self._get_parent_id:
             parent_id = self._get_parent_id()
 
-        # Persist RUNNING status using fast append-only logging
-        await self.db_interface.log_action_start_async(
-            run_id=run_id,
-            session_id=session_id,
-            parent_id=parent_id,
-            name=action.name,
-            action_type=action.action_type,
-            inputs=input_data,
-            started_at=started_at,
-        )
-
         # Call on_action_start hook if provided
         if self._on_action_start:
             try:
@@ -330,14 +319,6 @@ class ActionManager:
                 state.get_agent_property("action_count", 0) + 1
             )
 
-        # Persist final status using fast append-only logging
-        await self.db_interface.log_action_end_async(
-            run_id=run_id,
-            outputs=outputs,
-            status=status,
-            ended_at=ended_at,
-        )
-
         # Call on_action_end hook if provided
         if self._on_action_end:
             try:
@@ -456,34 +437,6 @@ class ActionManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    def _log_action_history(
-        self,
-        *,
-        run_id: str,
-        action: Action,
-        inputs: Optional[Dict],
-        outputs: Optional[Dict],
-        status: str,
-        started_at: Optional[str],
-        ended_at: Optional[str],
-        parent_id: Optional[str],
-        session_id: Optional[str],
-    ) -> None:
-        """Upsert a single history document keyed by *runId*."""
-        self.db_interface.upsert_action_history(
-            run_id,
-            session_id=session_id,
-            parent_id=parent_id,
-            name=action.name,
-            action_type=action.action_type,
-            status=status,
-            inputs=inputs,
-            outputs=outputs,
-            started_at=started_at,
-            ended_at=ended_at,
-        )
-
     def _log_event_stream(
         self,
         is_gui_task: bool,
@@ -638,19 +591,3 @@ class ActionManager:
             attempt += 1
 
         return {"success": False, "message": "Observation failed or timed out."}
-
-    # ------------------------------------------------------------------
-    # Helper
-    # ------------------------------------------------------------------
-
-    def get_action_history(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Retrieve recent action history entries.
-
-        Args:
-            limit: Maximum number of history documents to return.
-
-        Returns:
-            List[Dict[str, Any]]: Collection of run metadata.
-        """
-        return self.db_interface.get_action_history(limit)

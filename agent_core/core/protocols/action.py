@@ -242,15 +242,3 @@ class ActionManagerProtocol(Protocol):
             Result dictionary with outputs and status.
         """
         ...
-
-    def get_action_history(self, limit: int = 10) -> list:
-        """
-        Get recent action history.
-
-        Args:
-            limit: Maximum number of entries to return.
-
-        Returns:
-            List of action history entries.
-        """
-        ...

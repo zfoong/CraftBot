@@ -406,7 +406,16 @@ class MetricsCollector:
     - Request volume and peak usage times
     """
 
+    _instance: Optional["MetricsCollector"] = None
+
+    @classmethod
+    def get_instance(cls) -> Optional["MetricsCollector"]:
+        """Get the singleton instance of the MetricsCollector."""
+        return cls._instance
+
     def __init__(self, agent: Optional["AgentBase"] = None) -> None:
+        # Set singleton instance
+        MetricsCollector._instance = self
         self._agent = agent
         self._lock = threading.Lock()
 

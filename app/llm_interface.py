@@ -2185,41 +2185,6 @@ class LLMInterface:
             "cached_tokens": cached_tokens,
         }
 
-    # ─────────────────── Internal utilities ───────────────────
-    @profile("llm_log_to_db", OperationCategory.DATABASE)
-    def _log_to_db(
-        self,
-        system_prompt: str | None,
-        user_prompt: str,
-        output: str,
-        status: str,
-        token_count_input: int,
-        token_count_output: int,
-    ) -> None:
-        """Persist prompt/response metadata using the optional `db_interface`."""
-        if not self.db_interface:
-            return
-
-        input_data: Dict[str, Optional[str]] = {
-            "system_prompt": system_prompt,
-            "user_prompt": user_prompt,
-        }
-        config: Dict[str, Any] = {
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-        }
-
-        self.db_interface.log_prompt(
-            input_data=input_data,
-            output=output,
-            provider=self.provider,
-            model=self.model,
-            config=config,
-            status=status,
-            token_count_input=token_count_input,
-            token_count_output=token_count_output,
-        )
-
     # ─────────────────── CLI helper for ad‑hoc testing ───────────────────
     def _cli(self) -> None:  # pragma: no cover
         """Run a quick interactive shell for manual testing."""

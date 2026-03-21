@@ -7,10 +7,7 @@ interface for persistence operations. The protocol enables structural
 typing for database operations across different agent implementations.
 """
 
-from typing import Any, Dict, List, Optional, Protocol, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from agent_core import Task
+from typing import Any, Dict, List, Optional, Protocol
 
 
 class DatabaseInterfaceProtocol(Protocol):
@@ -21,150 +18,72 @@ class DatabaseInterfaceProtocol(Protocol):
     must provide for use by shared agent code.
     """
 
-    def log_task(self, task: "Task") -> None:
-        """
-        Persist or update a task log entry.
-
-        Args:
-            task: The Task instance to record.
-        """
-        ...
-
-    def upsert_action_history(
+    def list_actions(
         self,
-        run_id: str,
         *,
-        session_id: str,
-        parent_id: Optional[str],
-        name: str,
-        action_type: str,
-        status: str,
-        inputs: Optional[Dict[str, Any]],
-        outputs: Optional[Dict[str, Any]],
-        started_at: Optional[str],
-        ended_at: Optional[str],
-    ) -> None:
+        default: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Insert or update an action execution history entry.
+        Return stored actions optionally filtered by the default flag.
 
         Args:
-            run_id: Unique identifier for the action execution.
-            session_id: Session that triggered the action.
-            parent_id: Optional parent action identifier.
-            name: Human-readable action name.
-            action_type: Action type label.
-            status: Current execution status.
-            inputs: Serialized action inputs.
-            outputs: Serialized action outputs.
-            started_at: ISO timestamp for execution start.
-            ended_at: ISO timestamp for execution end.
-        """
-        ...
-
-    async def log_action_start_async(
-        self,
-        run_id: str,
-        *,
-        session_id: Optional[str],
-        parent_id: Optional[str],
-        name: str,
-        action_type: str,
-        inputs: Optional[Dict[str, Any]],
-        started_at: str,
-    ) -> None:
-        """
-        Fast O(1) append for action start (async version).
-
-        Args:
-            run_id: Unique identifier for the action execution.
-            session_id: Session that triggered the action.
-            parent_id: Optional parent action identifier.
-            name: Human-readable action name.
-            action_type: Action type label.
-            inputs: Serialized action inputs.
-            started_at: ISO timestamp for execution start.
-        """
-        ...
-
-    async def log_action_end_async(
-        self,
-        run_id: str,
-        *,
-        outputs: Optional[Dict[str, Any]],
-        status: str,
-        ended_at: str,
-    ) -> None:
-        """
-        Fast O(1) append for action end (async version).
-
-        Args:
-            run_id: Unique identifier for the action execution.
-            outputs: Serialized action outputs.
-            status: Final execution status.
-            ended_at: ISO timestamp for execution end.
-        """
-        ...
-
-    def get_action_history(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Retrieve recent action history entries.
-
-        Args:
-            limit: Maximum number of entries to return.
+            default: When provided, only return actions whose default field
+                matches the boolean value.
 
         Returns:
-            List of action history dictionaries.
+            List of action dictionaries that satisfy the filter.
         """
         ...
 
-    def find_actions_by_status(self, status: str) -> List[Dict[str, Any]]:
+    def get_action(self, name: str) -> Optional[Dict[str, Any]]:
         """
-        Return all action history entries matching the given status.
+        Fetch a stored action by name.
 
         Args:
-            status: Status value to filter.
+            name: The human-readable name used to identify the action.
 
         Returns:
-            List of matching action history dictionaries.
+            The action dictionary when found, otherwise None.
         """
         ...
 
-    def search_actions(self, query: str, top_k: int = 7) -> List[str]:
+    def store_action(self, action_dict: Dict[str, Any]) -> None:
         """
-        Search actions by semantic similarity.
+        Persist an action definition to disk.
 
         Args:
-            query: Search query string.
-            top_k: Maximum number of results.
+            action_dict: Action payload to store, expected to include a name
+                field used for the filename.
+        """
+        ...
+
+    def delete_action(self, name: str) -> None:
+        """
+        Remove an action definition from disk.
+
+        Args:
+            name: Name of the action to delete.
+        """
+        ...
+
+    def set_agent_info(self, info: Dict[str, Any], key: str = "singleton") -> None:
+        """
+        Persist arbitrary agent configuration under the provided key.
+
+        Args:
+            info: Mapping of configuration fields to store.
+            key: Logical namespace under which the configuration is saved.
+        """
+        ...
+
+    def get_agent_info(self, key: str = "singleton") -> Optional[Dict[str, Any]]:
+        """
+        Load persisted agent configuration for the given key.
+
+        Args:
+            key: Namespace key used when persisting the configuration.
 
         Returns:
-            List of action names matching the query.
-        """
-        ...
-
-    def log_prompt(
-        self,
-        *,
-        input_data: Dict[str, str],
-        output: Optional[str],
-        provider: str,
-        model: str,
-        config: Dict[str, Any],
-        status: str,
-        token_count_input: Optional[int] = None,
-        token_count_output: Optional[int] = None,
-    ) -> None:
-        """
-        Store a prompt interaction with metadata.
-
-        Args:
-            input_data: Serialized prompt inputs.
-            output: The model output string.
-            provider: Name of the LLM provider.
-            model: Model identifier used.
-            config: Provider-specific configuration.
-            status: Execution status.
-            token_count_input: Token count for prompt.
-            token_count_output: Token count for response.
+            A configuration dictionary when present, otherwise None.
         """
         ...

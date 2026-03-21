@@ -652,6 +652,17 @@ class InternalActionInterface:
             logger.info(f"[TASK] LLM response: skills={selected_skills}, action_sets={selected_sets}")
             logger.info(f"[TASK] Valid selection: skills={valid_skills}, action_sets={valid_sets}")
 
+            # Record skill selection for metrics (skill is "invoked" when selected for prompt)
+            if valid_skills:
+                try:
+                    from app.ui_layer.metrics.collector import MetricsCollector
+                    collector = MetricsCollector.get_instance()
+                    if collector:
+                        for skill_name in valid_skills:
+                            collector.record_skill_invocation(skill_name)
+                except Exception:
+                    pass  # Don't fail skill selection if metrics recording fails
+
             return valid_skills, valid_sets
 
         except json.JSONDecodeError as e:

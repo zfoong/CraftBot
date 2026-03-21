@@ -43,42 +43,10 @@ class LLMInterface(_LLMInterface):
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        db_interface: Optional[Any] = None,
         temperature: float = 0.0,
         max_tokens: int = 8000,
         deferred: bool = False,
     ) -> None:
-        # Create log_to_db hook if db_interface provided
-        log_to_db = None
-        if db_interface:
-            def _log_to_db(
-                system_prompt: Optional[str],
-                user_prompt: str,
-                output: str,
-                status: str,
-                token_count_input: int,
-                token_count_output: int,
-            ) -> None:
-                input_data: Dict[str, Optional[str]] = {
-                    "system_prompt": system_prompt,
-                    "user_prompt": user_prompt,
-                }
-                config: Dict[str, Any] = {
-                    "temperature": self.temperature,
-                    "max_tokens": self.max_tokens,
-                }
-                db_interface.log_prompt(
-                    input_data=input_data,
-                    output=output,
-                    provider=self.provider,
-                    model=self.model,
-                    config=config,
-                    status=status,
-                    token_count_input=token_count_input,
-                    token_count_output=token_count_output,
-                )
-            log_to_db = _log_to_db
-
         super().__init__(
             provider=provider,
             model=model,
@@ -90,8 +58,4 @@ class LLMInterface(_LLMInterface):
             get_token_count=_get_token_count,
             set_token_count=_set_token_count,
             report_usage=_report_usage,  # Report usage to local SQLite storage
-            log_to_db=log_to_db,
         )
-
-        # Store db_interface reference for compatibility
-        self.db_interface = db_interface

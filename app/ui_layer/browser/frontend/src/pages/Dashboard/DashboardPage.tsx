@@ -476,19 +476,16 @@ export function DashboardPage() {
           <div className={styles.panelHeader}>
             <Hammer size={16} />
             <h3>MCP Servers</h3>
-            <Badge variant={mcpConnectedServers > 0 ? 'success' : 'default'}>
-              {mcpConnectedServers}/{mcpTotalServers}
-            </Badge>
           </div>
           <div className={styles.panelContent}>
             <div className={styles.compactStats}>
               <div className={styles.compactStatItem}>
-                <Wrench size={14} className={styles.primaryIcon} />
-                <span className={styles.compactStatValue}>{mcpTotalTools}</span>
-                <span className={styles.compactStatLabel}>Tools</span>
+                <CheckCircle size={14} className={styles.successIcon} />
+                <span className={styles.compactStatValue}>{mcpConnectedServers}</span>
+                <span className={styles.compactStatLabel}>Connected</span>
               </div>
               <div className={styles.compactStatItem}>
-                <Activity size={14} className={styles.successIcon} />
+                <Activity size={14} className={styles.primaryIcon} />
                 <span className={styles.compactStatValue}>{mcpTotalCalls}</span>
                 <span className={styles.compactStatLabel}>Calls</span>
               </div>
@@ -517,9 +514,6 @@ export function DashboardPage() {
           <div className={styles.panelHeader}>
             <Package size={16} />
             <h3>Skills</h3>
-            <Badge variant={skillEnabled > 0 ? 'success' : 'default'}>
-              {skillEnabled}/{skillTotal}
-            </Badge>
           </div>
           <div className={styles.panelContent}>
             <div className={styles.compactStats}>

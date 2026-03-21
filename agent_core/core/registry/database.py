@@ -15,7 +15,7 @@ Usage:
 
     # In shared code:
     db = DatabaseRegistry.get()
-    db.log_task(task)
+    db.list_actions()
 """
 
 from typing import TYPE_CHECKING
