@@ -27,6 +27,8 @@ interface WebSocketState {
   onboardingStep: OnboardingStep | null
   onboardingError: string | null
   onboardingLoading: boolean
+  // Unread message tracking
+  lastSeenMessageId: string | null
 }
 
 interface WebSocketContextType extends WebSocketState {
@@ -42,6 +44,17 @@ interface WebSocketContextType extends WebSocketState {
   submitOnboardingStep: (value: string | string[]) => void
   skipOnboardingStep: () => void
   goBackOnboardingStep: () => void
+  // Unread message tracking
+  markMessagesAsSeen: () => void
+}
+
+// Initialize lastSeenMessageId from localStorage
+const getInitialLastSeenMessageId = (): string | null => {
+  try {
+    return localStorage.getItem('lastSeenMessageId')
+  } catch {
+    return null
+  }
 }
 
 const defaultState: WebSocketState = {
@@ -71,6 +84,8 @@ const defaultState: WebSocketState = {
   onboardingStep: null,
   onboardingError: null,
   onboardingLoading: false,
+  // Unread message tracking
+  lastSeenMessageId: getInitialLastSeenMessageId(),
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined)
@@ -524,6 +539,24 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Mark all current messages as seen
+  const markMessagesAsSeen = useCallback(() => {
+    setState(prev => {
+      if (prev.messages.length > 0) {
+        const lastId = prev.messages[prev.messages.length - 1].messageId
+        if (lastId && lastId !== prev.lastSeenMessageId) {
+          try {
+            localStorage.setItem('lastSeenMessageId', lastId)
+          } catch {
+            // localStorage may be unavailable
+          }
+          return { ...prev, lastSeenMessageId: lastId }
+        }
+      }
+      return prev
+    })
+  }, [])
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -539,6 +572,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         submitOnboardingStep,
         skipOnboardingStep,
         goBackOnboardingStep,
+        markMessagesAsSeen,
       }}
     >
       {children}

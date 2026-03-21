@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, KeyboardEvent, useCallback, ChangeEvent, useMemo } from 'react'
 import { Send, Paperclip, X, Loader2, File, AlertCircle } from 'lucide-react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useLocation } from 'react-router-dom'
 import { useWebSocket } from '../../contexts/WebSocketContext'
-import { Button, IconButton, StatusIndicator, MarkdownContent, AttachmentDisplay } from '../../components/ui'
+import { Button, IconButton, StatusIndicator } from '../../components/ui'
+import { useDerivedAgentStatus } from '../../hooks'
+import { ChatMessageItem } from './ChatMessage'
 import styles from './ChatPage.module.css'
 
 // Pending attachment type
@@ -31,13 +35,27 @@ const formatFileSize = (bytes: number): string => {
 }
 
 export function ChatPage() {
-  const { messages, actions, status, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder } = useWebSocket()
+  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen } = useWebSocket()
+
+  // Derive agent status from actions and messages
+  const status = useDerivedAgentStatus({
+    actions,
+    messages,
+    connected,
+  })
   const [input, setInput] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Virtualization refs
+  const parentRef = useRef<HTMLDivElement>(null)
+  const hasScrolledRef = useRef(false)
+  const prevMessageCountRef = useRef(0)
+  const prevPathRef = useRef<string | null>(null)
+  const wasNearBottomRef = useRef(true)
+  const location = useLocation()
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
@@ -64,10 +82,88 @@ export function ChatPage() {
     return { valid: true, error: null }
   }, [pendingAttachments])
 
-  // Auto-scroll to bottom when new messages arrive
+  // Setup virtualizer for efficient message rendering
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 100,
+    overscan: 5,
+  })
+
+  // Find first unread message index, returns -1 if no unread messages
+  const getFirstUnreadIndex = useCallback(() => {
+    if (!lastSeenMessageId) return -1  // No history, no unread tracking
+    const lastSeenIdx = messages.findIndex(m => m.messageId === lastSeenMessageId)
+    if (lastSeenIdx === -1) {
+      return 0  // ID not found (stale) - treat all as unread, start from beginning
+    }
+    if (lastSeenIdx === messages.length - 1) {
+      return -1  // Already at end, no unread
+    }
+    return lastSeenIdx + 1  // First unread is after last seen
+  }, [messages, lastSeenMessageId])
+
+  // Check if user is scrolled near the bottom
+  const isNearBottom = useCallback(() => {
+    const container = parentRef.current
+    if (!container) return true
+    const threshold = 100 // pixels from bottom
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+  }, [])
+
+  // Track scroll position continuously so we know where user was BEFORE new messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const container = parentRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      wasNearBottomRef.current = isNearBottom()
+    }
+
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [isNearBottom])
+
+  // Scroll to unread messages when entering chat page, smooth scroll for new messages only if near bottom
+  useEffect(() => {
+    if (messages.length === 0) return
+
+    const isNavigatingToChat = prevPathRef.current !== null && prevPathRef.current !== '/' && location.pathname === '/'
+    const isFirstLoad = prevPathRef.current === null
+    const isNewMessage = messages.length > prevMessageCountRef.current
+    const shouldScrollToUnread = (isFirstLoad || isNavigatingToChat) && !hasScrolledRef.current
+
+    prevPathRef.current = location.pathname
+    prevMessageCountRef.current = messages.length
+
+    if (shouldScrollToUnread) {
+      hasScrolledRef.current = true
+      const firstUnreadIdx = getFirstUnreadIndex()
+      const hasUnreadMessages = firstUnreadIdx !== -1
+      // Wait for virtualizer to measure elements before scrolling
+      setTimeout(() => {
+        if (hasUnreadMessages) {
+          // Scroll to first unread message at the top
+          virtualizer.scrollToIndex(firstUnreadIdx, { align: 'start', behavior: 'auto' })
+        } else {
+          // All messages seen - scroll to bottom
+          virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'auto' })
+        }
+        markMessagesAsSeen()
+      }, 50)
+    } else if (isNewMessage && location.pathname === '/' && wasNearBottomRef.current) {
+      // Only auto-scroll if user WAS near the bottom before new message arrived
+      virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
+      markMessagesAsSeen()
+    }
+  }, [messages.length, location.pathname, virtualizer, getFirstUnreadIndex, markMessagesAsSeen])
+
+  // Reset scroll flag when navigating away from chat
+  useEffect(() => {
+    if (location.pathname !== '/') {
+      hasScrolledRef.current = false
+    }
+  }, [location.pathname])
 
   // Auto-resize textarea based on content
   const adjustTextareaHeight = useCallback(() => {
@@ -235,7 +331,7 @@ export function ChatPage() {
     <div className={`${styles.chatPage} ${isResizing ? styles.resizing : ''}`} ref={containerRef}>
       {/* Chat Panel - flexible width */}
       <div className={styles.chatPanel}>
-        <div className={styles.messagesContainer}>
+        <div className={styles.messagesContainer} ref={parentRef}>
           {messages.length === 0 ? (
             <div className={styles.emptyState}>
               <div className={styles.emptyIcon}>
@@ -248,41 +344,44 @@ export function ChatPage() {
               <p>Send a message to begin interacting with CraftBot</p>
             </div>
           ) : (
-            messages.map((msg, idx) => (
-              <div
-                key={msg.messageId || idx}
-                className={`${styles.messageWrapper} ${styles[msg.style + 'Wrapper']}`}
-              >
-                <div className={`${styles.message} ${styles[msg.style]}`}>
-                  <div className={styles.messageHeader}>
-                    <span className={styles.sender}>{msg.sender}</span>
-                    <span className={styles.timestamp}>
-                      {new Date(msg.timestamp * 1000).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className={styles.messageContent}>
-                    <MarkdownContent content={msg.content} />
-                  </div>
-                </div>
-                {msg.attachments && msg.attachments.length > 0 && (
-                  <div className={styles.messageAttachments}>
-                    <AttachmentDisplay
-                      attachments={msg.attachments}
+            <div
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {virtualizer.getVirtualItems().map((virtualItem) => {
+                const message = messages[virtualItem.index]
+                return (
+                  <div
+                    key={message.messageId || virtualItem.index}
+                    data-index={virtualItem.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualItem.start}px)`,
+                    }}
+                  >
+                    <ChatMessageItem
+                      message={message}
                       onOpenFile={openFile}
                       onOpenFolder={openFolder}
                     />
                   </div>
-                )}
-              </div>
-            ))
+                )
+              })}
+            </div>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         {/* Status bar */}
         <div className={styles.statusBar}>
-          <StatusIndicator status={connected ? status.state : 'error'} size="sm" variant="dot" />
-          <span>{connected ? status.message : 'Disconnected'}</span>
+          <StatusIndicator status={status.state} size="sm" variant="dot" />
+          <span>{status.message}</span>
         </div>
 
         {/* Input area */}

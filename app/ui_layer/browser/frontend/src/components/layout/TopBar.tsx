@@ -4,6 +4,7 @@ import { IconButton } from '../ui'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { StatusIndicator } from '../ui/StatusIndicator'
+import { useDerivedAgentStatus } from '../../hooks'
 import styles from './TopBar.module.css'
 
 // Simple Discord icon component since lucide-react doesn't have it
@@ -18,7 +19,14 @@ function DiscordIcon() {
 
 export function TopBar() {
   const { theme, toggleTheme } = useTheme()
-  const { connected, status } = useWebSocket()
+  const { connected, actions, messages } = useWebSocket()
+
+  // Derive agent status from actions and messages
+  const derivedStatus = useDerivedAgentStatus({
+    actions,
+    messages,
+    connected,
+  })
 
   return (
     <header className={styles.topBar}>
@@ -32,12 +40,12 @@ export function TopBar() {
         </div>
         <div className={styles.status}>
           <StatusIndicator
-            status={connected ? status.state : 'error'}
+            status={derivedStatus.state}
             size="sm"
             variant="dot"
           />
           <span className={styles.statusText}>
-            {connected ? status.message : 'Disconnected'}
+            {derivedStatus.message}
           </span>
         </div>
       </div>

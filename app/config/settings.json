@@ -19,7 +19,7 @@
     "openai": "",
     "anthropic": "",
     "google": "",
-    "byteplus": "6aa60576-c6ef-4835-a77a-f7e51d0637ef"
+    "byteplus": ""
   },
   "endpoints": {
     "remote_model_url": "",
@@ -64,5 +64,11 @@
   "browser": {
     "port": 7926,
     "startup_ui": false
+  },
+  "api_keys_configured": {
+    "openai": false,
+    "anthropic": false,
+    "google": true,
+    "byteplus": true
   }
 }

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { Badge, StatusIndicator } from '../../components/ui'
+import { useDerivedAgentStatus } from '../../hooks'
 import type { MetricsTimePeriod } from '../../types'
 import styles from './DashboardPage.module.css'
 
@@ -98,7 +99,14 @@ function getChartLabels(period: MetricsTimePeriod): { title: string; description
 }
 
 export function DashboardPage() {
-  const { status, actions, dashboardMetrics, filteredMetricsCache, requestFilteredMetrics } = useWebSocket()
+  const { connected, actions, messages, dashboardMetrics, filteredMetricsCache, requestFilteredMetrics } = useWebSocket()
+
+  // Derive agent status from actions and messages
+  const status = useDerivedAgentStatus({
+    actions,
+    messages,
+    connected,
+  })
 
   // Time period state for each card
   const [taskPeriod, setTaskPeriod] = useState<MetricsTimePeriod>('total')

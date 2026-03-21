@@ -85,7 +85,7 @@
 .dot_working,
 .dot_thinking,
 .dot_running {
-  background: var(#ff4f18, #ff9878);
+  background: #ff4f18;
 }
 
 .dot_error,
