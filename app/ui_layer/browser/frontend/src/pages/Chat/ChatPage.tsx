@@ -22,8 +22,10 @@ const MIN_PANEL_WIDTH = 200
 const MAX_PANEL_WIDTH = 800
 
 // Attachment limits
+// Backend WebSocket has 100MB limit, base64 encoding adds ~33% overhead
+// So raw file limit should be ~70MB to stay safely under the WebSocket limit
 const MAX_ATTACHMENT_COUNT = 10
-const MAX_TOTAL_SIZE_BYTES = 50 * 1024 * 1024 * 1024  // 50GB
+const MAX_TOTAL_SIZE_BYTES = 70 * 1024 * 1024  // 70MB (leaves room for base64 encoding + JSON overhead)
 
 // Format file size for display
 const formatFileSize = (bytes: number): string => {
@@ -76,7 +78,7 @@ export function ChatPage() {
     if (totalSize > MAX_TOTAL_SIZE_BYTES) {
       return {
         valid: false,
-        error: `Total size (${formatFileSize(totalSize)}) exceeds 50GB limit. Please remove some files or copy large files directly to the agent workspace.`
+        error: `Total size (${formatFileSize(totalSize)}) exceeds 70MB limit. Please remove some files or copy large files directly to the agent workspace.`
       }
     }
     return { valid: true, error: null }
@@ -298,14 +300,14 @@ export function ChatPage() {
 
       // Check individual file size (for very large files, recommend manual copy)
       if (file.size > MAX_TOTAL_SIZE_BYTES) {
-        setAttachmentError(`File "${file.name}" (${formatFileSize(file.size)}) exceeds the 50GB limit. For very large files, please copy them directly to the agent workspace folder.`)
+        setAttachmentError(`File "${file.name}" (${formatFileSize(file.size)}) exceeds the 70MB limit. For very large files, please copy them directly to the agent workspace folder.`)
         e.target.value = ''
         return
       }
 
       // Check if adding this file would exceed total size limit
       if (newTotalSize + file.size > MAX_TOTAL_SIZE_BYTES) {
-        setAttachmentError(`Adding "${file.name}" would exceed the 50GB total size limit. Current total: ${formatFileSize(newTotalSize)}. For large files, please copy them directly to the agent workspace folder.`)
+        setAttachmentError(`Adding "${file.name}" would exceed the 70MB total size limit. Current total: ${formatFileSize(newTotalSize)}. For large files, please copy them directly to the agent workspace folder.`)
         e.target.value = ''
         return
       }

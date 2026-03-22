@@ -889,16 +889,23 @@ class BrowserAdapter(InterfaceAdapter):
                         break
                 except json.JSONDecodeError as e:
                     # Continue on JSON errors, don't close connection
-                    pass
+                    import traceback
+                    error_detail = f"JSON decode error: {e}"
+                    print(f"[BROWSER ADAPTER] {error_detail}")
+                    await self._broadcast_error_to_chat(error_detail)
                 except Exception as e:
                     # Continue on message errors, don't close connection
-                    pass
+                    import traceback
+                    error_detail = f"WebSocket message error: {type(e).__name__}: {e}\n{traceback.format_exc()}"
+                    print(f"[BROWSER ADAPTER] {error_detail}")
+                    await self._broadcast_error_to_chat(error_detail)
         except asyncio.CancelledError:
-            pass
-        except (ClientConnectionResetError, ConnectionResetError):
-            pass  # Silently handle expected connection errors
+            print("[BROWSER ADAPTER] WebSocket cancelled")
+        except (ClientConnectionResetError, ConnectionResetError) as e:
+            print(f"[BROWSER ADAPTER] WebSocket connection reset: {type(e).__name__}: {e}")
         except Exception as e:
-            pass
+            import traceback
+            print(f"[BROWSER ADAPTER] WebSocket loop error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         finally:
             self._ws_clients.discard(ws)
 
@@ -3239,6 +3246,24 @@ class BrowserAdapter(InterfaceAdapter):
 
         # Clean up disconnected clients
         self._ws_clients -= disconnected
+
+    async def _broadcast_error_to_chat(self, error_message: str) -> None:
+        """Broadcast an error message to the chat panel for debugging."""
+        import time
+        try:
+            await self._broadcast({
+                "type": "chat_message",
+                "data": {
+                    "sender": "System",
+                    "content": f"[DEBUG ERROR] {error_message}",
+                    "style": "error",
+                    "timestamp": time.time(),
+                    "messageId": f"error:{time.time()}",
+                },
+            })
+        except Exception:
+            # If broadcast fails, at least print to console
+            print(f"[BROWSER ADAPTER] Failed to broadcast error: {error_message}")
 
     async def _broadcast_metrics_loop(self) -> None:
         """Periodically broadcast dashboard metrics to connected clients."""
