@@ -1,0 +1,491 @@
+import { useState, useEffect, useRef } from 'react'
+import {
+  RotateCcw,
+  FileText,
+  AlertTriangle,
+  Check,
+  X,
+  Loader2,
+  ChevronRight,
+} from 'lucide-react'
+import { Button, Badge, ConfirmModal } from '../../components/ui'
+import { useTheme } from '../../contexts/ThemeContext'
+import { useConfirmModal } from '../../hooks'
+import styles from './SettingsPage.module.css'
+import { useSettingsWebSocket } from './useSettingsWebSocket'
+import { applyTheme, getInitialTheme, getInitialAgentName } from './helpers'
+
+export function GeneralSettings() {
+  const { send, onMessage, isConnected } = useSettingsWebSocket()
+  const { theme: globalTheme, setTheme: setGlobalTheme } = useTheme()
+  const [agentName, setAgentName] = useState(getInitialAgentName)
+  const [initialAgentName, setInitialAgentName] = useState(getInitialAgentName)
+  const [theme, setTheme] = useState(getInitialTheme)
+  const [initialTheme, setInitialTheme] = useState(getInitialTheme)
+  const [isResetting, setIsResetting] = useState(false)
+  const [resetStatus, setResetStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+
+  // Agent file states
+  const [userMdContent, setUserMdContent] = useState('')
+  const [originalUserMdContent, setOriginalUserMdContent] = useState('')
+  const [agentMdContent, setAgentMdContent] = useState('')
+  const [originalAgentMdContent, setOriginalAgentMdContent] = useState('')
+  // Refs to track current content for closure-safe callbacks
+  const userMdContentRef = useRef(userMdContent)
+  const agentMdContentRef = useRef(agentMdContent)
+  userMdContentRef.current = userMdContent
+  agentMdContentRef.current = agentMdContent
+  const [isLoadingUserMd, setIsLoadingUserMd] = useState(false)
+  const [isLoadingAgentMd, setIsLoadingAgentMd] = useState(false)
+  const [isSavingUserMd, setIsSavingUserMd] = useState(false)
+  const [isSavingAgentMd, setIsSavingAgentMd] = useState(false)
+  const [isRestoringUserMd, setIsRestoringUserMd] = useState(false)
+  const [isRestoringAgentMd, setIsRestoringAgentMd] = useState(false)
+  const [userMdSaveStatus, setUserMdSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [agentMdSaveStatus, setAgentMdSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Confirm modal
+  const { modalProps: confirmModalProps, confirm } = useConfirmModal()
+
+  // Computed dirty states
+  const isUserMdDirty = userMdContent !== originalUserMdContent
+  const isAgentMdDirty = agentMdContent !== originalAgentMdContent
+  const isGeneralSettingsDirty = agentName !== initialAgentName || theme !== initialTheme
+
+  // Sync local theme when global theme changes (e.g., from TopBar button)
+  useEffect(() => {
+    // Only sync if current theme is not 'system' (system theme should stay as 'system')
+    if (initialTheme !== 'system' && globalTheme !== initialTheme) {
+      setTheme(globalTheme)
+      setInitialTheme(globalTheme)
+      applyTheme(globalTheme)
+    }
+  }, [globalTheme, initialTheme])
+
+  // Apply theme on mount and when saved (initialTheme changes after save)
+  useEffect(() => {
+    applyTheme(initialTheme)
+  }, [initialTheme])
+
+  // Listen for system theme changes when using 'system' theme
+  useEffect(() => {
+    if (initialTheme !== 'system') return
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleChange = () => applyTheme('system')
+
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [initialTheme])
+
+  // Load initial settings and files
+  useEffect(() => {
+    if (!isConnected) return
+
+    // Set up message handlers
+    const cleanups = [
+      onMessage('settings_get', (data: unknown) => {
+        const d = data as { success: boolean; settings?: { agentName: string; theme: string } }
+        if (d.success && d.settings) {
+          setAgentName(d.settings.agentName)
+          setTheme(d.settings.theme)
+        }
+      }),
+      onMessage('settings_update', (data: unknown) => {
+        const d = data as { success: boolean }
+        setIsSaving(false)
+        if (d.success) {
+          // Settings saved
+        }
+      }),
+      onMessage('reset', (data: unknown) => {
+        const d = data as { success: boolean }
+        setIsResetting(false)
+        setResetStatus(d.success ? 'success' : 'error')
+        setTimeout(() => setResetStatus('idle'), 3000)
+      }),
+      onMessage('agent_file_read', (data: unknown) => {
+        const d = data as { filename: string; content: string; success: boolean }
+        if (d.filename === 'USER.md') {
+          setIsLoadingUserMd(false)
+          if (d.success) {
+            setUserMdContent(d.content)
+            setOriginalUserMdContent(d.content)
+          }
+        } else if (d.filename === 'AGENT.md') {
+          setIsLoadingAgentMd(false)
+          if (d.success) {
+            setAgentMdContent(d.content)
+            setOriginalAgentMdContent(d.content)
+          }
+        }
+      }),
+      onMessage('agent_file_write', (data: unknown) => {
+        const d = data as { filename: string; success: boolean }
+        if (d.filename === 'USER.md') {
+          setIsSavingUserMd(false)
+          if (d.success) {
+            setOriginalUserMdContent(userMdContentRef.current) // Use ref for closure-safe access
+          }
+          setUserMdSaveStatus(d.success ? 'success' : 'error')
+          setTimeout(() => setUserMdSaveStatus('idle'), 3000)
+        } else if (d.filename === 'AGENT.md') {
+          setIsSavingAgentMd(false)
+          if (d.success) {
+            setOriginalAgentMdContent(agentMdContentRef.current) // Use ref for closure-safe access
+          }
+          setAgentMdSaveStatus(d.success ? 'success' : 'error')
+          setTimeout(() => setAgentMdSaveStatus('idle'), 3000)
+        }
+      }),
+      onMessage('agent_file_restore', (data: unknown) => {
+        const d = data as { filename: string; content: string; success: boolean }
+        if (d.filename === 'USER.md') {
+          setIsRestoringUserMd(false)
+          if (d.success) {
+            setUserMdContent(d.content)
+            setOriginalUserMdContent(d.content) // Also update original
+            setUserMdSaveStatus('success')
+            setTimeout(() => setUserMdSaveStatus('idle'), 3000)
+          }
+        } else if (d.filename === 'AGENT.md') {
+          setIsRestoringAgentMd(false)
+          if (d.success) {
+            setAgentMdContent(d.content)
+            setOriginalAgentMdContent(d.content) // Also update original
+            setAgentMdSaveStatus('success')
+            setTimeout(() => setAgentMdSaveStatus('idle'), 3000)
+          }
+        }
+      }),
+    ]
+
+    // Request initial data
+    send('settings_get')
+
+    return () => {
+      cleanups.forEach(cleanup => cleanup())
+    }
+  }, [isConnected, send, onMessage])
+
+  // Load advanced files when section is opened
+  useEffect(() => {
+    if (showAdvanced && isConnected) {
+      setIsLoadingUserMd(true)
+      setIsLoadingAgentMd(true)
+      send('agent_file_read', { filename: 'USER.md' })
+      send('agent_file_read', { filename: 'AGENT.md' })
+    }
+  }, [showAdvanced, isConnected, send])
+
+  const handleSaveSettings = () => {
+    setIsSaving(true)
+
+    // Persist agent name to localStorage
+    localStorage.setItem('craftbot-agent-name', agentName)
+
+    // Sync the global theme context (for TopBar)
+    // Resolve 'system' to actual theme for the context
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      setGlobalTheme(prefersDark ? 'dark' : 'light')
+    } else {
+      setGlobalTheme(theme as 'dark' | 'light')
+    }
+
+    // Update the initial values to mark as not dirty
+    // This triggers the useEffect that applies the theme
+    setInitialAgentName(agentName)
+    setInitialTheme(theme)
+
+    // Send to backend (for potential server-side persistence)
+    send('settings_update', { settings: { agentName, theme } })
+
+    // Show success feedback
+    setIsSaving(false)
+    setSaveStatus('success')
+    setTimeout(() => setSaveStatus('idle'), 3000)
+  }
+
+  const handleReset = () => {
+    confirm({
+      title: 'Reset Agent',
+      message: 'Are you sure you want to reset the agent? This will clear all current tasks, conversation history, and restore the agent file system to its default state.',
+      confirmText: 'Reset',
+      variant: 'danger',
+    }, () => {
+      setIsResetting(true)
+      send('reset')
+    })
+  }
+
+  const handleSaveUserMd = () => {
+    setIsSavingUserMd(true)
+    send('agent_file_write', { filename: 'USER.md', content: userMdContent })
+  }
+
+  const handleSaveAgentMd = () => {
+    setIsSavingAgentMd(true)
+    send('agent_file_write', { filename: 'AGENT.md', content: agentMdContent })
+  }
+
+  const handleRestoreUserMd = () => {
+    confirm({
+      title: 'Restore USER.md',
+      message: 'Are you sure you want to restore USER.md to its default template? This will overwrite your current customizations.',
+      confirmText: 'Restore',
+      variant: 'danger',
+    }, () => {
+      setIsRestoringUserMd(true)
+      send('agent_file_restore', { filename: 'USER.md' })
+    })
+  }
+
+  const handleRestoreAgentMd = () => {
+    confirm({
+      title: 'Restore AGENT.md',
+      message: 'Are you sure you want to restore AGENT.md to its default template? This will overwrite your current customizations.',
+      confirmText: 'Restore',
+      variant: 'danger',
+    }, () => {
+      setIsRestoringAgentMd(true)
+      send('agent_file_restore', { filename: 'AGENT.md' })
+    })
+  }
+
+  return (
+    <div className={styles.settingsSection}>
+      <div className={styles.sectionHeader}>
+        <h3>General Settings</h3>
+        <p>Configure basic agent settings and preferences</p>
+      </div>
+
+      <div className={styles.settingsForm}>
+        <div className={styles.formGroup}>
+          <label>Agent Name</label>
+          <input
+            type="text"
+            value={agentName}
+            onChange={(e) => setAgentName(e.target.value)}
+            placeholder="Enter agent name"
+          />
+          <span className={styles.hint}>The name displayed in conversations</span>
+        </div>
+
+        <div className={styles.formGroup}>
+          <label>Theme</label>
+          <select value={theme} onChange={(e) => setTheme(e.target.value)}>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+            <option value="system">System</option>
+          </select>
+        </div>
+      </div>
+
+      <div className={styles.sectionFooter}>
+        <Button
+          variant="primary"
+          onClick={handleSaveSettings}
+          disabled={isSaving || !isGeneralSettingsDirty}
+        >
+          {isSaving ? 'Saving...' : 'Save Changes'}
+        </Button>
+        {saveStatus === 'success' && (
+          <span className={styles.statusSuccess}>
+            <Check size={14} /> Settings saved
+          </span>
+        )}
+        {saveStatus === 'error' && (
+          <span className={styles.statusError}>
+            <X size={14} /> Save failed
+          </span>
+        )}
+      </div>
+
+      {/* Reset Section */}
+      <div className={styles.dangerZone}>
+        <div className={styles.dangerHeader}>
+          <AlertTriangle size={18} className={styles.dangerIcon} />
+          <h4>Reset Agent</h4>
+        </div>
+        <p className={styles.dangerDescription}>
+          Reset the agent to its initial state. This will clear the current task, conversation history,
+          and restore the agent file system from templates. Saved settings and credentials are preserved.
+        </p>
+        <Button
+          variant="danger"
+          onClick={handleReset}
+          disabled={isResetting}
+          icon={isResetting ? <Loader2 size={14} className={styles.spinning} /> : <RotateCcw size={14} />}
+        >
+          {isResetting ? 'Resetting...' : 'Reset Agent'}
+        </Button>
+        {resetStatus === 'success' && (
+          <span className={styles.statusSuccess}>
+            <Check size={14} /> Agent reset successfully
+          </span>
+        )}
+        {resetStatus === 'error' && (
+          <span className={styles.statusError}>
+            <X size={14} /> Reset failed
+          </span>
+        )}
+      </div>
+
+      {/* Advanced Section */}
+      <div className={styles.advancedSection}>
+        <button
+          className={styles.advancedToggle}
+          onClick={() => setShowAdvanced(!showAdvanced)}
+        >
+          <FileText size={18} />
+          <span>Advanced: Agent Configuration Files</span>
+          <ChevronRight
+            size={14}
+            className={`${styles.advancedChevron} ${showAdvanced ? styles.open : ''}`}
+          />
+        </button>
+
+        {showAdvanced && (
+          <div className={styles.advancedContent}>
+            {/* USER.md Editor */}
+            <div className={styles.fileEditorCard}>
+              <div className={styles.fileEditorHeader}>
+                <div className={styles.fileEditorTitle}>
+                  <h4>USER.md</h4>
+                  <Badge variant="info">User Profile</Badge>
+                </div>
+                <p className={styles.fileEditorDescription}>
+                  This file contains your personal information and preferences that help the agent
+                  understand how to interact with you. Editing this file will change how the agent
+                  addresses you and tailors its responses to your preferences.
+                </p>
+              </div>
+              <div className={styles.fileEditorContent}>
+                {isLoadingUserMd ? (
+                  <div className={styles.fileLoading}>
+                    <Loader2 size={20} className={styles.spinning} />
+                    <span>Loading USER.md...</span>
+                  </div>
+                ) : (
+                  <textarea
+                    className={styles.fileTextarea}
+                    value={userMdContent}
+                    onChange={(e) => setUserMdContent(e.target.value)}
+                    placeholder="Loading..."
+                    spellCheck={false}
+                  />
+                )}
+              </div>
+              <div className={styles.fileEditorActions}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleRestoreUserMd}
+                  disabled={isRestoringUserMd || isLoadingUserMd}
+                  icon={isRestoringUserMd ? <Loader2 size={14} className={styles.spinning} /> : <RotateCcw size={14} />}
+                >
+                  {isRestoringUserMd ? 'Restoring...' : 'Restore Default'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleSaveUserMd}
+                  disabled={isSavingUserMd || isLoadingUserMd || !isUserMdDirty}
+                >
+                  {isSavingUserMd ? 'Saving...' : 'Save'}
+                </Button>
+                {userMdSaveStatus === 'success' && (
+                  <span className={styles.statusSuccess}>
+                    <Check size={14} /> Saved
+                  </span>
+                )}
+                {userMdSaveStatus === 'error' && (
+                  <span className={styles.statusError}>
+                    <X size={14} /> Save failed
+                  </span>
+                )}
+                {isUserMdDirty && userMdSaveStatus === 'idle' && (
+                  <span className={styles.statusWarning}>
+                    Unsaved changes
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* AGENT.md Editor */}
+            <div className={styles.fileEditorCard}>
+              <div className={styles.fileEditorHeader}>
+                <div className={styles.fileEditorTitle}>
+                  <h4>AGENT.md</h4>
+                  <Badge variant="warning">Agent Identity</Badge>
+                </div>
+                <p className={styles.fileEditorDescription}>
+                  This file defines the agent's identity, behavior guidelines, documentation standards,
+                  and error handling philosophy. Changes here will affect how the agent approaches tasks,
+                  handles errors, and formats its outputs. Edit with caution.
+                </p>
+              </div>
+              <div className={styles.fileEditorContent}>
+                {isLoadingAgentMd ? (
+                  <div className={styles.fileLoading}>
+                    <Loader2 size={20} className={styles.spinning} />
+                    <span>Loading AGENT.md...</span>
+                  </div>
+                ) : (
+                  <textarea
+                    className={styles.fileTextarea}
+                    value={agentMdContent}
+                    onChange={(e) => setAgentMdContent(e.target.value)}
+                    placeholder="Loading..."
+                    spellCheck={false}
+                  />
+                )}
+              </div>
+              <div className={styles.fileEditorActions}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleRestoreAgentMd}
+                  disabled={isRestoringAgentMd || isLoadingAgentMd}
+                  icon={isRestoringAgentMd ? <Loader2 size={14} className={styles.spinning} /> : <RotateCcw size={14} />}
+                >
+                  {isRestoringAgentMd ? 'Restoring...' : 'Restore Default'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleSaveAgentMd}
+                  disabled={isSavingAgentMd || isLoadingAgentMd || !isAgentMdDirty}
+                >
+                  {isSavingAgentMd ? 'Saving...' : 'Save'}
+                </Button>
+                {agentMdSaveStatus === 'success' && (
+                  <span className={styles.statusSuccess}>
+                    <Check size={14} /> Saved
+                  </span>
+                )}
+                {agentMdSaveStatus === 'error' && (
+                  <span className={styles.statusError}>
+                    <X size={14} /> Save failed
+                  </span>
+                )}
+                {isAgentMdDirty && agentMdSaveStatus === 'idle' && (
+                  <span className={styles.statusWarning}>
+                    Unsaved changes
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Confirm Modal */}
+      <ConfirmModal {...confirmModalProps} />
+    </div>
+  )
+}
