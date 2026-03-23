@@ -5773,6 +5773,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             "version": get_app_version(),
             "agentState": state.agent_state.value,
             "guiMode": state.gui_mode,
+            "demoMode": os.getenv("DEMO_MODE", "").lower() == "true",
             "needsHardOnboarding": onboarding_manager.needs_hard_onboarding,
             "agentName": onboarding_manager.state.agent_name or "Agent",
             "agentProfilePictureUrl": picture_info["url"],

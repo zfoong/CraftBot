@@ -57,6 +57,8 @@ interface WebSocketState {
   cancellingTaskId: string | null
   // Whether the initial 'init' message has been received from the backend
   initReceived: boolean
+  // Demo mode
+  demoMode: boolean
   // Onboarding state
   needsHardOnboarding: boolean
   agentName: string
@@ -161,6 +163,8 @@ const defaultState: WebSocketState = {
     'total': null,
   },
   cancellingTaskId: null,
+  // Demo mode
+  demoMode: false,
   // Onboarding state
   initReceived: false,
   needsHardOnboarding: false,
@@ -341,6 +345,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           currentTask: data.currentTask || null,
           dashboardMetrics: data.dashboardMetrics || null,
           initReceived: true,
+          demoMode: data.demoMode || false,
           needsHardOnboarding: data.needsHardOnboarding || false,
           agentName: data.agentName || 'Agent',
           agentProfilePictureUrl:

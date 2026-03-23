@@ -834,7 +834,9 @@ export function OnboardingPage() {
           onKeyDown={e => { if (e.key === 'Enter' && canSubmit) handleSubmit() }}
         />
         {isApiKey && (
-          <div className={styles.inputHint}>Your API key is stored locally.</div>
+          <div className={styles.inputHint}>
+            Your API key will be wiped once the session is over.
+          </div>
         )}
       </div>
     )

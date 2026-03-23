@@ -366,6 +366,43 @@ def _atomic_action_venv_process(
         # Write action script to temp file (only the script is temporary, not the venv)
         with tempfile.TemporaryDirectory(prefix="action_script_") as tmpdir:
             tmp = Path(tmpdir)
+
+            # In E2B sandbox, skip venv creation — the sandbox IS the isolation
+            is_e2b = os.environ.get("E2B_SANDBOX", "").lower() in ("true", "1")
+
+            if is_e2b:
+                python_bin = Path(sys.executable)
+            else:
+                # Create virtual environment
+                venv_dir = tmp / "venv"
+                venv.EnvBuilder(with_pip=True).create(venv_dir)
+
+                python_bin = (
+                    venv_dir / "Scripts" / "python.exe"
+                    if os.name == "nt"
+                    else venv_dir / "bin" / "python"
+                )
+
+                # Install requirements in the venv
+                if requirements:
+                    for pkg in requirements:
+                        try:
+                            pip_result = subprocess.run(
+                                [str(python_bin), "-m", "pip", "install", "--quiet", pkg],
+                                capture_output=True,
+                                text=True,
+                                timeout=120
+                            )
+                            if pip_result.returncode != 0:
+                                stderr_lower = pip_result.stderr.lower()
+                                if "no matching distribution" not in stderr_lower and "could not find" not in stderr_lower:
+                                    print(f"Warning: Could not install '{pkg}': {pip_result.stderr.strip()[:100]}", file=sys.stderr)
+                        except subprocess.TimeoutExpired:
+                            print(f"Warning: Installation timed out for '{pkg}'", file=sys.stderr)
+                        except Exception as e:
+                            print(f"Warning: Error installing '{pkg}': {e}", file=sys.stderr)
+
+            # Write action script
             action_file = tmp / "action.py"
             action_file.write_text(
                 f"""
