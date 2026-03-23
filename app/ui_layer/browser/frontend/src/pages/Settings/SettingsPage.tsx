@@ -23,6 +23,7 @@ import {
 import { Button, Badge, ConfirmModal } from '../../components/ui'
 import { useToast } from '../../contexts/ToastContext'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useWebSocket } from '../../contexts/WebSocketContext'
 import { useConfirmModal } from '../../hooks'
 import styles from './SettingsPage.module.css'
 import { getWsUrl } from '../../utils/connection'
@@ -3256,8 +3257,29 @@ const IntegrationIcon = ({ id, size = 20 }: { id: string; size?: number }) => {
 }
 
 function IntegrationsSettings() {
+  return (
+    <div className={styles.settingsSection}>
+      <div className={styles.sectionHeader}>
+        <div className={styles.sectionTitleRow}>
+          <h3>External Integrations</h3>
+        </div>
+      </div>
+      <div style={{
+        padding: '24px',
+        textAlign: 'center',
+        color: 'var(--color-text-secondary, #888)',
+        fontSize: '14px',
+      }}>
+        <AlertTriangle size={20} style={{ marginBottom: '8px' }} />
+        <p>Integrations are not available in the live demo. Download CraftBot to connect your accounts.</p>
+      </div>
+    </div>
+  )
+
+  // Original implementation (disabled for demo template)
   const { send, onMessage, isConnected } = useSettingsWebSocket()
   const { showToast } = useToast()
+  const { demoMode } = useWebSocket()
 
   // State
   const [integrations, setIntegrations] = useState<Integration[]>([])
@@ -3546,6 +3568,25 @@ function IntegrationsSettings() {
         </div>
         <p>Connect to external services and tools</p>
       </div>
+
+      {/* Demo mode banner */}
+      {demoMode && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '8px',
+          backgroundColor: 'var(--color-warning-bg, rgba(234, 179, 8, 0.1))',
+          border: '1px solid var(--color-warning-border, rgba(234, 179, 8, 0.3))',
+          color: 'var(--color-warning-text, #ca8a04)',
+          fontSize: '13px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <AlertTriangle size={16} />
+          Integrations are not available in demo mode. Download CraftBot to connect your accounts.
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className={styles.integrationsToolbar}>

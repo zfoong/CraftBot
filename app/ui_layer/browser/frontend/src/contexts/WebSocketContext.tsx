@@ -21,6 +21,8 @@ interface WebSocketState {
   dashboardMetrics: DashboardMetrics | null
   filteredMetricsCache: Record<MetricsTimePeriod, FilteredDashboardMetrics | null>
   cancellingTaskId: string | null
+  // Demo mode
+  demoMode: boolean
   // Onboarding state
   needsHardOnboarding: boolean
   agentName: string
@@ -65,6 +67,8 @@ const defaultState: WebSocketState = {
     'total': null,
   },
   cancellingTaskId: null,
+  // Demo mode
+  demoMode: false,
   // Onboarding state
   needsHardOnboarding: false,
   agentName: 'Agent',
@@ -186,6 +190,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           guiMode: data.guiMode || false,
           currentTask: data.currentTask || null,
           dashboardMetrics: data.dashboardMetrics || null,
+          demoMode: data.demoMode || false,
           needsHardOnboarding: data.needsHardOnboarding || false,
           agentName: data.agentName || 'Agent',
         }))

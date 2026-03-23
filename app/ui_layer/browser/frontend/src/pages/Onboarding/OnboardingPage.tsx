@@ -237,7 +237,7 @@ export function OnboardingPage() {
         />
         {isApiKey && (
           <div className={styles.inputHint}>
-            Your API key is stored locally.
+            Your API key will be wiped once the session is over.
           </div>
         )}
       </div>

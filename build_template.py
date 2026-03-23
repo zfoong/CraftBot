@@ -128,6 +128,8 @@ def build_template(template_name: str) -> str:
             "   pip install --no-cache-dir \"$pkg\" 2>&1 || echo \"FAILED: $pkg\";"
             " done < /home/user/agent/requirements.txt)"
         )
+        # Ensure lxml_html_clean is installed (trafilatura/beautifulsoup need it)
+        .run_cmd("pip install --no-cache-dir lxml_html_clean 2>&1 || echo 'WARN: lxml_html_clean install failed'")
         # Playwright needs browser binaries installed separately
         .run_cmd("playwright install chromium --with-deps 2>&1 || echo 'WARN: playwright install failed'")
     )

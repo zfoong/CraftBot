@@ -4054,6 +4054,7 @@ class BrowserAdapter(InterfaceAdapter):
         return {
             "agentState": state.agent_state.value,
             "guiMode": state.gui_mode,
+            "demoMode": os.getenv("DEMO_MODE", "").lower() == "true",
             "needsHardOnboarding": onboarding_manager.needs_hard_onboarding,
             "agentName": onboarding_manager.state.agent_name or "Agent",
             "currentTask": {
