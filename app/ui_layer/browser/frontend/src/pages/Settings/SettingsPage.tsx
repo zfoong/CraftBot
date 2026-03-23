@@ -3606,11 +3606,6 @@ function IntegrationsSettings() {
     })
   }
 
-  const handleAddAnother = () => {
-    if (!managingIntegration) return
-    setShowManageModal(false)
-    handleOpenConnect(managingIntegration)
-  }
 
   // Filter by search and sort alphabetically
   const filteredIntegrations = integrations
@@ -3690,9 +3685,6 @@ function IntegrationsSettings() {
                   <Badge variant={integration.connected ? 'success' : 'default'}>
                     {integration.connected ? 'Connected' : 'Not connected'}
                   </Badge>
-                  {integration.connected && integration.accounts.length > 0 && (
-                    <Badge variant="info">{integration.accounts.length} account{integration.accounts.length > 1 ? 's' : ''}</Badge>
-                  )}
                 </div>
                 <p className={styles.integrationItemDesc}>{integration.description}</p>
               </div>
@@ -4005,16 +3997,11 @@ function IntegrationsSettings() {
                   ))}
                 </div>
               )}
-              <div className={styles.modalActions}>
-                <Button variant="secondary" onClick={handleAddAnother} icon={<Plus size={14} />}>
-                  Add Another Account
-                </Button>
-              </div>
+              <div className={styles.modalActions} />
 
               {/* Jira-specific settings */}
               {managingIntegration.id === 'jira' && managingIntegration.connected && (
                 <>
-                  <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
                   <h4 className={styles.manageSubtitle}>Listener Settings</h4>
                   {!jiraSettingsLoaded ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
@@ -4072,7 +4059,6 @@ function IntegrationsSettings() {
               {/* GitHub-specific settings */}
               {managingIntegration.id === 'github' && managingIntegration.connected && (
                 <>
-                  <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
                   <h4 className={styles.manageSubtitle}>Listener Settings</h4>
                   {!githubSettingsLoaded ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
