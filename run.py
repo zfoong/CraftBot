@@ -425,10 +425,72 @@ def _launch_static_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
     import http.server
     import threading
     import urllib.request
+    import socket
+    import select
+    import hashlib
+    import base64
+    import struct
 
     dist_dir = os.path.join(FRONTEND_DIR, "dist")
     backend_port = int(os.environ.get("VITE_BACKEND_PORT", BACKEND_PORT))
     backend_url = f"http://localhost:{backend_port}"
+
+    def _ws_proxy_thread(client_sock, backend_host, backend_port_num, path):
+        """Proxy a WebSocket connection between client and backend using raw sockets."""
+        backend_sock = None
+        try:
+            backend_sock = socket.create_connection((backend_host, backend_port_num), timeout=10)
+
+            # Build the upgrade request to send to backend
+            ws_key = base64.b64encode(os.urandom(16)).decode()
+            upgrade_req = (
+                f"GET {path} HTTP/1.1\r\n"
+                f"Host: localhost:{backend_port_num}\r\n"
+                f"Upgrade: websocket\r\n"
+                f"Connection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {ws_key}\r\n"
+                f"Sec-WebSocket-Version: 13\r\n"
+                f"\r\n"
+            )
+            backend_sock.sendall(upgrade_req.encode())
+
+            # Read backend upgrade response
+            response = b""
+            while b"\r\n\r\n" not in response:
+                chunk = backend_sock.recv(4096)
+                if not chunk:
+                    return
+                response += chunk
+
+            # Check if upgrade was accepted
+            header_part = response.split(b"\r\n\r\n")[0].decode(errors="replace")
+            if "101" not in header_part.split("\r\n")[0]:
+                return
+
+            # Now relay data bidirectionally
+            sockets = [client_sock, backend_sock]
+            while True:
+                readable, _, errored = select.select(sockets, [], sockets, 30)
+                if errored:
+                    break
+                for s in readable:
+                    data = s.recv(65536)
+                    if not data:
+                        return
+                    target = backend_sock if s is client_sock else client_sock
+                    target.sendall(data)
+        except Exception:
+            pass
+        finally:
+            if backend_sock:
+                try:
+                    backend_sock.close()
+                except Exception:
+                    pass
+            try:
+                client_sock.close()
+            except Exception:
+                pass
 
     class FrontendHandler(http.server.SimpleHTTPRequestHandler):
         """Serves static files and proxies /api and /ws to the backend."""
@@ -439,18 +501,43 @@ def _launch_static_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
         def do_GET(self):
             if self.path.startswith("/api/") or self.path.startswith("/api?"):
                 self._proxy_request()
-            elif self.path.startswith("/ws"):
-                # WebSocket upgrade can't be proxied via HTTP; the frontend
-                # will connect directly if we return 426
-                self.send_error(426, "WebSocket connections not proxied - connect directly to backend")
+            elif self.path.startswith("/ws") and self.headers.get("Upgrade", "").lower() == "websocket":
+                self._handle_ws_upgrade()
             else:
                 # Serve static files; fall back to index.html for SPA routing
-                # Check if file exists, otherwise serve index.html
                 file_path = os.path.join(dist_dir, self.path.lstrip("/"))
                 if not os.path.exists(file_path) or os.path.isdir(file_path):
                     if not os.path.exists(file_path + "/index.html") and "." not in os.path.basename(self.path):
                         self.path = "/index.html"
                 super().do_GET()
+
+        def _handle_ws_upgrade(self):
+            """Proxy WebSocket upgrade to backend."""
+            # Accept the WebSocket handshake with the client
+            ws_key = self.headers.get("Sec-WebSocket-Key", "")
+            magic = "258EAFA5-E914-47DA-95CA-5AB9F8811C55"
+            accept_key = base64.b64encode(
+                hashlib.sha1((ws_key + magic).encode()).digest()
+            ).decode()
+
+            # Send 101 Switching Protocols to client
+            self.send_response(101, "Switching Protocols")
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", accept_key)
+            self.end_headers()
+
+            # Detach the socket and hand off to the proxy thread
+            client_sock = self.request
+            # Prevent the handler from closing the socket
+            self.close_connection = True
+
+            t = threading.Thread(
+                target=_ws_proxy_thread,
+                args=(client_sock, "localhost", backend_port, self.path),
+                daemon=True,
+            )
+            t.start()
 
         def do_POST(self):
             if self.path.startswith("/api/"):
@@ -503,7 +590,7 @@ def _launch_static_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
             pass  # Suppress request logging
 
     try:
-        httpd = http.server.HTTPServer(("localhost", FRONTEND_PORT), FrontendHandler)
+        httpd = http.server.HTTPServer(("0.0.0.0", FRONTEND_PORT), FrontendHandler)
     except OSError as e:
         if not silent:
             print(f"Error: Could not start static frontend server: {e}")
