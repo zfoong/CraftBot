@@ -24,7 +24,7 @@ load_dotenv()
 
 # -- Configuration -----------------------------------------------------------
 
-E2B_API_KEY = "E2B_API_KEY"
+E2B_API_KEY = "e2b_803987e34b14f6acd8d29100171442b9af473be5"
 
 CRAFTBOT_DIR = Path(__file__).parent
 

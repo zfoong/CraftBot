@@ -434,16 +434,20 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
     dist_dir = os.path.join(FRONTEND_DIR, "dist")
     is_frozen = getattr(sys, 'frozen', False)
 
+    # Serve pre-built static files if dist/ exists and either:
+    # - running as a PyInstaller binary (no npm available), or
+    # - node_modules is missing (e.g. E2B sandbox where build was done but deps removed)
+    node_modules = os.path.join(FRONTEND_DIR, "node_modules")
+    if os.path.exists(dist_dir) and (is_frozen or not os.path.exists(node_modules)):
+        return _launch_static_frontend(silent)
+
     if is_frozen:
-        if os.path.exists(dist_dir):
-            return _launch_static_frontend(silent)
-        else:
-            # Binary mode but no dist folder bundled — can't start frontend
-            if not silent:
-                print(f"Error: Frontend dist not found at {dist_dir}")
-                print(f"  BASE_DIR: {BASE_DIR}")
-                print(f"  FRONTEND_DIR: {FRONTEND_DIR}")
-            return None
+        # Binary mode but no dist folder bundled — can't start frontend
+        if not silent:
+            print(f"Error: Frontend dist not found at {dist_dir}")
+            print(f"  BASE_DIR: {BASE_DIR}")
+            print(f"  FRONTEND_DIR: {FRONTEND_DIR}")
+        return None
 
     if not os.path.exists(FRONTEND_DIR):
         if not silent:
@@ -451,8 +455,6 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
             print("Make sure the browser frontend is installed.")
         return None
 
-    # Check if node_modules exists
-    node_modules = os.path.join(FRONTEND_DIR, "node_modules")
     if not os.path.exists(node_modules):
         if not silent:
             print("Error: Frontend dependencies not installed.")
