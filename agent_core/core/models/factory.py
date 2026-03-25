@@ -38,6 +38,9 @@ class ModelFactory:
         Returns:
             Dictionary with provider context including client instances
         """
+        # OpenAI-compatible providers that use OpenAI client with a custom base_url
+        _OPENAI_COMPAT = {"minimax", "deepseek", "moonshot"}
+
         if provider not in PROVIDER_CONFIG:
             raise ValueError(f"Unsupported provider: {provider}")
 
@@ -139,6 +142,23 @@ class ModelFactory:
                 "client": None,
                 "gemini_client": None,
                 "remote_url": resolved_base_url,
+                "byteplus": None,
+                "anthropic_client": None,
+                "initialized": True,
+            }
+
+        if provider in _OPENAI_COMPAT:
+            if not api_key:
+                if deferred:
+                    return empty_context
+                raise ValueError(f"API key required for {provider}")
+
+            return {
+                "provider": provider,
+                "model": model,
+                "client": OpenAI(api_key=api_key, base_url=resolved_base_url),
+                "gemini_client": None,
+                "remote_url": None,
                 "byteplus": None,
                 "anthropic_client": None,
                 "initialized": True,

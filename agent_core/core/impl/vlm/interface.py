@@ -227,7 +227,7 @@ class VLMInterface:
             if log_response:
                 logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
-            if self.provider == "openai":
+            if self.provider in ("openai", "minimax", "deepseek", "moonshot"):
                 response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt)
             elif self.provider == "remote":
                 response = self._ollama_describe_bytes(image_bytes, system_prompt, user_prompt)

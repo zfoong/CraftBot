@@ -331,7 +331,7 @@ class LLMInterface:
         if log_response:
             logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
-        if self.provider == "openai":
+        if self.provider in ("openai", "minimax", "deepseek", "moonshot"):
             response = self._generate_openai(system_prompt, user_prompt)
         elif self.provider == "remote":
             response = self._generate_ollama(system_prompt, user_prompt)

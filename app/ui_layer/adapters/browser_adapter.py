@@ -53,6 +53,7 @@ from app.ui_layer.settings import (
     update_model_settings,
     test_connection,
     validate_can_save,
+    get_ollama_models,
     # MCP settings
     list_mcp_servers,
     add_mcp_server_from_json,
@@ -1075,6 +1076,10 @@ class BrowserAdapter(InterfaceAdapter):
 
         elif msg_type == "model_validate_save":
             await self._handle_model_validate_save(data)
+
+        elif msg_type == "ollama_models_get":
+            base_url = data.get("baseUrl")
+            await self._handle_ollama_models_get(base_url)
 
         # MCP settings operations
         elif msg_type == "mcp_list":
@@ -2588,6 +2593,20 @@ class BrowserAdapter(InterfaceAdapter):
                     "can_save": False,
                     "errors": [str(e)],
                 },
+            })
+
+    async def _handle_ollama_models_get(self, base_url: Optional[str] = None) -> None:
+        """Fetch available models from Ollama and broadcast to frontend."""
+        try:
+            if not base_url:
+                settings_data = get_model_settings()
+                base_url = settings_data.get("base_urls", {}).get("remote")
+            result = get_ollama_models(base_url=base_url)
+            await self._broadcast({"type": "ollama_models_get", "data": result})
+        except Exception as e:
+            await self._broadcast({
+                "type": "ollama_models_get",
+                "data": {"success": False, "models": [], "error": str(e)},
             })
 
     # ─────────────────────────────────────────────────────────────────────

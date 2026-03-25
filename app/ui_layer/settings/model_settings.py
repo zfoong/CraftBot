@@ -14,6 +14,8 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
+import httpx
+
 from app.config import SETTINGS_CONFIG_PATH
 from app.models import (
     PROVIDER_CONFIG,
@@ -47,6 +49,24 @@ PROVIDER_INFO = {
         "name": "BytePlus",
         "api_key_env": "BYTEPLUS_API_KEY",
         "settings_key": "byteplus",
+        "requires_api_key": True,
+    },
+    "minimax": {
+        "name": "MiniMax",
+        "api_key_env": "MINIMAX_API_KEY",
+        "settings_key": "minimax",
+        "requires_api_key": True,
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "settings_key": "deepseek",
+        "requires_api_key": True,
+    },
+    "moonshot": {
+        "name": "Moonshot",
+        "api_key_env": "MOONSHOT_API_KEY",
+        "settings_key": "moonshot",
         "requires_api_key": True,
     },
     "remote": {
@@ -368,6 +388,32 @@ def test_connection(
             "provider": provider,
             "error": str(e),
         }
+
+
+def get_ollama_models(base_url: Optional[str] = None) -> Dict[str, Any]:
+    """Fetch available models from a running Ollama instance.
+
+    Args:
+        base_url: Optional Ollama base URL. Defaults to http://localhost:11434.
+
+    Returns:
+        Dict with success, models (list of name strings), and optional error.
+    """
+    url = base_url or "http://localhost:11434"
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(f"{url.rstrip('/')}/api/tags")
+        if response.status_code == 200:
+            models = [m["name"] for m in response.json().get("models", [])]
+            return {"success": True, "models": models}
+        else:
+            return {
+                "success": False,
+                "models": [],
+                "error": f"Ollama returned status {response.status_code}",
+            }
+    except Exception as e:
+        return {"success": False, "models": [], "error": str(e)}
 
 
 def validate_can_save(

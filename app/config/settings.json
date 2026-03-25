@@ -9,8 +9,8 @@
     "enabled": true
   },
   "model": {
-    "llm_provider": "gemini",
-    "vlm_provider": "gemini",
+    "llm_provider": "remote",
+    "vlm_provider": "remote",
     "llm_model": null,
     "vlm_model": null
   },
@@ -24,7 +24,8 @@
     "remote_model_url": "",
     "byteplus_base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
     "google_api_base": "",
-    "google_api_version": ""
+    "google_api_version": "",
+    "remote": "http://localhost:11434"
   },
   "gui": {
     "enabled": true,

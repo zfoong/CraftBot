@@ -25,4 +25,16 @@ PROVIDER_CONFIG = {
         base_url_env="REMOTE_MODEL_URL",
         default_base_url="http://localhost:11434",
     ),
+    "minimax": ProviderConfig(
+        api_key_env="MINIMAX_API_KEY",
+        default_base_url="https://api.minimax.chat/v1",
+    ),
+    "deepseek": ProviderConfig(
+        api_key_env="DEEPSEEK_API_KEY",
+        default_base_url="https://api.deepseek.com",
+    ),
+    "moonshot": ProviderConfig(
+        api_key_env="MOONSHOT_API_KEY",
+        default_base_url="https://api.moonshot.cn/v1",
+    ),
 }

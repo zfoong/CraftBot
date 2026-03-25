@@ -1860,6 +1860,10 @@ function ModelSettings() {
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [testBeforeSave, setTestBeforeSave] = useState(false)
 
+  // Ollama model list state
+  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false)
+
   // Set up message handlers (runs once when connected)
   useEffect(() => {
     if (!isConnected) return
@@ -1931,7 +1935,7 @@ function ModelSettings() {
           message: d.message,
           error: d.error,
         })
-        
+
         // If this test is before save and it was successful, proceed with save
         if (testBeforeSave && d.success) {
           setTestBeforeSave(false)
@@ -1951,6 +1955,15 @@ function ModelSettings() {
           setTestBeforeSave(false)
         }
       }),
+      onMessage('ollama_models_get', (data: unknown) => {
+        const d = data as { success: boolean; models: string[]; error?: string }
+        setOllamaModelsLoading(false)
+        if (d.success && d.models && d.models.length > 0) {
+          setOllamaModels(d.models)
+        } else {
+          setOllamaModels([])
+        }
+      }),
     ]
 
     return () => cleanups.forEach(cleanup => cleanup())
@@ -1963,6 +1976,13 @@ function ModelSettings() {
     send('model_providers_get')
     send('model_settings_get')
   }, [isConnected, send])
+
+  // Fetch Ollama models whenever the active provider is 'remote'
+  useEffect(() => {
+    if (!isConnected || provider !== 'remote') return
+    setOllamaModelsLoading(true)
+    send('ollama_models_get', { baseUrl: baseUrls['remote'] || undefined })
+  }, [provider, isConnected])
 
   const currentProvider = providers.find(p => p.id === provider)
   const hasKey = apiKeys[provider]?.has_key || newApiKey.length > 0
@@ -2056,22 +2076,57 @@ function ModelSettings() {
             <>
               <div className={styles.formGroup}>
                 <label>LLM Model</label>
-                <input
-                  type="text"
-                  value={newLlmModel || currentLlmModel || ''}
-                  onChange={(e) => { setNewLlmModel(e.target.value); setHasChanges(true) }}
-                  placeholder={currentLlmModel || 'Enter LLM model name...'}
-                />
+                {provider === 'remote' && ollamaModels.length > 0 ? (
+                  <select
+                    value={newLlmModel || currentLlmModel || ''}
+                    onChange={(e) => { setNewLlmModel(e.target.value); setHasChanges(true) }}
+                  >
+                    {ollamaModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={newLlmModel || currentLlmModel || ''}
+                    onChange={(e) => { setNewLlmModel(e.target.value); setHasChanges(true) }}
+                    placeholder={
+                      provider === 'remote' && ollamaModelsLoading
+                        ? 'Loading models...'
+                        : currentLlmModel || 'Enter LLM model name...'
+                    }
+                  />
+                )}
               </div>
               {currentProvider.has_vlm && (
                 <div className={styles.formGroup}>
                   <label>VLM Model</label>
-                  <input
-                    type="text"
-                    value={newVlmModel || currentVlmModel || ''}
-                    onChange={(e) => { setNewVlmModel(e.target.value); setHasChanges(true) }}
-                    placeholder={currentVlmModel || 'Enter VLM model name...'}
-                  />
+                  {(() => {
+                    const visionKeywords = ['llava', 'vision', 'moondream', 'bakllava']
+                    const visionModels = ollamaModels.filter(m =>
+                      visionKeywords.some(kw => m.toLowerCase().includes(kw))
+                    )
+                    const vlmOptions = provider === 'remote' && ollamaModels.length > 0
+                      ? (visionModels.length > 0 ? visionModels : ollamaModels)
+                      : []
+                    return vlmOptions.length > 0 ? (
+                      <select
+                        value={newVlmModel || currentVlmModel || ''}
+                        onChange={(e) => { setNewVlmModel(e.target.value); setHasChanges(true) }}
+                      >
+                        {vlmOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={newVlmModel || currentVlmModel || ''}
+                        onChange={(e) => { setNewVlmModel(e.target.value); setHasChanges(true) }}
+                        placeholder={
+                          provider === 'remote' && ollamaModelsLoading
+                            ? 'Loading models...'
+                            : currentVlmModel || 'Enter VLM model name...'
+                        }
+                      />
+                    )
+                  })()}
                 </div>
               )}
             </>

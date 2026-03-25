@@ -102,6 +102,7 @@ from app.ui_layer.settings.model_settings import (
     update_model_settings,
     test_connection,
     validate_can_save,
+    get_ollama_models,
 )
 
 __all__ = [
@@ -182,4 +183,5 @@ __all__ = [
     "update_model_settings",
     "test_connection",
     "validate_can_save",
+    "get_ollama_models",
 ]
