@@ -1,0 +1,26 @@
+{
+  "id": "{{PROJECT_ID}}",
+  "name": "{{PROJECT_NAME}}",
+  "version": "1.0.0",
+  "description": "{{PROJECT_DESCRIPTION}}",
+  "author": "CraftBot Agent",
+  "livingUIVersion": "1.0",
+  "features": [],
+  "createdAt": "{{CREATED_AT}}",
+  "entrypoint": {
+    "frontend": "src/main.tsx",
+    "backend": "backend/main.py"
+  },
+  "ports": {
+    "frontend": {{PORT}},
+    "backend": {{BACKEND_PORT}}
+  },
+  "agentAwareness": {
+    "enabled": true,
+    "stateReportInterval": 1000,
+    "reportComponents": true,
+    "reportUserInputs": true,
+    "reportVisibleText": true
+  },
+  "theme": "{{THEME}}"
+}
