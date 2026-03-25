@@ -2,7 +2,7 @@ from agent_core import action
 
 @action(
         name="run_shell",
-        description="Executes a shell command using the appropriate OS shell, capturing stdout, stderr, and exit code. Stdin is closed (EOF) by default and no input can be provided by the agent when prompted by shell.",
+        description="Executes a shell command using the appropriate OS shell, capturing stdout, stderr, and exit code. Stdin is closed (EOF) by default. IMPORTANT: For long-running commands that don't terminate (e.g., 'npm run dev', 'npm start', 'python -m http.server', 'flask run', watch processes, dev servers), you MUST set background=true. Otherwise, the command will block the entire task until timeout and may not capture any output.",
         platforms=["linux"],
         default=True,
         action_sets=["core"],
@@ -36,6 +36,11 @@ from agent_core import action
                                 "MY_VAR": "123"
                         },
                         "description": "Optional environment variable overrides."
+                },
+                "background": {
+                        "type": "boolean",
+                        "example": False,
+                        "description": "Set to true for long-running processes (dev servers, watchers, etc.). The command will start in the background and return immediately with the process ID. Required for commands like 'npm run dev', 'npm start', 'python -m http.server'."
                 }
         },
         output_schema={
@@ -58,6 +63,11 @@ from agent_core import action
                 "message": {
                         "type": "string",
                         "example": "Timed out after 30s."
+                },
+                "pid": {
+                        "type": "integer",
+                        "example": 12345,
+                        "description": "Process ID when running in background mode."
                 }
         },
         test_payload={
@@ -68,19 +78,21 @@ from agent_core import action
                 "env": {
                         "MY_VAR": "123"
                 },
+                "background": False,
                 "simulated_mode": True
         }
 )
 def shell_exec(input_data: dict) -> dict:
-    import os, json, subprocess
+    import os, json, subprocess, signal, time
 
     simulated_mode = input_data.get('simulated_mode', False)
-    
+
     command = str(input_data.get('command', '')).strip()
     shell_choice = str(input_data.get('shell', 'auto')).strip().lower()
     timeout_val = input_data.get('timeout')
     cwd = input_data.get('cwd')
     env_input = input_data.get('env') or {}
+    background = input_data.get('background', False)
 
     if simulated_mode:
         # Return mock result for testing
@@ -89,53 +101,96 @@ def shell_exec(input_data: dict) -> dict:
             'stdout': 'Simulated command output',
             'stderr': '',
             'return_code': 0,
-            'message': ''
+            'message': '',
+            'pid': None
         }
 
     timeout_seconds = float(timeout_val) if timeout_val is not None else 30.0
 
     if not command:
-        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'command is required.'}
+        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'command is required.', 'pid': None}
 
     if cwd and not os.path.isdir(cwd):
-        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'Working directory does not exist.'}
+        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'Working directory does not exist.', 'pid': None}
 
     env = os.environ.copy()
     for k, v in env_input.items():
         env[str(k)] = str(v)
 
-    run_kwargs = {
-        'capture_output': True,
-        'text': True,
-        'errors': 'replace',
-        'cwd': cwd if cwd else None,
-        'env': env,
-        'timeout': timeout_seconds,
-        'stdin': subprocess.DEVNULL,
-        'shell': True,
-    }
+    # Background mode: start process and return immediately
+    if background:
+        try:
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                cwd=cwd if cwd else None,
+                env=env,
+                start_new_session=True  # Detach from parent process group
+            )
+            return {
+                'status': 'background',
+                'stdout': '',
+                'stderr': '',
+                'return_code': 0,
+                'message': f'Process started in background with PID {process.pid}',
+                'pid': process.pid
+            }
+        except Exception as e:
+            return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e), 'pid': None}
 
+    # Foreground mode with proper timeout handling
     try:
-        # Default: use system shell (sh)
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
-            **run_kwargs
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            cwd=cwd if cwd else None,
+            env=env,
+            text=True,
+            errors='replace',
+            start_new_session=True  # Create new process group for proper cleanup
         )
-        return {
-            'status': 'success' if result.returncode == 0 else 'error',
-            'stdout': result.stdout.strip(),
-            'stderr': result.stderr.strip(),
-            'return_code': result.returncode,
-            'message': ''
-        }
-    except subprocess.TimeoutExpired as e:
-        return {'status': 'error', 'stdout': (e.stdout or '').strip(), 'stderr': (e.stderr or '').strip(), 'return_code': -1, 'message': f'Timed out after {timeout_seconds}s.'}
+
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+            return {
+                'status': 'success' if process.returncode == 0 else 'error',
+                'stdout': stdout.strip() if stdout else '',
+                'stderr': stderr.strip() if stderr else '',
+                'return_code': process.returncode,
+                'message': '',
+                'pid': None
+            }
+        except subprocess.TimeoutExpired:
+            # Kill the entire process group
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                time.sleep(0.5)
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            process.kill()
+            stdout, stderr = process.communicate()
+            return {
+                'status': 'error',
+                'stdout': (stdout or '').strip(),
+                'stderr': (stderr or '').strip(),
+                'return_code': -1,
+                'message': f'Timed out after {timeout_seconds}s.',
+                'pid': None
+            }
     except Exception as e:
-        return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e)}
+        return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e), 'pid': None}
 
 @action(
         name="run_shell",
-        description="Executes a shell command using the appropriate OS shell, capturing stdout, stderr, and exit code. Stdin is closed (EOF) by default and no input can be provided by the agent when prompted by shell.",
+        description="Executes a shell command using the appropriate OS shell, capturing stdout, stderr, and exit code. Stdin is closed (EOF) by default. IMPORTANT: For long-running commands that don't terminate (e.g., 'npm run dev', 'npm start', 'python -m http.server', 'flask run', watch processes, dev servers), you MUST set background=true. Otherwise, the command will block the entire task until timeout and may not capture any output.",
         platforms=["windows"],
         default=True,
         action_sets=["core"],
@@ -169,6 +224,11 @@ def shell_exec(input_data: dict) -> dict:
                                 "MY_VAR": "123"
                         },
                         "description": "Optional environment variable overrides."
+                },
+                "background": {
+                        "type": "boolean",
+                        "example": False,
+                        "description": "Set to true for long-running processes (dev servers, watchers, etc.). The command will start in the background and return immediately with the process ID. Required for commands like 'npm run dev', 'npm start', 'python -m http.server'."
                 }
         },
         output_schema={
@@ -191,6 +251,11 @@ def shell_exec(input_data: dict) -> dict:
                 "message": {
                         "type": "string",
                         "example": "Timed out after 30s."
+                },
+                "pid": {
+                        "type": "integer",
+                        "example": 12345,
+                        "description": "Process ID when running in background mode."
                 }
         },
         test_payload={
@@ -201,6 +266,7 @@ def shell_exec(input_data: dict) -> dict:
                 "env": {
                         "MY_VAR": "123"
                 },
+                "background": False,
                 "simulated_mode": True
         }
 )
@@ -216,7 +282,8 @@ def shell_exec_windows(input_data: dict) -> dict:
             'stdout': 'Simulated command output',
             'stderr': '',
             'return_code': 0,
-            'message': ''
+            'message': '',
+            'pid': None
         }
 
     command = str(input_data.get('command', '')).strip()
@@ -227,14 +294,15 @@ def shell_exec_windows(input_data: dict) -> dict:
     timeout_val = input_data.get('timeout')
     cwd = input_data.get('cwd')
     env_input = input_data.get('env') or {}
+    background = input_data.get('background', False)
 
     timeout_seconds = float(timeout_val) if timeout_val is not None else 30.0
 
     if not command:
-        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'command is required.'}
+        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'command is required.', 'pid': None}
 
     if cwd and not os.path.isdir(cwd):
-        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'Working directory does not exist.'}
+        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'Working directory does not exist.', 'pid': None}
 
     env = os.environ.copy()
     for k, v in env_input.items():
@@ -248,37 +316,85 @@ def shell_exec_windows(input_data: dict) -> dict:
         # Use /d and /s to ensure quoted commands (e.g., paths with spaces) are handled consistently.
         args = ['cmd.exe', '/d', '/s', '/c', command]
 
-    run_kwargs = {
-        'capture_output': True,
-        'text': True,
-        'errors': 'replace',
-        'cwd': cwd if cwd else None,
-        'env': env,
-        'timeout': timeout_seconds,
-        'creationflags': getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-        'stdin': subprocess.DEVNULL,
-    }
+    creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
+    # Background mode: start process and return immediately
+    if background:
+        try:
+            # Use CREATE_NEW_PROCESS_GROUP to detach from parent
+            bg_flags = creation_flags | subprocess.CREATE_NEW_PROCESS_GROUP
+            process = subprocess.Popen(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                cwd=cwd if cwd else None,
+                env=env,
+                creationflags=bg_flags
+            )
+            return {
+                'status': 'background',
+                'stdout': '',
+                'stderr': '',
+                'return_code': 0,
+                'message': f'Process started in background with PID {process.pid}',
+                'pid': process.pid
+            }
+        except Exception as e:
+            return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e), 'pid': None}
+
+    # Foreground mode with proper timeout handling
     try:
-        result = subprocess.run(
+        # Use CREATE_NEW_PROCESS_GROUP so we can kill the entire process tree
+        fg_flags = creation_flags | subprocess.CREATE_NEW_PROCESS_GROUP
+        process = subprocess.Popen(
             args,
-            **run_kwargs
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            cwd=cwd if cwd else None,
+            env=env,
+            text=True,
+            errors='replace',
+            creationflags=fg_flags
         )
-        return {
-            'status': 'success' if result.returncode == 0 else 'error',
-            'stdout': result.stdout.strip(),
-            'stderr': result.stderr.strip(),
-            'return_code': result.returncode,
-            'message': ''
-        }
-    except subprocess.TimeoutExpired as e:
-        return {'status': 'error', 'stdout': (e.stdout or '').strip(), 'stderr': (e.stderr or '').strip(), 'return_code': -1, 'message': f'Timed out after {timeout_seconds}s.'}
+
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+            return {
+                'status': 'success' if process.returncode == 0 else 'error',
+                'stdout': stdout.strip() if stdout else '',
+                'stderr': stderr.strip() if stderr else '',
+                'return_code': process.returncode,
+                'message': '',
+                'pid': None
+            }
+        except subprocess.TimeoutExpired:
+            # Kill the entire process tree on Windows using taskkill
+            try:
+                subprocess.run(
+                    ['taskkill', '/F', '/T', '/PID', str(process.pid)],
+                    capture_output=True,
+                    creationflags=creation_flags
+                )
+            except Exception:
+                pass
+            process.kill()
+            stdout, stderr = process.communicate()
+            return {
+                'status': 'error',
+                'stdout': (stdout or '').strip(),
+                'stderr': (stderr or '').strip(),
+                'return_code': -1,
+                'message': f'Timed out after {timeout_seconds}s.',
+                'pid': None
+            }
     except Exception as e:
-        return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e)}
+        return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e), 'pid': None}
 
 @action(
         name="run_shell",
-        description="Executes a shell command using the appropriate OS shell, capturing stdout, stderr, and exit code. Stdin is closed (EOF) by default and no input can be provided by the agent when prompted by shell.",
+        description="Executes a shell command using the appropriate OS shell, capturing stdout, stderr, and exit code. Stdin is closed (EOF) by default. IMPORTANT: For long-running commands that don't terminate (e.g., 'npm run dev', 'npm start', 'python -m http.server', 'flask run', watch processes, dev servers), you MUST set background=true. Otherwise, the command will block the entire task until timeout and may not capture any output.",
         platforms=["darwin"],
         default=True,
         action_sets=["core"],
@@ -312,6 +428,11 @@ def shell_exec_windows(input_data: dict) -> dict:
                                 "MY_VAR": "123"
                         },
                         "description": "Optional environment variable overrides."
+                },
+                "background": {
+                        "type": "boolean",
+                        "example": False,
+                        "description": "Set to true for long-running processes (dev servers, watchers, etc.). The command will start in the background and return immediately with the process ID. Required for commands like 'npm run dev', 'npm start', 'python -m http.server'."
                 }
         },
         output_schema={
@@ -334,6 +455,11 @@ def shell_exec_windows(input_data: dict) -> dict:
                 "message": {
                         "type": "string",
                         "example": "Timed out after 30s."
+                },
+                "pid": {
+                        "type": "integer",
+                        "example": 12345,
+                        "description": "Process ID when running in background mode."
                 }
         },
         test_payload={
@@ -344,11 +470,12 @@ def shell_exec_windows(input_data: dict) -> dict:
                 "env": {
                         "MY_VAR": "123"
                 },
+                "background": False,
                 "simulated_mode": True
         }
 )
 def shell_exec_darwin(input_data: dict) -> dict:
-    import os, json, subprocess
+    import os, json, subprocess, signal, time
 
     simulated_mode = input_data.get('simulated_mode', False)
 
@@ -359,7 +486,8 @@ def shell_exec_darwin(input_data: dict) -> dict:
             'stdout': 'Simulated command output',
             'stderr': '',
             'return_code': 0,
-            'message': ''
+            'message': '',
+            'pid': None
         }
 
     command = str(input_data.get('command', '')).strip()
@@ -367,14 +495,15 @@ def shell_exec_darwin(input_data: dict) -> dict:
     timeout_val = input_data.get('timeout')
     cwd = input_data.get('cwd')
     env_input = input_data.get('env') or {}
+    background = input_data.get('background', False)
 
     timeout_seconds = float(timeout_val) if timeout_val is not None else 30.0
 
     if not command:
-        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'command is required.'}
+        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'command is required.', 'pid': None}
 
     if cwd and not os.path.isdir(cwd):
-        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'Working directory does not exist.'}
+        return {'status': 'error', 'stdout': '', 'stderr': '', 'return_code': -1, 'message': 'Working directory does not exist.', 'pid': None}
 
     env = os.environ.copy()
     for k, v in env_input.items():
@@ -382,29 +511,71 @@ def shell_exec_darwin(input_data: dict) -> dict:
 
     args = ['/bin/zsh', '-c', command] if shell_choice == 'zsh' else ['/bin/bash', '-c', command]
 
-    run_kwargs = {
-        'capture_output': True,
-        'text': True,
-        'errors': 'replace',
-        'cwd': cwd if cwd else None,
-        'env': env,
-        'timeout': timeout_seconds,
-        'stdin': subprocess.DEVNULL,
-    }
+    # Background mode: start process and return immediately
+    if background:
+        try:
+            process = subprocess.Popen(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                cwd=cwd if cwd else None,
+                env=env,
+                start_new_session=True  # Detach from parent process group
+            )
+            return {
+                'status': 'background',
+                'stdout': '',
+                'stderr': '',
+                'return_code': 0,
+                'message': f'Process started in background with PID {process.pid}',
+                'pid': process.pid
+            }
+        except Exception as e:
+            return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e), 'pid': None}
 
+    # Foreground mode with proper timeout handling
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             args,
-            **run_kwargs
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            cwd=cwd if cwd else None,
+            env=env,
+            text=True,
+            errors='replace',
+            start_new_session=True  # Create new process group for proper cleanup
         )
-        return {
-            'status': 'success' if result.returncode == 0 else 'error',
-            'stdout': result.stdout.strip(),
-            'stderr': result.stderr.strip(),
-            'return_code': result.returncode,
-            'message': ''
-        }
-    except subprocess.TimeoutExpired as e:
-        return {'status': 'error', 'stdout': (e.stdout or '').strip(), 'stderr': (e.stderr or '').strip(), 'return_code': -1, 'message': f'Timed out after {timeout_seconds}s.'}
+
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+            return {
+                'status': 'success' if process.returncode == 0 else 'error',
+                'stdout': stdout.strip() if stdout else '',
+                'stderr': stderr.strip() if stderr else '',
+                'return_code': process.returncode,
+                'message': '',
+                'pid': None
+            }
+        except subprocess.TimeoutExpired:
+            # Kill the entire process group
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                time.sleep(0.5)
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            process.kill()
+            stdout, stderr = process.communicate()
+            return {
+                'status': 'error',
+                'stdout': (stdout or '').strip(),
+                'stderr': (stderr or '').strip(),
+                'return_code': -1,
+                'message': f'Timed out after {timeout_seconds}s.',
+                'pid': None
+            }
     except Exception as e:
-        return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e)}
+        return {'status': 'error', 'stdout': '', 'stderr': str(e), 'return_code': -1, 'message': str(e), 'pid': None}

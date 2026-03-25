@@ -97,6 +97,12 @@ from app.ui_layer.components.types import ChatMessage, ActionItem, Attachment
 from app.ui_layer.events import UIEvent, UIEventType
 from app.ui_layer.onboarding import OnboardingFlowController
 from app.ui_layer.metrics import MetricsCollector
+from app.living_ui import (
+    LivingUIManager,
+    LivingUIProject,
+    set_living_ui_manager,
+    register_broadcast_callbacks,
+)
 
 if TYPE_CHECKING:
     from app.ui_layer.controller.ui_controller import UIController
@@ -655,6 +661,26 @@ class BrowserAdapter(InterfaceAdapter):
 
         # Track active OAuth tasks for cancellation support
         self._oauth_tasks: Dict[str, asyncio.Task] = {}
+
+        # Living UI manager
+        template_path = Path(__file__).parent.parent.parent / "data" / "living_ui_template"
+        self._living_ui_manager = LivingUIManager(
+            workspace_root=AGENT_WORKSPACE_ROOT,
+            template_path=template_path
+        )
+        # Bind task_manager and trigger_queue for task creation
+        agent = self._controller.agent
+        self._living_ui_manager.bind_task_manager(agent.task_manager, agent.triggers)
+
+        # Clean up orphan processes and folders from previous sessions
+        self._living_ui_manager.cleanup_on_startup()
+
+        # Register global accessor and callbacks for Living UI actions
+        set_living_ui_manager(self._living_ui_manager)
+        register_broadcast_callbacks(
+            broadcast_ready=self.broadcast_living_ui_ready,
+            broadcast_progress=self.broadcast_living_ui_progress,
+        )
 
     @property
     def theme_adapter(self) -> ThemeAdapter:
@@ -1243,6 +1269,28 @@ class BrowserAdapter(InterfaceAdapter):
         elif msg_type == "onboarding_back":
             await self._handle_onboarding_back()
 
+        # Living UI handlers
+        elif msg_type == "living_ui_create":
+            await self._handle_living_ui_create(data)
+
+        elif msg_type == "living_ui_list":
+            await self._handle_living_ui_list()
+
+        elif msg_type == "living_ui_launch":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_launch(project_id)
+
+        elif msg_type == "living_ui_stop":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_stop(project_id)
+
+        elif msg_type == "living_ui_delete":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_delete(project_id)
+
+        elif msg_type == "living_ui_state_update":
+            await self._handle_living_ui_state_update(data)
+
     async def _handle_dashboard_metrics_filter(self, period: str) -> None:
         """Handle filtered metrics request for specific time period."""
         try:
@@ -1542,6 +1590,268 @@ class BrowserAdapter(InterfaceAdapter):
                     "error": str(e),
                 },
             })
+
+    # -------------------------------------------------------------------------
+    # Living UI Handlers
+    # -------------------------------------------------------------------------
+
+    async def _handle_living_ui_create(self, data: Dict[str, Any]) -> None:
+        """Create a new Living UI project."""
+        try:
+            name = data.get("name", "")
+            description = data.get("description", "")
+            features = data.get("features", [])
+            data_source = data.get("dataSource")
+            theme = data.get("theme", "system")
+
+            if not name or not description:
+                await self._broadcast({
+                    "type": "living_ui_error",
+                    "data": {
+                        "projectId": "",
+                        "error": "Name and description are required",
+                    },
+                })
+                return
+
+            # Create the project (directory/template)
+            project = await self._living_ui_manager.create_project(
+                name=name,
+                description=description,
+                features=features,
+                data_source=data_source,
+                theme=theme,
+            )
+
+            # Broadcast project created
+            await self._broadcast({
+                "type": "living_ui_create",
+                "data": {
+                    "success": True,
+                    "projectId": project.id,
+                    "project": project.to_dict(),
+                },
+            })
+
+            # Broadcast initial status update
+            await self._broadcast({
+                "type": "living_ui_status",
+                "data": {
+                    "projectId": project.id,
+                    "phase": "initializing",
+                    "progress": 10,
+                    "message": "Project created, starting development...",
+                },
+            })
+
+            # Create task and fire trigger via manager
+            # The manager handles: task creation, status update, trigger firing
+            task_id = await self._living_ui_manager.create_development_task(project.id)
+
+            if task_id:
+                logger.info(f"[LIVING_UI] Created and triggered task {task_id} for project {project.id}")
+            else:
+                logger.error(f"[LIVING_UI] Failed to create task for project {project.id}")
+                await self._broadcast({
+                    "type": "living_ui_error",
+                    "data": {
+                        "projectId": project.id,
+                        "error": "Failed to create development task",
+                    },
+                })
+
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error creating project: {e}")
+            await self._broadcast({
+                "type": "living_ui_error",
+                "data": {
+                    "projectId": "",
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_list(self) -> None:
+        """Get list of all Living UI projects."""
+        try:
+            projects = self._living_ui_manager.list_projects()
+            await self._broadcast({
+                "type": "living_ui_list",
+                "data": {
+                    "success": True,
+                    "projects": [p.to_dict() for p in projects],
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error listing projects: {e}")
+            await self._broadcast({
+                "type": "living_ui_list",
+                "data": {
+                    "success": False,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_launch(self, project_id: str) -> None:
+        """Launch a Living UI project."""
+        try:
+            success = await self._living_ui_manager.launch_project(project_id)
+            project = self._living_ui_manager.get_project(project_id)
+
+            if success and project:
+                await self._broadcast({
+                    "type": "living_ui_launch",
+                    "data": {
+                        "success": True,
+                        "projectId": project_id,
+                        "url": project.url,
+                        "port": project.port,
+                    },
+                })
+            else:
+                await self._broadcast({
+                    "type": "living_ui_launch",
+                    "data": {
+                        "success": False,
+                        "projectId": project_id,
+                        "error": project.error if project else "Project not found",
+                    },
+                })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error launching project: {e}")
+            await self._broadcast({
+                "type": "living_ui_launch",
+                "data": {
+                    "success": False,
+                    "projectId": project_id,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_stop(self, project_id: str) -> None:
+        """Stop a running Living UI project."""
+        try:
+            success = await self._living_ui_manager.stop_project(project_id)
+            await self._broadcast({
+                "type": "living_ui_stop",
+                "data": {
+                    "success": success,
+                    "projectId": project_id,
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error stopping project: {e}")
+            await self._broadcast({
+                "type": "living_ui_stop",
+                "data": {
+                    "success": False,
+                    "projectId": project_id,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_delete(self, project_id: str) -> None:
+        """Delete a Living UI project."""
+        try:
+            success = await self._living_ui_manager.delete_project(project_id)
+            await self._broadcast({
+                "type": "living_ui_delete",
+                "data": {
+                    "success": success,
+                    "projectId": project_id,
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error deleting project: {e}")
+            await self._broadcast({
+                "type": "living_ui_delete",
+                "data": {
+                    "success": False,
+                    "projectId": project_id,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_state_update(self, data: Dict[str, Any]) -> None:
+        """Handle state update from a Living UI for agent awareness."""
+        try:
+            project_id = data.get("projectId", "")
+            state = data.get("state", {})
+
+            # Store the state for agent context
+            from app.state import STATE
+            if hasattr(STATE, 'update_living_ui_state'):
+                STATE.update_living_ui_state(project_id, state)
+
+            # Also forward to any listening clients (for debugging/monitoring)
+            await self._broadcast({
+                "type": "living_ui_state_update",
+                "data": {
+                    "projectId": project_id,
+                    "state": state,
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error handling state update: {e}")
+
+    async def broadcast_living_ui_ready(self, project_id: str, url: str, port: int) -> None:
+        """
+        Broadcast that a Living UI is ready (called from agent action).
+
+        This method launches the Living UI server via the manager and notifies
+        the browser. The agent should NOT start the server itself - just build
+        and call this action.
+        """
+        project = self._living_ui_manager.get_project(project_id)
+        if not project:
+            logger.error(f"[LIVING_UI] Project not found for ready notification: {project_id}")
+            return
+
+        # Update project status to "ready" (build complete, about to launch)
+        self._living_ui_manager.update_project_status(project_id, "ready")
+
+        # Launch the project server via manager (centralizes process management)
+        success = await self._living_ui_manager.launch_project(project_id)
+
+        if success:
+            # Get updated project info with URL
+            project = self._living_ui_manager.get_project(project_id)
+            await self._broadcast({
+                "type": "living_ui_ready",
+                "data": {
+                    "projectId": project_id,
+                    "url": project.url if project else url,
+                    "port": project.port if project else port,
+                },
+            })
+            logger.info(f"[LIVING_UI] Project {project_id} launched and ready")
+        else:
+            # Launch failed
+            await self._broadcast({
+                "type": "living_ui_error",
+                "data": {
+                    "projectId": project_id,
+                    "error": "Failed to launch Living UI server",
+                },
+            })
+            logger.error(f"[LIVING_UI] Failed to launch project {project_id}")
+
+    async def broadcast_living_ui_progress(
+        self,
+        project_id: str,
+        phase: str,
+        progress: int,
+        message: str
+    ) -> None:
+        """Broadcast Living UI creation progress (called from agent action)."""
+        await self._broadcast({
+            "type": "living_ui_status",
+            "data": {
+                "projectId": project_id,
+                "phase": phase,
+                "progress": progress,
+                "message": message,
+            },
+        })
 
     async def _handle_task_cancel(self, task_id: str) -> None:
         """Cancel a running task."""
