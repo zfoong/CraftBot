@@ -541,6 +541,137 @@
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   Ollama / Local LLM Setup
+   ───────────────────────────────────────────────────────────────────── */
+
+.ollamaBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+}
+
+.ollamaStatusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+.ollamaStatusLabel {
+  color: var(--text-primary);
+}
+
+.ollamaHint {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.ollamaSuccessMsg {
+  font-size: var(--text-sm);
+  color: var(--color-success);
+  margin: 0;
+}
+
+.ollamaLabel {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.ollamaInputRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.ollamaInput {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono, monospace);
+  transition: border-color var(--transition-base);
+}
+
+.ollamaInput:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.ollamaError {
+  font-size: var(--text-xs);
+  color: var(--color-error);
+  margin: 0;
+}
+
+.ollamaChecking {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.spinnerSmall {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-primary);
+  border-top-color: var(--color-primary);
+  border-radius: var(--radius-full);
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+.installLog {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+
+.installLogLine {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.iconSuccess {
+  color: var(--color-success);
+  flex-shrink: 0;
+}
+
+.iconError {
+  color: var(--color-error);
+  flex-shrink: 0;
+}
+
+.iconWarning {
+  color: var(--color-warning);
+  flex-shrink: 0;
+}
+
+.iconMuted {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
 /* Touch device optimizations */
 @media (hover: none) and (pointer: coarse) {
   .optionItem {

@@ -100,6 +100,12 @@ export type WSMessageType =
   | 'onboarding_skip'
   | 'onboarding_back'
   | 'onboarding_complete'
+  // Local LLM (Ollama)
+  | 'local_llm_check'
+  | 'local_llm_test'
+  | 'local_llm_install'
+  | 'local_llm_install_progress'
+  | 'local_llm_start'
 
 export interface WSMessage {
   type: WSMessageType
@@ -521,6 +527,57 @@ export interface OnboardingStep {
   total: number
   options: OnboardingStepOption[]
   default: string | string[] | null
+  provider?: string | null   // only present on the api_key step
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Local LLM (Ollama) Types
+// ─────────────────────────────────────────────────────────────────────
+
+export type LocalLLMPhase =
+  | 'idle'
+  | 'checking'
+  | 'not_installed'
+  | 'not_running'
+  | 'running'
+  | 'installing'
+  | 'starting'
+  | 'connected'
+  | 'error'
+
+export interface LocalLLMState {
+  phase: LocalLLMPhase
+  version?: string
+  defaultUrl: string
+  installProgress: string[]
+  testResult?: { success: boolean; message?: string; error?: string; models?: string[] }
+  error?: string
+}
+
+export interface LocalLLMCheckResponse {
+  success: boolean
+  installed: boolean
+  running: boolean
+  version?: string
+  default_url: string
+  error?: string
+}
+
+export interface LocalLLMTestResponse {
+  success: boolean
+  message?: string
+  models?: string[]
+  error?: string
+}
+
+export interface LocalLLMInstallResponse {
+  success: boolean
+  message?: string
+  error?: string
+}
+
+export interface LocalLLMProgressResponse {
+  message: string
 }
 
 export interface OnboardingStepResponse {

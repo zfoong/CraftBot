@@ -1204,6 +1204,17 @@ class BrowserAdapter(InterfaceAdapter):
         elif msg_type == "onboarding_back":
             await self._handle_onboarding_back()
 
+        # Local LLM (Ollama) helpers
+        elif msg_type == "local_llm_check":
+            await self._handle_local_llm_check()
+        elif msg_type == "local_llm_test":
+            url = data.get("url", "http://localhost:11434")
+            await self._handle_local_llm_test(url)
+        elif msg_type == "local_llm_install":
+            await self._handle_local_llm_install()
+        elif msg_type == "local_llm_start":
+            await self._handle_local_llm_start()
+
     async def _handle_dashboard_metrics_filter(self, period: str) -> None:
         """Handle filtered metrics request for specific time period."""
         try:
@@ -1282,6 +1293,7 @@ class BrowserAdapter(InterfaceAdapter):
                             for opt in options
                         ],
                         "default": controller.get_step_default(),
+                        "provider": getattr(step, "provider", None),
                     },
                 },
             })
@@ -1318,8 +1330,25 @@ class BrowserAdapter(InterfaceAdapter):
             step = controller.get_current_step()
             if step.name == "api_key":
                 provider = controller.get_collected_data().get("provider", "openai")
-                # Remote/Ollama provider doesn't require API key validation
-                if provider != "remote" and value:
+                if provider == "remote":
+                    # Test Ollama connection with the submitted URL
+                    ollama_url = (value or "http://localhost:11434").strip()
+                    from app.ui_layer.local_llm_setup import test_ollama_connection_sync
+                    test_result = test_ollama_connection_sync(ollama_url)
+                    if not test_result.get("success"):
+                        err = test_result.get("error", "Cannot reach Ollama")
+                        await self._broadcast({
+                            "type": "onboarding_submit",
+                            "data": {
+                                "success": False,
+                                "error": f"Ollama connection failed: {err}",
+                                "index": controller.current_step_index,
+                            },
+                        })
+                        return
+                    # Normalise the value to the URL that actually worked
+                    value = ollama_url
+                elif value:
                     test_result = test_connection(
                         provider=provider,
                         api_key=value,
@@ -1384,6 +1413,7 @@ class BrowserAdapter(InterfaceAdapter):
                                 for opt in options
                             ],
                             "default": controller.get_step_default(),
+                            "provider": getattr(step, "provider", None),
                         },
                     },
                 })
@@ -1458,6 +1488,7 @@ class BrowserAdapter(InterfaceAdapter):
                                 for opt in options
                             ],
                             "default": controller.get_step_default(),
+                            "provider": getattr(step, "provider", None),
                         },
                     },
                 })
@@ -1513,6 +1544,7 @@ class BrowserAdapter(InterfaceAdapter):
                             for opt in options
                         ],
                         "default": controller.get_step_default(),
+                        "provider": getattr(step, "provider", None),
                     },
                 },
             })
@@ -1524,6 +1556,78 @@ class BrowserAdapter(InterfaceAdapter):
                     "success": False,
                     "error": str(e),
                 },
+            })
+
+    # ── Local LLM (Ollama) handlers ──────────────────────────────────────────
+
+    async def _handle_local_llm_check(self) -> None:
+        """Return Ollama installation and runtime status."""
+        try:
+            from app.ui_layer.local_llm_setup import get_ollama_status
+            status = get_ollama_status()
+            await self._broadcast({
+                "type": "local_llm_check",
+                "data": {"success": True, **status},
+            })
+        except Exception as e:
+            logger.error(f"[LOCAL_LLM] Error checking status: {e}")
+            await self._broadcast({
+                "type": "local_llm_check",
+                "data": {"success": False, "error": str(e)},
+            })
+
+    async def _handle_local_llm_test(self, url: str) -> None:
+        """Test an HTTP connection to a running Ollama instance."""
+        try:
+            from app.ui_layer.local_llm_setup import test_ollama_connection_sync
+            result = test_ollama_connection_sync(url)
+            await self._broadcast({
+                "type": "local_llm_test",
+                "data": result,
+            })
+        except Exception as e:
+            logger.error(f"[LOCAL_LLM] Error testing connection: {e}")
+            await self._broadcast({
+                "type": "local_llm_test",
+                "data": {"success": False, "error": str(e)},
+            })
+
+    async def _handle_local_llm_install(self) -> None:
+        """Install Ollama, streaming progress back to the client."""
+        async def progress_callback(msg: str) -> None:
+            await self._broadcast({
+                "type": "local_llm_install_progress",
+                "data": {"message": msg},
+            })
+
+        try:
+            from app.ui_layer.local_llm_setup import install_ollama
+            result = await install_ollama(progress_callback)
+            await self._broadcast({
+                "type": "local_llm_install",
+                "data": result,
+            })
+        except Exception as e:
+            logger.error(f"[LOCAL_LLM] Error installing: {e}")
+            await self._broadcast({
+                "type": "local_llm_install",
+                "data": {"success": False, "error": str(e)},
+            })
+
+    async def _handle_local_llm_start(self) -> None:
+        """Start the Ollama server."""
+        try:
+            from app.ui_layer.local_llm_setup import start_ollama
+            result = await start_ollama()
+            await self._broadcast({
+                "type": "local_llm_start",
+                "data": result,
+            })
+        except Exception as e:
+            logger.error(f"[LOCAL_LLM] Error starting Ollama: {e}")
+            await self._broadcast({
+                "type": "local_llm_start",
+                "data": {"success": False, "error": str(e)},
             })
 
     async def _handle_task_cancel(self, task_id: str) -> None:

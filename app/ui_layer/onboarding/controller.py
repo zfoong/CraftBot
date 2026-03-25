@@ -248,9 +248,15 @@ class OnboardingFlowController:
         selected_skills = self._state.collected_data.get("skills", [])
 
         # Save provider configuration to settings.json
-        if provider and api_key:
+        if provider == "remote":
+            # api_key holds the Ollama base URL for the remote provider
+            remote_url = api_key or "http://localhost:11434"
+            from app.tui.settings import save_remote_endpoint
+            save_remote_endpoint(remote_url)
+        elif provider and api_key:
             save_settings_to_json(provider, api_key)
 
+        if provider:
             # Reinitialize the LLM with the new provider settings
             if self._controller and self._controller.agent:
                 try:

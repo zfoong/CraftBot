@@ -100,6 +100,41 @@ def save_settings_to_json(provider: str, api_key: str) -> bool:
 save_settings_to_env = save_settings_to_json
 
 
+def save_remote_endpoint(url: str) -> bool:
+    """Save the Ollama (remote) base URL to settings.json.
+
+    Args:
+        url: The base URL for the Ollama server (e.g. http://localhost:11434)
+
+    Returns:
+        True if saved successfully, False otherwise
+    """
+    try:
+        settings = _load_settings()
+
+        if "model" not in settings:
+            settings["model"] = {}
+        settings["model"]["llm_provider"] = "remote"
+        settings["model"]["vlm_provider"] = "remote"
+
+        if "endpoints" not in settings:
+            settings["endpoints"] = {}
+        settings["endpoints"]["remote"] = url
+
+        if not _save_settings(settings):
+            return False
+
+        from app.config import reload_settings
+        reload_settings()
+
+        logger.info(f"[SETTINGS] Saved remote endpoint={url} to settings.json")
+        return True
+
+    except Exception as e:
+        logger.error(f"[SETTINGS] Failed to save remote endpoint: {e}")
+        return False
+
+
 def get_api_key_env_name(provider: str) -> Optional[str]:
     """Get the environment variable name for a provider's API key."""
     if provider not in PROVIDER_CONFIG:
