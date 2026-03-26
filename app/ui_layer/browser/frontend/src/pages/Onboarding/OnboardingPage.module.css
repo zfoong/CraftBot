@@ -672,6 +672,125 @@
   flex-shrink: 0;
 }
 
+.downloadProgressBar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-tertiary, rgba(255,255,255,0.1));
+  overflow: hidden;
+  margin: 10px 0 6px;
+}
+
+.downloadProgressFill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+.downloadProgressInfo {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.downloadStatus {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono, monospace);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modelSearchInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  margin-bottom: 8px;
+  outline: none;
+}
+
+.modelSearchInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.modelSearchInput:focus {
+  border-color: var(--color-primary);
+}
+
+.modelList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.modelOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 0;
+  transition: background 0.1s;
+}
+
+.modelOption:first-child {
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.modelOption:last-child {
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.modelOption:hover {
+  background: var(--bg-hover, rgba(255,255,255,0.06));
+}
+
+.modelOptionSelected {
+  background: var(--bg-hover, rgba(255,255,255,0.08));
+}
+
+.modelOption input[type="radio"] {
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.modelOptionName {
+  flex: 1;
+}
+
+.modelOptionSize {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.modelOptionBadge {
+  font-size: var(--text-xs);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
 /* Touch device optimizations */
 @media (hover: none) and (pointer: coarse) {
   .optionItem {

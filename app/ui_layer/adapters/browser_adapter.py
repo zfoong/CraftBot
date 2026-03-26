@@ -1219,6 +1219,11 @@ class BrowserAdapter(InterfaceAdapter):
             await self._handle_local_llm_install()
         elif msg_type == "local_llm_start":
             await self._handle_local_llm_start()
+        elif msg_type == "local_llm_suggested_models":
+            await self._handle_local_llm_suggested_models()
+        elif msg_type == "local_llm_pull_model":
+            model = data.get("model", "")
+            await self._handle_local_llm_pull_model(model)
 
     async def _handle_dashboard_metrics_filter(self, period: str) -> None:
         """Handle filtered metrics request for specific time period."""
@@ -1632,6 +1637,43 @@ class BrowserAdapter(InterfaceAdapter):
             logger.error(f"[LOCAL_LLM] Error starting Ollama: {e}")
             await self._broadcast({
                 "type": "local_llm_start",
+                "data": {"success": False, "error": str(e)},
+            })
+
+    async def _handle_local_llm_suggested_models(self) -> None:
+        """Return the list of suggested Ollama models."""
+        from app.ui_layer.local_llm_setup import SUGGESTED_MODELS
+        await self._broadcast({
+            "type": "local_llm_suggested_models",
+            "data": {"models": SUGGESTED_MODELS},
+        })
+
+    async def _handle_local_llm_pull_model(self, model: str) -> None:
+        """Pull an Ollama model, streaming progress back to the client."""
+        if not model:
+            await self._broadcast({
+                "type": "local_llm_pull_model",
+                "data": {"success": False, "error": "No model specified"},
+            })
+            return
+
+        async def progress_callback(data: dict) -> None:
+            await self._broadcast({
+                "type": "local_llm_pull_progress",
+                "data": data,
+            })
+
+        try:
+            from app.ui_layer.local_llm_setup import pull_ollama_model
+            result = await pull_ollama_model(model, progress_callback)
+            await self._broadcast({
+                "type": "local_llm_pull_model",
+                "data": result,
+            })
+        except Exception as e:
+            logger.error(f"[LOCAL_LLM] Error pulling model {model}: {e}")
+            await self._broadcast({
+                "type": "local_llm_pull_model",
                 "data": {"success": False, "error": str(e)},
             })
 

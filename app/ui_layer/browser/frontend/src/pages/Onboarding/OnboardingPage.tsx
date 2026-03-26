@@ -62,13 +62,23 @@ interface OllamaSetupProps {
 }
 
 function OllamaSetup({ defaultUrl, onConnected }: OllamaSetupProps) {
-  const { localLLM, checkLocalLLM, testLocalLLMConnection, installLocalLLM, startLocalLLM } = useWebSocket()
+  const { localLLM, checkLocalLLM, testLocalLLMConnection, installLocalLLM, startLocalLLM, pullOllamaModel } = useWebSocket()
   const [url, setUrl] = useState(defaultUrl)
+  const [selectedModel, setSelectedModel] = useState('llama3.2:3b')
+  const [modelSearch, setModelSearch] = useState('')
 
   // Auto-check on mount
   useEffect(() => {
     checkLocalLLM()
   }, [checkLocalLLM])
+
+  // Pre-select the recommended model when the list loads
+  useEffect(() => {
+    if (localLLM.suggestedModels.length > 0) {
+      const rec = localLLM.suggestedModels.find(m => m.recommended)
+      if (rec) setSelectedModel(rec.name)
+    }
+  }, [localLLM.suggestedModels])
 
   // Notify parent when connected
   useEffect(() => {
@@ -79,7 +89,7 @@ function OllamaSetup({ defaultUrl, onConnected }: OllamaSetupProps) {
 
   const { phase, installProgress, testResult, error } = localLLM
 
-  const isWorking = phase === 'checking' || phase === 'installing' || phase === 'starting'
+  const isWorking = phase === 'checking' || phase === 'installing' || phase === 'starting' || phase === 'pulling_model'
 
   // ── Checking ──
   if (phase === 'idle' || phase === 'checking') {
@@ -169,6 +179,88 @@ function OllamaSetup({ defaultUrl, onConnected }: OllamaSetupProps) {
         <Button variant="secondary" onClick={checkLocalLLM} icon={<RefreshCw size={16} />}>
           Retry
         </Button>
+      </div>
+    )
+  }
+
+  // ── Select model ──
+  if (phase === 'selecting_model') {
+    const allModels = localLLM.suggestedModels.length > 0 ? localLLM.suggestedModels : []
+    const filteredModels = allModels.filter(m =>
+      m.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
+      m.label.toLowerCase().includes(modelSearch.toLowerCase())
+    )
+    return (
+      <div className={styles.ollamaBox}>
+        <div className={styles.ollamaStatusRow}>
+          <Wifi size={18} className={styles.iconMuted} />
+          <span className={styles.ollamaStatusLabel}>Ollama is running — no models yet</span>
+        </div>
+        <p className={styles.ollamaHint}>Select a model to download so you can start chatting:</p>
+        <input
+          className={styles.modelSearchInput}
+          type="text"
+          placeholder="Find model..."
+          value={modelSearch}
+          onChange={e => setModelSearch(e.target.value)}
+        />
+        <div className={styles.modelList}>
+          {filteredModels.map(m => (
+            <label key={m.name} className={`${styles.modelOption} ${selectedModel === m.name ? styles.modelOptionSelected : ''}`}>
+              <input
+                type="radio"
+                name="ollama_model"
+                value={m.name}
+                checked={selectedModel === m.name}
+                onChange={() => setSelectedModel(m.name)}
+              />
+              <span className={styles.modelOptionName}>{m.label}</span>
+              <span className={styles.modelOptionSize}>{m.size}</span>
+              {m.recommended && <span className={styles.modelOptionBadge}>Recommended</span>}
+            </label>
+          ))}
+          {filteredModels.length === 0 && (
+            <p className={styles.ollamaHint}>No models match "{modelSearch}"</p>
+          )}
+        </div>
+        <Button variant="primary" onClick={() => pullOllamaModel(selectedModel)} disabled={!selectedModel} icon={<Download size={16} />}>
+          Download {selectedModel || 'Model'}
+        </Button>
+      </div>
+    )
+  }
+
+  // ── Pulling model ──
+  if (phase === 'pulling_model') {
+    const bytes = localLLM.pullBytes
+    const fmtBytes = (n: number) => {
+      if (n >= 1073741824) return `${(n / 1073741824).toFixed(1)} GB`
+      if (n >= 1048576) return `${(n / 1048576).toFixed(0)} MB`
+      return `${(n / 1024).toFixed(0)} KB`
+    }
+    const latestStatus = localLLM.pullProgress[localLLM.pullProgress.length - 1] ?? 'Starting download…'
+    return (
+      <div className={styles.ollamaBox}>
+        <div className={styles.ollamaStatusRow}>
+          <div className={styles.spinnerSmall} />
+          <span className={styles.ollamaStatusLabel}>Downloading {selectedModel}…</span>
+        </div>
+        {bytes && bytes.total > 0 ? (
+          <>
+            <div className={styles.downloadProgressBar}>
+              <div className={styles.downloadProgressFill} style={{ width: `${bytes.percent}%` }} />
+            </div>
+            <div className={styles.downloadProgressInfo}>
+              <span>{fmtBytes(bytes.completed)} / {fmtBytes(bytes.total)}</span>
+              <span>{bytes.percent}%</span>
+            </div>
+          </>
+        ) : (
+          <div className={styles.downloadProgressBar}>
+            <div className={styles.downloadProgressFill} style={{ width: '0%' }} />
+          </div>
+        )}
+        <p className={styles.downloadStatus}>{latestStatus}</p>
       </div>
     )
   }
@@ -458,7 +550,25 @@ export function OnboardingPage() {
                   <span className={styles.optionalBadge}>Optional</span>
                 )}
               </h2>
-              <p className={styles.stepDescription}>{onboardingStep.description}</p>
+              <p className={styles.stepDescription}>
+                {isOllamaStep ? (() => {
+                  switch (localLLM.phase) {
+                    case 'not_installed': return "Ollama isn't installed yet — we'll download and install it automatically."
+                    case 'installing':    return "Installing Ollama on your machine. This may take a minute…"
+                    case 'not_running':   return "Ollama is installed but not running. Click below to start the server."
+                    case 'starting':      return "Starting the Ollama server…"
+                    case 'running':       return "Ollama is running. Enter the server URL and test the connection."
+                    case 'selecting_model': return "Ollama is connected but has no models yet. Pick one to download."
+                    case 'pulling_model': return "Downloading your model — this may take a few minutes depending on size."
+                    case 'connected': {
+                      const n = localLLM.testResult?.models?.length ?? 0
+                      return `Connected to Ollama — ${n} model${n === 1 ? '' : 's'} available.`
+                    }
+                    case 'error':         return localLLM.error ?? "Something went wrong. Check the error below and retry."
+                    default:              return "Checking Ollama status…"
+                  }
+                })() : onboardingStep.description}
+              </p>
 
               {/* Error Message */}
               {onboardingError && (

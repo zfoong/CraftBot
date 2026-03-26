@@ -15,6 +15,53 @@ logger = logging.getLogger(__name__)
 
 OLLAMA_DEFAULT_URL = "http://localhost:11434"
 
+SUGGESTED_MODELS = [
+    # ── Llama ──────────────────────────────────────────────────────────────
+    {"name": "llama3.2:1b",        "label": "Llama 3.2 1B",       "size": "~1 GB",   "recommended": False},
+    {"name": "llama3.2:3b",        "label": "Llama 3.2 3B",       "size": "~2 GB",   "recommended": True},
+    {"name": "llama3.1:8b",        "label": "Llama 3.1 8B",       "size": "~5 GB",   "recommended": False},
+    # ── Phi ────────────────────────────────────────────────────────────────
+    {"name": "phi4-mini",          "label": "Phi-4 Mini",         "size": "~2.5 GB", "recommended": False},
+    {"name": "phi4",               "label": "Phi-4",              "size": "~9 GB",   "recommended": False},
+    # ── Gemma ──────────────────────────────────────────────────────────────
+    {"name": "gemma3:1b",          "label": "Gemma 3 1B",         "size": "~1 GB",   "recommended": False},
+    {"name": "gemma3:4b",          "label": "Gemma 3 4B",         "size": "~3 GB",   "recommended": False},
+    {"name": "gemma3:12b",         "label": "Gemma 3 12B",        "size": "~8 GB",   "recommended": False},
+    {"name": "gemma3:27b",         "label": "Gemma 3 27B",        "size": "~17 GB",  "recommended": False},
+    # ── Qwen ───────────────────────────────────────────────────────────────
+    {"name": "qwen3:0.6b",         "label": "Qwen 3 0.6B",        "size": "~0.5 GB", "recommended": False},
+    {"name": "qwen3:1.7b",         "label": "Qwen 3 1.7B",        "size": "~1 GB",   "recommended": False},
+    {"name": "qwen3:4b",           "label": "Qwen 3 4B",          "size": "~3 GB",   "recommended": False},
+    {"name": "qwen3:8b",           "label": "Qwen 3 8B",          "size": "~5 GB",   "recommended": False},
+    {"name": "qwen3:14b",          "label": "Qwen 3 14B",         "size": "~9 GB",   "recommended": False},
+    {"name": "qwen3:30b",          "label": "Qwen 3 30B",         "size": "~18 GB",  "recommended": False},
+    {"name": "qwen3-coder:4b",     "label": "Qwen 3 Coder 4B",    "size": "~3 GB",   "recommended": False},
+    {"name": "qwen3-coder:8b",     "label": "Qwen 3 Coder 8B",    "size": "~5 GB",   "recommended": False},
+    # ── Mistral ────────────────────────────────────────────────────────────
+    {"name": "mistral:7b",         "label": "Mistral 7B",         "size": "~4 GB",   "recommended": False},
+    {"name": "mistral-nemo",       "label": "Mistral Nemo 12B",   "size": "~7 GB",   "recommended": False},
+    # ── DeepSeek ───────────────────────────────────────────────────────────
+    {"name": "deepseek-r1:1.5b",   "label": "DeepSeek R1 1.5B",   "size": "~1 GB",   "recommended": False},
+    {"name": "deepseek-r1:7b",     "label": "DeepSeek R1 7B",     "size": "~4 GB",   "recommended": False},
+    {"name": "deepseek-r1:8b",     "label": "DeepSeek R1 8B",     "size": "~5 GB",   "recommended": False},
+    {"name": "deepseek-r1:14b",    "label": "DeepSeek R1 14B",    "size": "~9 GB",   "recommended": False},
+    {"name": "deepseek-r1:32b",    "label": "DeepSeek R1 32B",    "size": "~20 GB",  "recommended": False},
+    # ── Code models ────────────────────────────────────────────────────────
+    {"name": "codellama:7b",       "label": "Code Llama 7B",      "size": "~4 GB",   "recommended": False},
+    {"name": "codellama:13b",      "label": "Code Llama 13B",     "size": "~8 GB",   "recommended": False},
+    {"name": "starcoder2:3b",      "label": "StarCoder2 3B",      "size": "~2 GB",   "recommended": False},
+    {"name": "starcoder2:7b",      "label": "StarCoder2 7B",      "size": "~4 GB",   "recommended": False},
+    # ── Multimodal ─────────────────────────────────────────────────────────
+    {"name": "llava:7b",           "label": "LLaVA 7B (vision)",  "size": "~4 GB",   "recommended": False},
+    {"name": "llava:13b",          "label": "LLaVA 13B (vision)", "size": "~8 GB",   "recommended": False},
+    # ── Other ──────────────────────────────────────────────────────────────
+    {"name": "orca-mini:3b",       "label": "Orca Mini 3B",       "size": "~2 GB",   "recommended": False},
+    {"name": "vicuna:7b",          "label": "Vicuna 7B",          "size": "~4 GB",   "recommended": False},
+    {"name": "openchat:7b",        "label": "OpenChat 7B",        "size": "~4 GB",   "recommended": False},
+    {"name": "neural-chat:7b",     "label": "Neural Chat 7B",     "size": "~4 GB",   "recommended": False},
+    {"name": "dolphin-phi:2.7b",   "label": "Dolphin Phi 2.7B",   "size": "~2 GB",   "recommended": False},
+]
+
 
 def check_port_open(host: str, port: int, timeout: float = 2.0) -> bool:
     """Check if a TCP port is open."""
@@ -89,7 +136,12 @@ async def install_ollama(progress_callback: Callable) -> Dict[str, Any]:
                 )
                 await progress_callback("Installing Ollama via winget (this may take a minute)...")
                 _, stderr = await proc.communicate()
-                if proc.returncode == 0:
+                # Verify actual install regardless of exit code — winget can return non-zero on success
+                if get_ollama_status()["installed"]:
+                    subprocess.run(
+                        ["taskkill", "/F", "/IM", "ollama app.exe", "/T"],
+                        capture_output=True,
+                    )
                     await progress_callback("Ollama installed successfully!")
                     return {"success": True, "message": "Ollama installed via winget"}
                 await progress_callback("winget install failed, switching to direct download...")
@@ -121,8 +173,14 @@ async def install_ollama(progress_callback: Callable) -> Dict[str, Any]:
                 stderr=asyncio.subprocess.PIPE,
             )
             await run_proc.communicate()
-            await progress_callback("Installation complete!")
-            return {"success": True, "message": "Ollama installed"}
+            if get_ollama_status()["installed"]:
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", "ollama app.exe", "/T"],
+                    capture_output=True,
+                )
+                await progress_callback("Ollama installed successfully!")
+                return {"success": True, "message": "Ollama installed"}
+            return {"success": False, "error": "Installer ran but Ollama was not detected"}
 
         elif system in ("Darwin", "Linux"):
             await progress_callback("Downloading Ollama install script...")
@@ -178,4 +236,85 @@ async def start_ollama() -> Dict[str, Any]:
     except FileNotFoundError:
         return {"success": False, "error": "Ollama executable not found — is it installed?"}
     except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+async def pull_ollama_model(model: str, progress_callback: Callable) -> Dict[str, Any]:
+    """Pull an Ollama model via REST API, streaming structured progress via callback.
+
+    Uses a background thread so the asyncio event loop stays unblocked and no
+    asyncio.timeout() issues occur (Python 3.11 + aiohttp compatibility).
+
+    Each progress_callback call receives a dict with:
+      message   – current status string
+      total     – total bytes (0 if unknown)
+      completed – bytes downloaded so far
+      percent   – 0-100 integer
+    """
+    import queue
+    import threading
+    import urllib.request as _ureq
+
+    pull_url = OLLAMA_DEFAULT_URL + "/api/pull"
+    payload = json.dumps({"name": model, "stream": True}).encode()
+
+    line_queue: "queue.Queue[str | Exception | None]" = queue.Queue()
+
+    def _pull_thread() -> None:
+        try:
+            req = _ureq.Request(
+                pull_url,
+                data=payload,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with _ureq.urlopen(req) as resp:
+                for raw in resp:
+                    line_queue.put(raw.decode(errors="replace").strip())
+            line_queue.put(None)  # sentinel — done
+        except Exception as exc:
+            line_queue.put(exc)
+
+    thread = threading.Thread(target=_pull_thread, daemon=True)
+    thread.start()
+
+    try:
+        while True:
+            try:
+                item = line_queue.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.05)
+                continue
+
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                return {"success": False, "error": str(item)}
+
+            line = str(item).strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            status = obj.get("status", "")
+            total = obj.get("total", 0) or 0
+            completed = obj.get("completed", 0) or 0
+            percent = int(completed / total * 100) if total > 0 else 0
+            await progress_callback({
+                "message": status,
+                "total": total,
+                "completed": completed,
+                "percent": percent,
+            })
+            if status == "success":
+                break
+
+        thread.join(timeout=5)
+        return {"success": True, "model": model}
+
+    except Exception as exc:
+        logger.exception("Error pulling model %s", model)
         return {"success": False, "error": str(exc)}
