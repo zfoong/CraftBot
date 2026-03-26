@@ -1771,3 +1771,161 @@
     max-height: 80vh;
   }
 }
+
+/* ── Ollama model download section ───────────────────────────────── */
+.ollamaDownloadSection {
+  margin-top: var(--space-2);
+}
+
+.downloadModelBtn {
+  font-size: var(--text-sm);
+  color: var(--color-primary);
+  background: none;
+  border: 1px dashed var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.downloadModelBtn:hover {
+  background: var(--color-primary-subtle);
+}
+
+.pullModelPanel {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.pullPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: var(--font-medium);
+  font-size: var(--text-sm);
+}
+.pullPanelHeader button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  padding: 0 var(--space-1);
+}
+.pullPanelHeader button:hover {
+  color: var(--text-primary);
+}
+
+.pullModelSearch {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  box-sizing: border-box;
+}
+.pullModelSearch:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.pullModelList {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pullModelItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+.pullModelItem:hover {
+  background: var(--bg-tertiary);
+}
+.pullModelItemSelected {
+  background: var(--color-primary-subtle);
+}
+
+.pullModelName {
+  flex: 1;
+}
+.pullModelSize {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.pullModelBadge {
+  font-size: 10px;
+  background: var(--color-primary);
+  color: white;
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.pullPanelFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+.pullStartBtn {
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  transition: opacity var(--transition-fast);
+}
+.pullStartBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pullProgressPanel {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--bg-secondary);
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.pullProgressBar {
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.pullProgressFill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.pullProgressInfo {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.pullStatusText {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  margin: 0;
+}

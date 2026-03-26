@@ -1831,6 +1831,14 @@ interface TestResult {
   error?: string
 }
 
+// Suggested Ollama model type
+interface SuggestedModel {
+  name: string
+  label: string
+  size: string
+  recommended: boolean
+}
+
 function ModelSettings() {
   const { send, onMessage, isConnected } = useSettingsWebSocket()
   const { showToast } = useToast()
@@ -1863,6 +1871,20 @@ function ModelSettings() {
   // Ollama model list state
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
   const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false)
+
+  // Ollama model download state
+  const [pullPhase, setPullPhase] = useState<'idle' | 'selecting' | 'pulling'>('idle')
+  const [suggestedModels, setSuggestedModels] = useState<SuggestedModel[]>([])
+  const [selectedPullModel, setSelectedPullModel] = useState('')
+  const [modelSearch, setModelSearch] = useState('')
+  const [pullBytes, setPullBytes] = useState<{ completed: number; total: number; percent: number } | null>(null)
+  const [pullStatus, setPullStatus] = useState('')
+
+  const fmtBytes = (n: number) => {
+    if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(1)} GB`
+    if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(0)} MB`
+    return `${(n / 1024).toFixed(0)} KB`
+  }
 
   // Set up message handlers (runs once when connected)
   useEffect(() => {
@@ -1964,10 +1986,35 @@ function ModelSettings() {
           setOllamaModels([])
         }
       }),
+      onMessage('local_llm_suggested_models', (data: unknown) => {
+        const d = data as { models: SuggestedModel[] }
+        setSuggestedModels(d.models || [])
+        const rec = d.models?.find(m => m.recommended)
+        if (rec) setSelectedPullModel(rec.name)
+      }),
+      onMessage('local_llm_pull_progress', (data: unknown) => {
+        const d = data as { message: string; total: number; completed: number; percent: number }
+        setPullStatus(d.message || '')
+        if (d.total > 0) setPullBytes({ completed: d.completed, total: d.total, percent: d.percent })
+      }),
+      onMessage('local_llm_pull_model', (data: unknown) => {
+        const d = data as { success: boolean; model?: string; error?: string }
+        if (d.success) {
+          setPullPhase('idle')
+          setPullBytes(null)
+          setPullStatus('')
+          setOllamaModelsLoading(true)
+          send('ollama_models_get', { baseUrl: baseUrls['remote'] || undefined })
+          showToast('success', `Model ${d.model} downloaded successfully`)
+        } else {
+          setPullPhase('idle')
+          showToast('error', d.error || 'Model download failed')
+        }
+      }),
     ]
 
     return () => cleanups.forEach(cleanup => cleanup())
-  }, [isConnected, onMessage, send, testBeforeSave, provider, newApiKey, newBaseUrl])
+  }, [isConnected, onMessage, send, testBeforeSave, provider, newApiKey, newBaseUrl, baseUrls])
 
   // Load initial data only once when connected
   useEffect(() => {
@@ -2047,6 +2094,22 @@ function ModelSettings() {
     }
   }
 
+  const handleDownloadModelClick = () => {
+    setPullPhase('selecting')
+    setPullBytes(null)
+    setPullStatus('')
+    setModelSearch('')
+    if (suggestedModels.length === 0) {
+      send('local_llm_suggested_models')
+    }
+  }
+
+  const handleStartPull = () => {
+    if (!selectedPullModel) return
+    setPullPhase('pulling')
+    send('local_llm_pull_model', { model: selectedPullModel })
+  }
+
   return (
     <div className={styles.settingsSection}>
       <div className={styles.sectionHeader}>
@@ -2096,6 +2159,86 @@ function ModelSettings() {
                   />
                 )}
               </div>
+
+              {/* Download new Ollama model */}
+              {provider === 'remote' && (
+                <div className={styles.ollamaDownloadSection}>
+                  {pullPhase === 'idle' && (
+                    <button className={styles.downloadModelBtn} onClick={handleDownloadModelClick}>
+                      + Download New Model
+                    </button>
+                  )}
+
+                  {pullPhase === 'selecting' && (
+                    <div className={styles.pullModelPanel}>
+                      <div className={styles.pullPanelHeader}>
+                        <span>Select model to download</span>
+                        <button onClick={() => setPullPhase('idle')}>✕</button>
+                      </div>
+                      <input
+                        className={styles.pullModelSearch}
+                        placeholder="Search models..."
+                        value={modelSearch}
+                        onChange={e => setModelSearch(e.target.value)}
+                      />
+                      <div className={styles.pullModelList}>
+                        {suggestedModels
+                          .filter(m =>
+                            m.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
+                            m.label.toLowerCase().includes(modelSearch.toLowerCase())
+                          )
+                          .map(m => (
+                            <label
+                              key={m.name}
+                              className={`${styles.pullModelItem} ${selectedPullModel === m.name ? styles.pullModelItemSelected : ''}`}
+                            >
+                              <input
+                                type="radio"
+                                checked={selectedPullModel === m.name}
+                                onChange={() => setSelectedPullModel(m.name)}
+                              />
+                              <span className={styles.pullModelName}>{m.label}</span>
+                              <span className={styles.pullModelSize}>{m.size}</span>
+                              {m.recommended && <span className={styles.pullModelBadge}>Recommended</span>}
+                            </label>
+                          ))}
+                      </div>
+                      <div className={styles.pullPanelFooter}>
+                        <button
+                          className={styles.pullStartBtn}
+                          onClick={handleStartPull}
+                          disabled={!selectedPullModel}
+                        >
+                          Download
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {pullPhase === 'pulling' && (
+                    <div className={styles.pullProgressPanel}>
+                      <span>Downloading {selectedPullModel}…</span>
+                      {pullBytes && pullBytes.total > 0 ? (
+                        <>
+                          <div className={styles.pullProgressBar}>
+                            <div className={styles.pullProgressFill} style={{ width: `${pullBytes.percent}%` }} />
+                          </div>
+                          <div className={styles.pullProgressInfo}>
+                            <span>{fmtBytes(pullBytes.completed)} / {fmtBytes(pullBytes.total)}</span>
+                            <span>{pullBytes.percent}%</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className={styles.pullProgressBar}>
+                          <div className={styles.pullProgressFill} style={{ width: '0%' }} />
+                        </div>
+                      )}
+                      <p className={styles.pullStatusText}>{pullStatus || 'Starting…'}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {currentProvider.has_vlm && (
                 <div className={styles.formGroup}>
                   <label>VLM Model</label>
@@ -2173,8 +2316,8 @@ function ModelSettings() {
             <Button
               variant="secondary"
               onClick={handleTestConnection}
-              disabled={isTesting || !apiKeys[provider]?.has_key}
-              title={!apiKeys[provider]?.has_key ? 'API key required for testing' : ''}
+              disabled={isTesting || (provider !== 'remote' && !apiKeys[provider]?.has_key)}
+              title={provider !== 'remote' && !apiKeys[provider]?.has_key ? 'API key required for testing' : ''}
             >
               {isTesting ? (
                 <>
