@@ -684,7 +684,7 @@ class ContextEngine:
             "agent_info": True,
             "user_profile": True,
             "language_instruction": True,
-            "policy": False,
+            "policy": True,
             "environment": True,
             "file_system": True,
             "base_instruction": True,
