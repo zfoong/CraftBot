@@ -10,6 +10,7 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "html2canvas": "^1.4.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

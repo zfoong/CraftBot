@@ -17,7 +17,8 @@ __all__ = [
 _manager: Optional[LivingUIManager] = None
 
 # Callbacks for broadcasting to browser (set by browser_adapter)
-_broadcast_ready_callback: Optional[Callable[[str, str, int], Awaitable[None]]] = None
+# broadcast_ready returns True if project was found and launched successfully, False otherwise
+_broadcast_ready_callback: Optional[Callable[[str, str, int], Awaitable[bool]]] = None
 _broadcast_progress_callback: Optional[Callable[[str, str, int, str], Awaitable[None]]] = None
 
 
@@ -33,7 +34,7 @@ def set_living_ui_manager(manager: LivingUIManager) -> None:
 
 
 def register_broadcast_callbacks(
-    broadcast_ready: Callable[[str, str, int], Awaitable[None]],
+    broadcast_ready: Callable[[str, str, int], Awaitable[bool]],
     broadcast_progress: Callable[[str, str, int, str], Awaitable[None]],
 ) -> None:
     """
@@ -57,11 +58,10 @@ async def broadcast_living_ui_ready(project_id: str, url: str, port: int) -> boo
     This can be called from actions to notify the browser.
 
     Returns:
-        True if broadcast was successful, False otherwise
+        True if project was found and launched successfully, False otherwise
     """
     if _broadcast_ready_callback:
-        await _broadcast_ready_callback(project_id, url, port)
-        return True
+        return await _broadcast_ready_callback(project_id, url, port)
     return False
 
 

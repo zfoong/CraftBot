@@ -45,8 +45,7 @@ export function NavBar() {
     path: `/living-ui/${project.id}`,
   }))
 
-  // Combine static and Living UI nav items
-  const allNavItems = [...staticNavItems, ...livingUINavItems]
+  const hasLivingUI = livingUINavItems.length > 0
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -68,7 +67,24 @@ export function NavBar() {
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className={styles.navItems}>
-          {allNavItems.map(item => (
+          {/* Static nav items */}
+          {staticNavItems.map(item => (
+            <button
+              key={item.id}
+              className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}
+              onClick={() => navigate(item.path)}
+              title={item.label}
+            >
+              <span className={styles.icon}>{item.icon}</span>
+              <span className={styles.label}>{item.label}</span>
+            </button>
+          ))}
+
+          {/* Separator between static items and Living UI */}
+          {hasLivingUI && <span className={styles.separator}>|</span>}
+
+          {/* Living UI nav items */}
+          {livingUINavItems.map(item => (
             <button
               key={item.id}
               className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}

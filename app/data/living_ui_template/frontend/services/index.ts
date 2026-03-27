@@ -1,8 +1,33 @@
-// Services layer - External API integrations
-// Add your API service classes here
+/**
+ * Services Layer - API clients, persistence, and UI capture utilities
+ *
+ * Primary exports:
+ * - ApiService: Backend API client for state management
+ * - StatePersistence: localStorage persistence for UI state
+ * - UICapture: HTTP-based UI observation for agents
+ */
+
+// Main API service for backend communication
+export { ApiService } from './ApiService'
+export type { ActionRequest, ActionResponse, ItemData } from './ApiService'
+
+// localStorage persistence utilities
+export {
+  StatePersistence,
+  uiPreferences,
+  draftStorage,
+  stateCache,
+} from './StatePersistence'
+export type { PersistenceOptions } from './StatePersistence'
+
+// UI capture for agent observation (HTTP-based, replaces WebSocket)
+export { UICapture, uiCapture } from './UICapture'
+export type { UISnapshot, ComponentRegistration } from './UICapture'
 
 /**
  * Base API client for making HTTP requests
+ *
+ * Use this for custom API integrations beyond the built-in backend.
  */
 export class ApiClient {
   private baseUrl: string
@@ -57,21 +82,3 @@ export class ApiClient {
     return response.json()
   }
 }
-
-/**
- * Example: Backend API service
- * Uncomment and customize if using Python backend
- */
-// export class BackendService extends ApiClient {
-//   constructor() {
-//     super('http://localhost:{{BACKEND_PORT}}/api')
-//   }
-//
-//   async getItems() {
-//     return this.get('/items')
-//   }
-//
-//   async createItem(data: unknown) {
-//     return this.post('/items', data)
-//   }
-// }

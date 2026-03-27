@@ -1,25 +1,26 @@
 import { useEffect } from 'react'
-import { MainView } from './views/MainView'
-import { AppController } from './controllers/AppController'
-import { useAgentAware } from './agent/hooks'
+import { MainView } from './components/MainView'
+import { AppController } from './AppController'
+import { uiCapture } from './services/UICapture'
 
 // Initialize the controller
 const controller = new AppController()
 
 function App() {
-  // Make the app state agent-aware
-  const state = useAgentAware('App', {
-    initialized: true,
-    componentName: 'App',
-  })
-
   useEffect(() => {
     // Start the controller on mount
     controller.initialize()
 
+    // Register app state for UI capture (agent observation via HTTP)
+    uiCapture.registerComponent('App', {
+      initialized: true,
+      componentName: 'App',
+    })
+
     return () => {
       // Cleanup on unmount
       controller.cleanup()
+      uiCapture.unregisterComponent('App')
     }
   }, [])
 

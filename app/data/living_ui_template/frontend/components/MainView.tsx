@@ -1,5 +1,5 @@
 import { useAgentAware } from '../agent/hooks'
-import type { AppController } from '../controllers/AppController'
+import type { AppController } from '../AppController'
 
 interface MainViewProps {
   controller: AppController

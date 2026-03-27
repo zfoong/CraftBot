@@ -578,9 +578,7 @@ export interface LivingUIProject {
 export interface LivingUICreateRequest {
   name: string
   description: string
-  features: string[]
-  dataSource?: string
-  theme?: 'light' | 'dark' | 'system'
+  features?: string[]  // Optional, defaults to empty array
 }
 
 export interface LivingUIStatusUpdate {

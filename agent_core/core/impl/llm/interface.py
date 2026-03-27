@@ -1516,13 +1516,13 @@ class LLMInterface:
                 raise RuntimeError("Anthropic client was not initialised.")
 
             # Build the message with optional system prompt
-            # Use JSON prefilling to enforce JSON output
+            # Note: Assistant prefill is NOT supported on Claude Sonnet 4.5+ and Opus 4.6+
+            # Use system prompt instructions to request JSON output instead
             message_kwargs: Dict[str, Any] = {
                 "model": self.model,
                 "max_tokens": self.max_tokens,
                 "messages": [
                     {"role": "user", "content": user_prompt},
-                    {"role": "assistant", "content": "{"},  # JSON prefilling
                 ],
             }
 
@@ -1560,9 +1560,7 @@ class LLMInterface:
             for block in response.content:
                 if block.type == "text":
                     content += block.text
-
-            # Prepend the prefilled '{' to complete JSON
-            content = "{" + content.strip()
+            content = content.strip()
 
             # Token usage from Anthropic response
             token_count_input = response.usage.input_tokens

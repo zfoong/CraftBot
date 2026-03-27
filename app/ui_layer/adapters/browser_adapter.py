@@ -1793,18 +1793,29 @@ class BrowserAdapter(InterfaceAdapter):
         except Exception as e:
             logger.error(f"[LIVING_UI] Error handling state update: {e}")
 
-    async def broadcast_living_ui_ready(self, project_id: str, url: str, port: int) -> None:
+    async def broadcast_living_ui_ready(self, project_id: str, url: str, port: int) -> bool:
         """
         Broadcast that a Living UI is ready (called from agent action).
 
         This method launches the Living UI server via the manager and notifies
         the browser. The agent should NOT start the server itself - just build
         and call this action.
+
+        Returns:
+            True if project was found and launched successfully, False otherwise
         """
         project = self._living_ui_manager.get_project(project_id)
         if not project:
             logger.error(f"[LIVING_UI] Project not found for ready notification: {project_id}")
-            return
+            # Broadcast error to browser so it can display the error state
+            await self._broadcast({
+                "type": "living_ui_error",
+                "data": {
+                    "projectId": project_id,
+                    "error": f"Project '{project_id}' not found. Check that the project_id matches the one from the task instruction.",
+                },
+            })
+            return False
 
         # Update project status to "ready" (build complete, about to launch)
         self._living_ui_manager.update_project_status(project_id, "ready")
@@ -1824,6 +1835,7 @@ class BrowserAdapter(InterfaceAdapter):
                 },
             })
             logger.info(f"[LIVING_UI] Project {project_id} launched and ready")
+            return True
         else:
             # Launch failed
             await self._broadcast({
@@ -1834,6 +1846,7 @@ class BrowserAdapter(InterfaceAdapter):
                 },
             })
             logger.error(f"[LIVING_UI] Failed to launch project {project_id}")
+            return False
 
     async def broadcast_living_ui_progress(
         self,
