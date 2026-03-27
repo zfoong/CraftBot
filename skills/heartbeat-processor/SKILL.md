@@ -1,6 +1,6 @@
 ---
 name: heartbeat-processor
-description: Process proactive heartbeat triggers by reading PROACTIVE.md and executing due tasks for the current frequency (hourly/daily/weekly/monthly).
+description: Process the unified proactive heartbeat by reading PROACTIVE.md and executing all due tasks across every frequency (hourly/daily/weekly/monthly).
 user-invocable: false
 action-sets:
   - file_operations
@@ -11,13 +11,13 @@ action-sets:
 
 # Heartbeat Processor
 
-Silent background skill for executing scheduled proactive tasks. You are activated by a heartbeat trigger (hourly, daily, weekly, or monthly).
+Silent background skill for executing scheduled proactive tasks. A single unified heartbeat runs every hour and checks ALL frequencies — hourly, daily, weekly, and monthly tasks are evaluated in one pass.
 
 ## Trigger Context
 
-You receive a heartbeat trigger with:
-- `frequency`: The current heartbeat type (hourly, daily, weekly, monthly)
+You receive a single heartbeat trigger with:
 - `type`: "proactive_heartbeat"
+- The task instruction tells you how many due tasks were found
 
 ---
 
@@ -142,29 +142,20 @@ Decision Threshold:
 
 ## Workflow
 
-### Step 1: Read Recurring Tasks
+### Step 1: Read All Due Recurring Tasks
 
-Use `recurring_read` action with the current frequency to get tasks that should run.
+Use `recurring_read` with `frequency="all"` to get all enabled tasks, then process the ones that are due.
 
 ```
-recurring_read(frequency="daily", enabled_only=true)
+recurring_read(frequency="all", enabled_only=true)
 ```
 
-### Step 2: Filter by Time and Day
+The unified heartbeat checks tasks across ALL frequencies in one pass. Time and day filtering is already handled before tasks reach you — the tasks in your instruction are due now. However, you should still verify:
 
-For each task returned, check if it should run NOW based on `time` and `day` fields:
+- **Tasks with a `time` field**: If current time < task time, schedule for later using `schedule_task` with the specified time, then skip
+- **Tasks with a `day` field**: Confirm today matches (the pre-filter handles most cases, but verify edge cases)
 
-**For tasks with a `time` field (e.g., "09:00"):**
-- Compare task's `time` with current time
-- If current time < task time: **Schedule for later** using `schedule_task` with the specified time, then skip to next task
-- If current time >= task time: Continue to evaluate this task
-
-**For tasks with a `day` field (weekly/monthly tasks):**
-- Check if today matches the specified day (e.g., "monday", "friday")
-- If today does NOT match: **Skip** this task
-- If today matches: Continue to evaluate
-
-**Scheduling for later:**
+**Scheduling a task for later:**
 ```
 schedule_task(
   name="[Task Name]",
@@ -281,20 +272,20 @@ All recurring proactive tasks use tier 0 or tier 1:
 
 ### Example 1: INLINE Execution (Daily Briefing)
 
-1. Read tasks: `recurring_read(frequency="daily")`
-2. Find: `daily_morning_briefing` (tier 1, enabled)
+1. Read tasks: `recurring_read(frequency="all", enabled_only=true)`
+2. Find: `daily_morning_briefing` (daily, tier 1, enabled, due now)
 3. Score: Impact=4, Risk=5, Cost=4, Urgency=3, Confidence=4 = 20 (execute)
 4. Execution type: **INLINE** (simple notification, tier 1)
 5. Permission tier 1: Send message with star prefix
 6. Execute: Gather weather, calendar, tasks
 7. Present briefing to user
 8. Record outcome: `recurring_update_task(task_id="daily_morning_briefing", add_outcome={...})`
-9. End task
+9. Continue to next due task or end
 
 ### Example 2: SCHEDULED Execution (Complex Analysis)
 
-1. Read tasks: `recurring_read(frequency="weekly")`
-2. Find: `weekly_code_review` (tier 1, enabled, requires complex analysis)
+1. Read tasks: `recurring_read(frequency="all", enabled_only=true)`
+2. Find: `weekly_code_review` (weekly, tier 1, enabled, today is Sunday, due now)
 3. Score: Impact=4, Risk=5, Cost=3, Urgency=2, Confidence=4 = 18 (execute)
 4. Execution type: **SCHEDULED** (complex multi-step analysis, needs code_analysis action set)
 5. Schedule:

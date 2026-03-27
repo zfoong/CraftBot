@@ -45,6 +45,12 @@ interface WebSocketState {
   lastSeenMessageId: string | null
   // Reply state for reply-to-chat/task feature
   replyTarget: ReplyTarget | null
+  // Chat pagination
+  hasMoreMessages: boolean
+  loadingOlderMessages: boolean
+  // Action pagination
+  hasMoreActions: boolean
+  loadingOlderActions: boolean
 }
 
 interface WebSocketContextType extends WebSocketState {
@@ -65,6 +71,10 @@ interface WebSocketContextType extends WebSocketState {
   // Reply-to-chat/task methods
   setReplyTarget: (target: ReplyTarget) => void
   clearReplyTarget: () => void
+  // Chat pagination
+  loadOlderMessages: () => void
+  // Action pagination
+  loadOlderActions: () => void
 }
 
 // Initialize lastSeenMessageId from localStorage
@@ -107,6 +117,12 @@ const defaultState: WebSocketState = {
   lastSeenMessageId: getInitialLastSeenMessageId(),
   // Reply state
   replyTarget: null,
+  // Chat pagination
+  hasMoreMessages: true,
+  loadingOlderMessages: false,
+  // Action pagination
+  hasMoreActions: true,
+  loadingOlderActions: false,
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined)
@@ -210,10 +226,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     switch (msg.type) {
       case 'init': {
         const data = msg.data as unknown as InitialState
+        const initMessages = data.messages || []
+        const initActions = data.actions || []
         setState(prev => ({
           ...prev,
-          messages: data.messages || [],
-          actions: data.actions || [],
+          messages: initMessages,
+          actions: initActions,
           status: {
             state: data.agentState || 'idle',
             message: data.status || 'Ready',
@@ -224,6 +242,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           dashboardMetrics: data.dashboardMetrics || null,
           needsHardOnboarding: data.needsHardOnboarding || false,
           agentName: data.agentName || 'Agent',
+          hasMoreMessages: initMessages.length >= 50,
+          hasMoreActions: initActions.filter((a: ActionItem) => a.itemType === 'task').length >= 15,
         }))
         break
       }
@@ -237,9 +257,31 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         break
       }
 
-      case 'chat_clear':
-        setState(prev => ({ ...prev, messages: [] }))
+      case 'chat_history': {
+        const data = msg.data as unknown as { messages: ChatMessage[]; hasMore: boolean }
+        setState(prev => ({
+          ...prev,
+          messages: [...(data.messages || []), ...prev.messages],
+          hasMoreMessages: data.hasMore,
+          loadingOlderMessages: false,
+        }))
         break
+      }
+
+      case 'chat_clear':
+        setState(prev => ({ ...prev, messages: [], hasMoreMessages: false }))
+        break
+
+      case 'action_history': {
+        const data = msg.data as unknown as { actions: ActionItem[]; hasMore: boolean }
+        setState(prev => ({
+          ...prev,
+          actions: [...(data.actions || []), ...prev.actions],
+          hasMoreActions: data.hasMore,
+          loadingOlderActions: false,
+        }))
+        break
+      }
 
       case 'action_add': {
         const action = msg.data as unknown as ActionItem
@@ -483,6 +525,38 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [connect])
 
+  const loadOlderMessages = useCallback(() => {
+    if (!state.hasMoreMessages || state.loadingOlderMessages || state.messages.length === 0) return
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return
+
+    const oldestTimestamp = state.messages[0]?.timestamp
+    if (!oldestTimestamp) return
+
+    setState(prev => ({ ...prev, loadingOlderMessages: true }))
+    wsRef.current.send(JSON.stringify({
+      type: 'chat_history',
+      beforeTimestamp: oldestTimestamp,
+      limit: 50,
+    }))
+  }, [state.hasMoreMessages, state.loadingOlderMessages, state.messages])
+
+  const loadOlderActions = useCallback(() => {
+    if (!state.hasMoreActions || state.loadingOlderActions || state.actions.length === 0) return
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return
+
+    // Find the oldest task's createdAt (not action) for the before_timestamp
+    const oldestTask = state.actions.find(a => a.itemType === 'task')
+    const oldestCreatedAt = oldestTask?.createdAt || state.actions[0]?.createdAt
+    if (!oldestCreatedAt) return
+
+    setState(prev => ({ ...prev, loadingOlderActions: true }))
+    wsRef.current.send(JSON.stringify({
+      type: 'action_history',
+      beforeTimestamp: oldestCreatedAt,
+      limit: 15,
+    }))
+  }, [state.hasMoreActions, state.loadingOlderActions, state.actions])
+
   const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       try {
@@ -617,6 +691,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         markMessagesAsSeen,
         setReplyTarget,
         clearReplyTarget,
+        loadOlderMessages,
+        loadOlderActions,
       }}
     >
       {children}

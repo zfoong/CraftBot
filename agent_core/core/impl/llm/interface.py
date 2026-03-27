@@ -120,6 +120,7 @@ class LLMInterface:
 
         # Initialize BytePlus-specific attributes
         self._byteplus_cache_manager: Optional[BytePlusCacheManager] = None
+        self.byteplus_base_url: Optional[str] = None
         # Store system prompts for lazy session creation (instance variable)
         self._session_system_prompts: Dict[str, str] = {}
 

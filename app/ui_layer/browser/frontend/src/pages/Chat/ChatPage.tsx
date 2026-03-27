@@ -37,7 +37,7 @@ const formatFileSize = (bytes: number): string => {
 }
 
 export function ChatPage() {
-  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen, replyTarget, setReplyTarget, clearReplyTarget } = useWebSocket()
+  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen, replyTarget, setReplyTarget, clearReplyTarget, loadOlderMessages, hasMoreMessages, loadingOlderMessages } = useWebSocket()
 
   // Derive agent status from actions and messages
   const status = useDerivedAgentStatus({
@@ -114,17 +114,23 @@ export function ChatPage() {
   }, [])
 
   // Track scroll position continuously so we know where user was BEFORE new messages arrive
+  // Also detect scroll-to-top to load older messages
   useEffect(() => {
     const container = parentRef.current
     if (!container) return
 
     const handleScroll = () => {
       wasNearBottomRef.current = isNearBottom()
+
+      // Load older messages when scrolled near top
+      if (container.scrollTop < 100 && hasMoreMessages && !loadingOlderMessages) {
+        loadOlderMessages()
+      }
     }
 
     container.addEventListener('scroll', handleScroll)
     return () => container.removeEventListener('scroll', handleScroll)
-  }, [isNearBottom])
+  }, [isNearBottom, hasMoreMessages, loadingOlderMessages, loadOlderMessages])
 
   // Scroll to unread messages when entering chat page, smooth scroll for new messages only if near bottom
   useEffect(() => {
@@ -390,6 +396,11 @@ export function ChatPage() {
                 position: 'relative',
               }}
             >
+              {loadingOlderMessages && (
+                <div style={{ textAlign: 'center', padding: '8px 0', color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>
+                  <Loader2 size={14} style={{ display: 'inline', animation: 'spin 1s linear infinite' }} /> Loading older messages...
+                </div>
+              )}
               {virtualizer.getVirtualItems().map((virtualItem) => {
                 const message = messages[virtualItem.index]
                 return (

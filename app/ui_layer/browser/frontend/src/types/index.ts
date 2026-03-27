@@ -387,6 +387,9 @@ export interface FileItem {
 export interface FileListResponse {
   directory: string
   files: FileItem[]
+  total: number
+  hasMore: boolean
+  offset: number
   success: boolean
   error?: string
 }

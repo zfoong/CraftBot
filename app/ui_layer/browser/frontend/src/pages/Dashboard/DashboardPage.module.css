@@ -708,6 +708,21 @@
   border-radius: var(--radius-sm);
 }
 
+.viewAllButton {
+  width: 100%;
+  padding: var(--space-1) 0;
+  font-size: var(--text-xs);
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: center;
+}
+
+.viewAllButton:hover {
+  text-decoration: underline;
+}
+
 /* Empty State */
 .emptyState {
   display: flex;

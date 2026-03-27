@@ -914,29 +914,42 @@ class InternalActionInterface:
     @classmethod
     def _invalidate_action_selection_caches(cls) -> None:
         """
-        Invalidate action selection session caches when action sets change.
+        Invalidate and re-create action selection session caches when action sets change.
 
         When action sets are added or removed, the cached prompt becomes stale
-        because the <actions> section has changed. This method clears the
-        session caches for both CLI and GUI action selection.
+        because the <actions> section has changed. This method clears the old
+        session caches, resets event stream sync points, and re-creates fresh
+        session caches so the next action selection call sees the updated actions.
         """
         task_id = cls._get_current_task_id()
         if not task_id or not cls.llm_interface:
             return
 
         try:
-            # End action selection caches (both CLI and GUI)
+            # End old action selection caches (both CLI and GUI)
             cls.llm_interface.end_session_cache(task_id, LLMCallType.ACTION_SELECTION)
             cls.llm_interface.end_session_cache(task_id, LLMCallType.GUI_ACTION_SELECTION)
 
-            # Also reset event stream sync points
+            # Reset event stream sync points
             if cls.context_engine:
                 cls.context_engine.reset_event_stream_sync(LLMCallType.ACTION_SELECTION)
                 cls.context_engine.reset_event_stream_sync(LLMCallType.GUI_ACTION_SELECTION)
 
-            logger.info(f"[CACHE] Invalidated action selection caches for task {task_id} due to action set change")
+            # Re-create session caches with fresh system prompt so the next
+            # action selection call establishes a new session with updated actions
+            if cls.context_engine:
+                system_prompt, _ = cls.context_engine.make_prompt(
+                    user_flags={"query": False, "expected_output": False},
+                    system_flags={"policy": False},
+                )
+                for call_type in [LLMCallType.ACTION_SELECTION, LLMCallType.GUI_ACTION_SELECTION]:
+                    cache_id = cls.llm_interface.create_session_cache(task_id, call_type, system_prompt)
+                    if cache_id:
+                        logger.debug(f"[CACHE] Re-created session cache {cache_id} for {task_id}:{call_type}")
+
+            logger.info(f"[CACHE] Invalidated and re-created action selection caches for task {task_id} due to action set change")
         except Exception as e:
-            logger.warning(f"[CACHE] Failed to invalidate caches for task {task_id}: {e}")
+            logger.warning(f"[CACHE] Failed to invalidate/re-create caches for task {task_id}: {e}")
 
     @classmethod
     def list_action_sets(cls) -> Dict[str, Any]:

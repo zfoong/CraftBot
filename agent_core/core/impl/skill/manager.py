@@ -276,6 +276,8 @@ class SkillManager:
             if self._config:
                 if name in self._config.disabled_skills:
                     self._config.disabled_skills.remove(name)
+                if self._config.enabled_skills and name not in self._config.enabled_skills:
+                    self._config.enabled_skills.append(name)
                 self._save_config()
 
             logger.info(f"[SKILLS] Enabled skill: {name}")
@@ -300,6 +302,8 @@ class SkillManager:
             if self._config:
                 if name not in self._config.disabled_skills:
                     self._config.disabled_skills.append(name)
+                if name in self._config.enabled_skills:
+                    self._config.enabled_skills.remove(name)
                 self._save_config()
 
             logger.info(f"[SKILLS] Disabled skill: {name}")

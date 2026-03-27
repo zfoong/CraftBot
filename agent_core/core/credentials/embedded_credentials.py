@@ -31,6 +31,7 @@ _EMBEDDED_CREDENTIALS: dict[str, dict[str, list[str]]] = {
             "NTQwMzU1MDYyMDA1LTM3Y3RmcjBhNHVlazFjMWZzcDRzc25sd",
             "GhkdGJkbzZ2LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t",
         ],
+        "client_secret": ["R09DU1BYLTRpRi12Zmxac0xWYmNabXE2U3ZHTUw4RDllSHo="],
     },
     "zoom": {
         "client_id": ["YWlsaURjY0JUUGlaZ", "W5Ka29acldHZw=="],

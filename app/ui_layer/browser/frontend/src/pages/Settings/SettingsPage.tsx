@@ -258,7 +258,7 @@ function formatCronExpression(cron: string): string {
   // Hourly: minute is fixed, everything else is *
   if (hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
     const minNum = parseInt(minute, 10)
-    if (minNum === 0) return 'Every hour at :00'
+    if (minNum === 0) return 'Every hour'
     return `Every hour at :${minute.padStart(2, '0')}`
   }
 
@@ -947,20 +947,27 @@ function ProactiveSettings() {
     })
   }
 
-  // Group tasks by frequency
+  // Search state for proactive tasks
+  const [taskSearchQuery, setTaskSearchQuery] = useState('')
+
+  // Filter and group tasks by frequency
+  const filteredTasks = taskSearchQuery
+    ? tasks.filter(t =>
+        t.name.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
+        t.instruction.toLowerCase().includes(taskSearchQuery.toLowerCase())
+      )
+    : tasks
+
   const tasksByFrequency = {
-    hourly: tasks.filter(t => t.frequency === 'hourly'),
-    daily: tasks.filter(t => t.frequency === 'daily'),
-    weekly: tasks.filter(t => t.frequency === 'weekly'),
-    monthly: tasks.filter(t => t.frequency === 'monthly'),
+    hourly: filteredTasks.filter(t => t.frequency === 'hourly'),
+    daily: filteredTasks.filter(t => t.frequency === 'daily'),
+    weekly: filteredTasks.filter(t => t.frequency === 'weekly'),
+    monthly: filteredTasks.filter(t => t.frequency === 'monthly'),
   }
 
-  // Heartbeat schedules
+  // Heartbeat schedule (unified — single heartbeat checks all frequencies)
   const heartbeatSchedules = [
-    { id: 'hourly-heartbeat', label: 'Hourly Heartbeat', desc: 'Runs every hour to check and execute hourly tasks' },
-    { id: 'daily-heartbeat', label: 'Daily Heartbeat', desc: 'Runs once daily to execute daily tasks' },
-    { id: 'weekly-heartbeat', label: 'Weekly Heartbeat', desc: 'Runs weekly to execute weekly tasks' },
-    { id: 'monthly-heartbeat', label: 'Monthly Heartbeat', desc: 'Runs monthly to execute monthly tasks' },
+    { id: 'heartbeat', label: 'Heartbeat', desc: 'Runs every hour to check and execute all due proactive tasks' },
   ]
 
   // Planner schedules
@@ -1000,9 +1007,9 @@ function ProactiveSettings() {
       <div className={`${styles.toggleableContent} ${!schedulerEnabled ? styles.disabledContent : ''}`}>
         {/* Heartbeat Schedules */}
         <div className={styles.subsection}>
-          <h4 className={styles.subsectionTitle}>Heartbeat Schedules</h4>
+          <h4 className={styles.subsectionTitle}>Heartbeat</h4>
           <p className={styles.subsectionDesc}>
-            Heartbeats periodically check and execute proactive tasks based on their frequency
+            A single heartbeat runs every hour and executes all due proactive tasks across every frequency
           </p>
           <div className={styles.scheduleList}>
             {heartbeatSchedules.map(item => {
@@ -1066,13 +1073,30 @@ function ProactiveSettings() {
             <div>
               <h4 className={styles.subsectionTitle}>Proactive Tasks</h4>
               <p className={styles.subsectionDesc}>
-                Tasks defined in PROACTIVE.md that the agent executes during heartbeats
+                Tasks defined in PROACTIVE.md that the agent executes during the heartbeat
               </p>
             </div>
             <Button variant="primary" size="sm" onClick={handleAddTask} icon={<Plus size={14} />} disabled={!schedulerEnabled}>
               Add Task
             </Button>
           </div>
+
+          {tasks.length > 0 && (
+            <div className={styles.searchContainer}>
+              <input
+                type="text"
+                placeholder="Search tasks..."
+                value={taskSearchQuery}
+                onChange={(e) => setTaskSearchQuery(e.target.value)}
+                className={styles.searchInput}
+              />
+              {taskSearchQuery && (
+                <span className={styles.searchCount}>
+                  {filteredTasks.length} of {tasks.length}
+                </span>
+              )}
+            </div>
+          )}
 
           {isLoadingTasks ? (
             <div className={styles.loadingState}>
@@ -1121,6 +1145,9 @@ function ProactiveSettings() {
                               <span>Runs: {task.runCount}</span>
                               {task.lastRun && (
                                 <span>Last: {new Date(task.lastRun).toLocaleDateString()}</span>
+                              )}
+                              {task.nextRun && (
+                                <span>Next: {new Date(task.nextRun).toLocaleString()}</span>
                               )}
                             </div>
                           </div>
@@ -1365,7 +1392,7 @@ function TaskFormModal({ task, onClose, onSave }: TaskFormModalProps) {
             <div className={styles.toggleGroup}>
               <div className={styles.toggleInfo}>
                 <span className={styles.toggleLabel}>Enabled</span>
-                <span className={styles.toggleDesc}>Task will be executed during heartbeats</span>
+                <span className={styles.toggleDesc}>Task will be executed during the heartbeat</span>
               </div>
               <input
                 type="checkbox"

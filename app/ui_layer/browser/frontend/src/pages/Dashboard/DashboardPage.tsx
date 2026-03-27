@@ -113,6 +113,10 @@ export function DashboardPage() {
   const [tokenPeriod, setTokenPeriod] = useState<MetricsTimePeriod>('total')
   const [usagePeriod, setUsagePeriod] = useState<MetricsTimePeriod>('total')
 
+  // Expand/collapse state for top tools/skills lists
+  const [showAllTools, setShowAllTools] = useState(false)
+  const [showAllSkills, setShowAllSkills] = useState(false)
+
   // Request filtered metrics when period changes (for all periods including 'total')
   const handlePeriodChange = useCallback((
     period: MetricsTimePeriod,
@@ -494,13 +498,21 @@ export function DashboardPage() {
               <div className={styles.usageSectionHeader}>Top Tools</div>
               {mcpTopTools.length > 0 ? (
                 <div className={styles.usageList}>
-                  {mcpTopTools.slice(0, 3).map((tool, index) => (
+                  {(showAllTools ? mcpTopTools : mcpTopTools.slice(0, 3)).map((tool, index) => (
                     <div key={tool.name} className={styles.usageItem}>
                       <span className={styles.usageRank}>#{index + 1}</span>
                       <span className={styles.usageName}>{tool.name}</span>
                       <span className={styles.usageCount}>{tool.count}</span>
                     </div>
                   ))}
+                  {mcpTopTools.length > 3 && (
+                    <button
+                      className={styles.viewAllButton}
+                      onClick={() => setShowAllTools(!showAllTools)}
+                    >
+                      {showAllTools ? 'Show less' : `View all (${mcpTopTools.length})`}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className={styles.emptyUsage}>No usage yet</div>
@@ -532,13 +544,21 @@ export function DashboardPage() {
               <div className={styles.usageSectionHeader}>Top Skills</div>
               {topSkills.length > 0 ? (
                 <div className={styles.usageList}>
-                  {topSkills.slice(0, 3).map((skill, index) => (
+                  {(showAllSkills ? topSkills : topSkills.slice(0, 3)).map((skill, index) => (
                     <div key={skill.name} className={styles.usageItem}>
                       <span className={styles.usageRank}>#{index + 1}</span>
                       <span className={styles.usageName}>{skill.name}</span>
                       <span className={styles.usageCount}>{skill.count}</span>
                     </div>
                   ))}
+                  {topSkills.length > 3 && (
+                    <button
+                      className={styles.viewAllButton}
+                      onClick={() => setShowAllSkills(!showAllSkills)}
+                    >
+                      {showAllSkills ? 'Show less' : `View all (${topSkills.length})`}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className={styles.emptyUsage}>No usage yet</div>

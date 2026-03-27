@@ -679,31 +679,48 @@ class AgentBase:
         return False
 
     async def _handle_proactive_heartbeat(self, frequency: str) -> bool:
-        """Create heartbeat processing task for the given frequency."""
+        """Create a unified heartbeat task that checks all due tasks.
+
+        A single heartbeat runs hourly and collects due tasks across all
+        frequencies (hourly, daily, weekly, monthly) so only one schedule
+        entry is needed in scheduler_config.json.
+
+        Args:
+            frequency: Ignored (kept for backward-compat with old configs
+                       that still pass a single frequency).
+        """
         import time
 
-        # Check if there are any tasks for this frequency
-        tasks = self.proactive_manager.get_tasks(frequency=frequency, enabled_only=True)
-        if not tasks:
-            logger.info(f"[PROACTIVE] No {frequency} tasks enabled, skipping heartbeat")
+        # Collect due tasks across ALL frequencies
+        all_due_tasks = self.proactive_manager.get_all_due_tasks()
+        if not all_due_tasks:
+            logger.info("[PROACTIVE] No due tasks across any frequency, skipping heartbeat")
             return False
 
-        # Create task using heartbeat-processor skill
+        # Build a concise summary for the task instruction
+        freq_counts = {}
+        for t in all_due_tasks:
+            freq_counts[t.frequency] = freq_counts.get(t.frequency, 0) + 1
+        summary = ", ".join(f"{cnt} {freq}" for freq, cnt in freq_counts.items())
+
         task_id = self.task_manager.create_task(
-            task_name=f"{frequency.title()} Heartbeat",
-            task_instruction=f"Execute {frequency} proactive tasks from PROACTIVE.md. "
-                           f"There are {len(tasks)} task(s) to process.",
+            task_name="Heartbeat",
+            task_instruction=(
+                f"Execute all due proactive tasks from PROACTIVE.md. "
+                f"Due tasks: {summary} ({len(all_due_tasks)} total). "
+                f"Use recurring_read with frequency='all' and enabled_only=true, "
+                f"then filter by each task's time/day fields."
+            ),
             mode="simple",
-            action_sets=["file_operations", "proactive"],
+            action_sets=["file_operations", "proactive", "web_research"],
             selected_skills=["heartbeat-processor"],
         )
-        logger.info(f"[PROACTIVE] Created heartbeat task: {task_id} for {frequency}")
+        logger.info(f"[PROACTIVE] Created unified heartbeat task: {task_id} ({summary})")
 
-        # Queue trigger to start the task
         trigger = Trigger(
             fire_at=time.time(),
             priority=50,
-            next_action_description=f"Execute {frequency} proactive tasks",
+            next_action_description=f"Execute due proactive tasks ({summary})",
             session_id=task_id,
             payload={},
         )

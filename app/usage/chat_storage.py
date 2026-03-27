@@ -253,6 +253,47 @@ class ChatStorage:
             conn.commit()
             return cursor.rowcount > 0
 
+    def get_messages_before(
+        self,
+        before_timestamp: float,
+        limit: int = 50,
+    ) -> List[StoredChatMessage]:
+        """
+        Get messages older than a given timestamp, ordered newest-first then reversed.
+
+        Args:
+            before_timestamp: Unix timestamp upper bound (exclusive).
+            limit: Maximum number of messages to return.
+
+        Returns:
+            List of messages ordered by timestamp ascending (oldest first).
+        """
+        with sqlite3.connect(self._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT message_id, sender, content, style, timestamp, attachments, task_session_id
+                FROM chat_messages
+                WHERE timestamp < ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (before_timestamp, limit))
+            rows = cursor.fetchall()
+
+            messages = [
+                StoredChatMessage(
+                    message_id=row[0],
+                    sender=row[1],
+                    content=row[2],
+                    style=row[3],
+                    timestamp=row[4],
+                    attachments=json.loads(row[5]) if row[5] else None,
+                    task_session_id=row[6],
+                )
+                for row in rows
+            ]
+            messages.reverse()  # Return in chronological order
+            return messages
+
     def get_message_count(self) -> int:
         """Get total number of messages."""
         with sqlite3.connect(self._db_path) as conn:

@@ -243,7 +243,7 @@ async def toggle_schedule_runtime(
 def get_recurring_tasks(
     proactive_manager,
     frequency: Optional[str] = None,
-    enabled_only: bool = False
+    enabled_only: bool = False,
 ) -> Dict[str, Any]:
     """Get recurring tasks from PROACTIVE.md.
 
@@ -270,6 +270,9 @@ def get_recurring_tasks(
         # Convert to serializable format
         tasks_data = []
         for task in tasks:
+            # Calculate next execution time (clock-aligned to heartbeat slots)
+            next_run = task.calculate_next_run()
+
             task_dict = {
                 "id": task.id,
                 "name": task.name,
@@ -281,6 +284,7 @@ def get_recurring_tasks(
                 "permission_tier": task.permission_tier,
                 "enabled": task.enabled,
                 "run_count": task.run_count,
+                "next_run": next_run.isoformat() if next_run else None,
                 "conditions": [
                     {
                         "type": c.type,

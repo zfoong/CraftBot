@@ -375,6 +375,122 @@ class ActionStorage:
             conn.commit()
             return cursor.rowcount
 
+    def get_recent_tasks_with_actions(
+        self,
+        task_limit: int = 15,
+    ) -> List[StoredActionItem]:
+        """
+        Get the N most recent tasks and all their child actions.
+
+        Args:
+            task_limit: Maximum number of tasks to return.
+
+        Returns:
+            List of items (tasks + their actions) ordered by created_at ascending.
+        """
+        with sqlite3.connect(self._db_path) as conn:
+            cursor = conn.cursor()
+            # Get recent task IDs
+            cursor.execute("""
+                SELECT id FROM action_items
+                WHERE item_type = 'task'
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (task_limit,))
+            task_ids = [row[0] for row in cursor.fetchall()]
+
+            if not task_ids:
+                return []
+
+            # Get those tasks + all their child actions
+            placeholders = ','.join('?' * len(task_ids))
+            cursor.execute(f"""
+                SELECT id, name, status, item_type, parent_id, created_at,
+                       completed_at, input_data, output_data, error_message
+                FROM action_items
+                WHERE id IN ({placeholders}) OR parent_id IN ({placeholders})
+                ORDER BY created_at ASC
+            """, task_ids + task_ids)
+            rows = cursor.fetchall()
+
+            return [
+                StoredActionItem(
+                    id=row[0],
+                    name=row[1],
+                    status=row[2],
+                    item_type=row[3],
+                    parent_id=row[4],
+                    created_at=row[5],
+                    completed_at=row[6],
+                    input_data=row[7],
+                    output_data=row[8],
+                    error_message=row[9],
+                )
+                for row in rows
+            ]
+
+    def get_tasks_before(
+        self,
+        before_timestamp: float,
+        task_limit: int = 15,
+    ) -> List[StoredActionItem]:
+        """
+        Get tasks (and their actions) older than a given timestamp.
+
+        Args:
+            before_timestamp: Unix timestamp upper bound (exclusive), in seconds.
+            task_limit: Maximum number of tasks to load.
+
+        Returns:
+            List of items (tasks + their actions) ordered by created_at ascending.
+        """
+        with sqlite3.connect(self._db_path) as conn:
+            cursor = conn.cursor()
+            # Get older task IDs
+            cursor.execute("""
+                SELECT id FROM action_items
+                WHERE item_type = 'task' AND created_at < ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (before_timestamp, task_limit))
+            task_ids = [row[0] for row in cursor.fetchall()]
+
+            if not task_ids:
+                return []
+
+            placeholders = ','.join('?' * len(task_ids))
+            cursor.execute(f"""
+                SELECT id, name, status, item_type, parent_id, created_at,
+                       completed_at, input_data, output_data, error_message
+                FROM action_items
+                WHERE id IN ({placeholders}) OR parent_id IN ({placeholders})
+                ORDER BY created_at ASC
+            """, task_ids + task_ids)
+            rows = cursor.fetchall()
+
+            return [
+                StoredActionItem(
+                    id=row[0],
+                    name=row[1],
+                    status=row[2],
+                    item_type=row[3],
+                    parent_id=row[4],
+                    created_at=row[5],
+                    completed_at=row[6],
+                    input_data=row[7],
+                    output_data=row[8],
+                    error_message=row[9],
+                )
+                for row in rows
+            ]
+
+    def get_task_count(self) -> int:
+        """Get total number of tasks (not actions)."""
+        with sqlite3.connect(self._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM action_items WHERE item_type = 'task'")
+            return cursor.fetchone()[0]
+
     def get_item_count(self) -> int:
         """Get total number of items."""
         with sqlite3.connect(self._db_path) as conn:

@@ -272,7 +272,7 @@ const MIN_PANEL_WIDTH = 200
 const MAX_PANEL_WIDTH = 600
 
 export function TasksPage() {
-  const { actions, cancelTask, cancellingTaskId, setReplyTarget } = useWebSocket()
+  const { actions, cancelTask, cancellingTaskId, setReplyTarget, loadOlderActions, hasMoreActions, loadingOlderActions } = useWebSocket()
   const navigate = useNavigate()
   const [selectedItem, setSelectedItem] = useState<ActionItem | null>(null)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
@@ -447,6 +447,18 @@ export function TasksPage() {
                 </div>
               )
             })
+          )}
+          {hasMoreActions && tasks.length > 0 && (
+            <div style={{ textAlign: 'center', padding: '12px 0' }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={loadOlderActions}
+                loading={loadingOlderActions}
+              >
+                {loadingOlderActions ? 'Loading...' : 'Load older tasks'}
+              </Button>
+            </div>
           )}
         </div>
       </div>

@@ -184,8 +184,8 @@ class BrowserChatComponent(ChatComponentProtocol):
             from app.usage.chat_storage import get_chat_storage, StoredChatMessage
             self._storage = get_chat_storage()
 
-            # Load recent messages from storage
-            stored_messages = self._storage.get_recent_messages(limit=200)
+            # Load recent messages from storage (initial page)
+            stored_messages = self._storage.get_recent_messages(limit=50)
             for stored in stored_messages:
                 attachments = None
                 if stored.attachments:
@@ -296,8 +296,49 @@ class BrowserChatComponent(ChatComponentProtocol):
         pass
 
     def get_messages(self) -> List[ChatMessage]:
-        """Get all messages."""
+        """Get all loaded messages."""
         return self._messages.copy()
+
+    def get_messages_before(self, before_timestamp: float, limit: int = 50) -> List[ChatMessage]:
+        """Get older messages from storage before a given timestamp."""
+        if not self._storage:
+            return []
+        try:
+            stored = self._storage.get_messages_before(before_timestamp, limit=limit)
+            messages = []
+            for s in stored:
+                attachments = None
+                if s.attachments:
+                    attachments = [
+                        Attachment(
+                            name=att.get("name", ""),
+                            path=att.get("path", ""),
+                            type=att.get("type", ""),
+                            size=att.get("size", 0),
+                            url=att.get("url", ""),
+                        )
+                        for att in s.attachments
+                    ]
+                messages.append(ChatMessage(
+                    sender=s.sender,
+                    content=s.content,
+                    style=s.style,
+                    timestamp=s.timestamp,
+                    message_id=s.message_id,
+                    attachments=attachments,
+                ))
+            return messages
+        except Exception:
+            return []
+
+    def get_total_count(self) -> int:
+        """Get total message count from storage."""
+        if not self._storage:
+            return len(self._messages)
+        try:
+            return self._storage.get_message_count()
+        except Exception:
+            return len(self._messages)
 
 
 class BrowserActionPanelComponent(ActionPanelProtocol):
@@ -318,8 +359,8 @@ class BrowserActionPanelComponent(ActionPanelProtocol):
             # Mark any stale running items as cancelled from previous session
             self._storage.mark_running_as_cancelled()
 
-            # Load recent actions from storage
-            stored_items = self._storage.get_recent_items(limit=200)
+            # Load recent tasks (and their child actions) from storage
+            stored_items = self._storage.get_recent_tasks_with_actions(task_limit=15)
             for stored in stored_items:
                 self._items.append(ActionItem(
                     id=stored.id,
@@ -551,8 +592,41 @@ class BrowserActionPanelComponent(ActionPanelProtocol):
         pass
 
     def get_items(self) -> List[ActionItem]:
-        """Get all items."""
+        """Get all loaded items."""
         return self._items.copy()
+
+    def get_tasks_before(self, before_timestamp: float, task_limit: int = 15) -> List[ActionItem]:
+        """Get older tasks (and their child actions) from storage."""
+        if not self._storage:
+            return []
+        try:
+            stored = self._storage.get_tasks_before(before_timestamp, task_limit=task_limit)
+            return [
+                ActionItem(
+                    id=s.id,
+                    name=s.name,
+                    status=s.status,
+                    item_type=s.item_type,
+                    parent_id=s.parent_id,
+                    created_at=s.created_at,
+                    completed_at=s.completed_at,
+                    input_data=s.input_data,
+                    output_data=s.output_data,
+                    error_message=s.error_message,
+                )
+                for s in stored
+            ]
+        except Exception:
+            return []
+
+    def get_task_count(self) -> int:
+        """Get total task count (not actions) from storage."""
+        if not self._storage:
+            return len([i for i in self._items if i.item_type == 'task'])
+        try:
+            return self._storage.get_task_count()
+        except Exception:
+            return len([i for i in self._items if i.item_type == 'task'])
 
 
 class BrowserStatusBarComponent(StatusBarProtocol):
@@ -958,10 +1032,23 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             if command:
                 await self.submit_message(command)
 
+        elif msg_type == "chat_history":
+            before_timestamp = data.get("beforeTimestamp")
+            limit = data.get("limit", 50)
+            await self._handle_chat_history(before_timestamp, limit)
+
+        elif msg_type == "action_history":
+            before_timestamp = data.get("beforeTimestamp")
+            limit = data.get("limit", 15)
+            await self._handle_action_history(before_timestamp, limit)
+
         # File operations
         elif msg_type == "file_list":
             directory = data.get("directory", "")
-            await self._handle_file_list(directory)
+            offset = data.get("offset", 0)
+            limit = data.get("limit", 50)
+            search = data.get("search", "")
+            await self._handle_file_list(directory, offset=offset, limit=limit, search=search)
 
         elif msg_type == "file_read":
             file_path = data.get("path", "")
@@ -1891,7 +1978,7 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         result = get_recurring_tasks(
             proactive_manager,
             frequency=frequency,
-            enabled_only=False
+            enabled_only=False,
         )
 
         if result.get("success"):
@@ -1910,6 +1997,7 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
                     "day": task.get("day"),
                     "runCount": task.get("run_count", 0),
                     "lastRun": task.get("last_executed"),
+                    "nextRun": task.get("next_run"),
                     "outcomeHistory": task.get("outcome_history", []),
                 }
                 tasks_data.append(task_dict)
@@ -3336,8 +3424,10 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             "modified": int(stat.st_mtime * 1000),  # milliseconds for JS
         }
 
-    async def _handle_file_list(self, directory: str) -> None:
-        """List files in a directory within the workspace."""
+    async def _handle_file_list(
+        self, directory: str, offset: int = 0, limit: int = 50, search: str = ""
+    ) -> None:
+        """List files in a directory within the workspace with pagination and search."""
         try:
             workspace = Path(AGENT_WORKSPACE_ROOT).resolve()
 
@@ -3356,15 +3446,28 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             if not target.is_dir():
                 raise ValueError(f"Path is not a directory: {directory}")
 
-            files = []
-            for item in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-                files.append(self._get_file_info(item))
+            # Collect and sort all files
+            all_files = sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+
+            # Apply search filter
+            if search:
+                search_lower = search.lower()
+                all_files = [f for f in all_files if search_lower in f.name.lower()]
+
+            total = len(all_files)
+
+            # Apply pagination
+            paginated = all_files[offset:offset + limit]
+            files = [self._get_file_info(item) for item in paginated]
 
             await self._broadcast({
                 "type": "file_list",
                 "data": {
                     "directory": directory,
                     "files": files,
+                    "total": total,
+                    "hasMore": offset + limit < total,
+                    "offset": offset,
                     "success": True,
                 },
             })
@@ -3374,6 +3477,9 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
                 "data": {
                     "directory": directory,
                     "files": [],
+                    "total": 0,
+                    "hasMore": False,
+                    "offset": 0,
                     "success": False,
                     "error": str(e),
                 },
@@ -3737,6 +3843,98 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
                 "data": {
                     "path": file_path,
                     "success": False,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_chat_history(self, before_timestamp: float, limit: int = 50) -> None:
+        """Load older chat messages for infinite scroll."""
+        try:
+            older_messages = self._chat.get_messages_before(before_timestamp, limit=limit)
+            total = self._chat.get_total_count()
+
+            messages_data = []
+            for m in older_messages:
+                msg_data = {
+                    "sender": m.sender,
+                    "content": m.content,
+                    "style": m.style,
+                    "timestamp": m.timestamp,
+                    "messageId": m.message_id,
+                }
+                if m.attachments:
+                    msg_data["attachments"] = [
+                        {
+                            "name": att.name,
+                            "path": att.path,
+                            "type": att.type,
+                            "size": att.size,
+                            "url": att.url,
+                        }
+                        for att in m.attachments
+                    ]
+                if m.task_session_id:
+                    msg_data["taskSessionId"] = m.task_session_id
+                messages_data.append(msg_data)
+
+            await self._broadcast({
+                "type": "chat_history",
+                "data": {
+                    "messages": messages_data,
+                    "hasMore": len(older_messages) == limit,
+                    "total": total,
+                },
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "chat_history",
+                "data": {
+                    "messages": [],
+                    "hasMore": False,
+                    "total": 0,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_action_history(self, before_timestamp: float, limit: int = 15) -> None:
+        """Load older tasks (and their actions) for pagination."""
+        try:
+            # before_timestamp is in milliseconds from frontend, convert to seconds
+            before_ts_seconds = before_timestamp / 1000.0
+            older_items = self._action_panel.get_tasks_before(before_ts_seconds, task_limit=limit)
+
+            # Count how many tasks were returned to determine hasMore
+            task_count = sum(1 for a in older_items if a.item_type == 'task')
+
+            actions_data = [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "status": a.status,
+                    "itemType": a.item_type,
+                    "parentId": a.parent_id,
+                    "createdAt": int(a.created_at * 1000),
+                    "duration": a.duration,
+                    "input": a.input_data,
+                    "output": a.output_data,
+                    "error": a.error_message,
+                }
+                for a in older_items
+            ]
+
+            await self._broadcast({
+                "type": "action_history",
+                "data": {
+                    "actions": actions_data,
+                    "hasMore": task_count == limit,
+                },
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "action_history",
+                "data": {
+                    "actions": [],
+                    "hasMore": False,
                     "error": str(e),
                 },
             })

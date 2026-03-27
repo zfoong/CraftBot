@@ -18,33 +18,12 @@
       }
     },
     {
-      "id": "hourly-heartbeat",
-      "name": "Hourly Heartbeat",
-      "instruction": "Execute hourly proactive tasks from PROACTIVE.md",
-      "schedule": "every 1 hours",
+      "id": "heartbeat",
+      "name": "Heartbeat",
+      "instruction": "Execute all due proactive tasks from PROACTIVE.md across all frequencies",
+      "schedule": "0,30 * * * *",
       "enabled": true,
-      "priority": 60,
-      "mode": "simple",
-      "recurring": true,
-      "action_sets": [
-        "file_operations",
-        "proactive"
-      ],
-      "skills": [
-        "heartbeat-processor"
-      ],
-      "payload": {
-        "type": "proactive_heartbeat",
-        "frequency": "hourly"
-      }
-    },
-    {
-      "id": "daily-heartbeat",
-      "name": "Daily Heartbeat",
-      "instruction": "Execute daily proactive tasks from PROACTIVE.md",
-      "schedule": "every day at 8am",
-      "enabled": true,
-      "priority": 40,
+      "priority": 50,
       "mode": "simple",
       "recurring": true,
       "action_sets": [
@@ -56,50 +35,7 @@
         "heartbeat-processor"
       ],
       "payload": {
-        "type": "proactive_heartbeat",
-        "frequency": "daily"
-      }
-    },
-    {
-      "id": "weekly-heartbeat",
-      "name": "Weekly Heartbeat",
-      "instruction": "Execute weekly proactive tasks from PROACTIVE.md",
-      "schedule": "every sunday at 6pm",
-      "enabled": true,
-      "priority": 45,
-      "mode": "simple",
-      "recurring": true,
-      "action_sets": [
-        "file_operations",
-        "proactive"
-      ],
-      "skills": [
-        "heartbeat-processor"
-      ],
-      "payload": {
-        "type": "proactive_heartbeat",
-        "frequency": "weekly"
-      }
-    },
-    {
-      "id": "monthly-heartbeat",
-      "name": "Monthly Heartbeat",
-      "instruction": "Execute monthly proactive tasks from PROACTIVE.md",
-      "schedule": "0 9 1 * *",
-      "enabled": true,
-      "priority": 50,
-      "mode": "simple",
-      "recurring": true,
-      "action_sets": [
-        "file_operations",
-        "proactive"
-      ],
-      "skills": [
-        "heartbeat-processor"
-      ],
-      "payload": {
-        "type": "proactive_heartbeat",
-        "frequency": "monthly"
+        "type": "proactive_heartbeat"
       }
     },
     {

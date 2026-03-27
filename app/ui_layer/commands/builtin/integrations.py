@@ -1,10 +1,24 @@
-"""Integration-specific command implementation."""
+"""Integration-specific command implementation.
+
+All connect / disconnect / status operations go through the centralised
+``integration_settings`` module so that terminal, browser, and agent
+share the same logic and side-effects (e.g. platform-listener startup).
+"""
 
 from __future__ import annotations
 
 from typing import List
 
 from app.ui_layer.commands.base import Command, CommandResult
+from app.external_comms.integration_settings import (
+    INTEGRATION_REGISTRY,
+    get_integration_info,
+    get_integration_auth_type,
+    connect_integration_token,
+    connect_integration_oauth,
+    connect_integration_interactive,
+    disconnect_integration as _disconnect_integration,
+)
 from app.credentials.handlers import INTEGRATION_HANDLERS
 
 
@@ -12,13 +26,6 @@ class IntegrationCommand(Command):
     """Command for a specific integration."""
 
     def __init__(self, controller, integration_name: str) -> None:
-        """
-        Initialize the integration command.
-
-        Args:
-            controller: The UI controller instance
-            integration_name: Name of the integration (e.g., "google", "slack")
-        """
         super().__init__(controller)
         self._integration_name = integration_name
         self._handler = INTEGRATION_HANDLERS.get(integration_name)
@@ -29,8 +36,9 @@ class IntegrationCommand(Command):
 
     @property
     def description(self) -> str:
-        if self._handler and hasattr(self._handler, "description"):
-            return self._handler.description
+        info = INTEGRATION_REGISTRY.get(self._integration_name)
+        if info:
+            return f"{info['name']} — {info['description']}"
         return f"Manage {self._integration_name} integration"
 
     @property
@@ -42,7 +50,6 @@ class IntegrationCommand(Command):
         lines = [f"Manage {self._integration_name} integration.", ""]
 
         if self._handler:
-            # Get available commands from handler
             if hasattr(self._handler, "get_commands"):
                 commands = self._handler.get_commands()
                 if commands:
@@ -63,8 +70,7 @@ class IntegrationCommand(Command):
         args: List[str],
         adapter_id: str = "",
     ) -> CommandResult:
-        """Execute the integration command."""
-        if not self._handler:
+        if self._integration_name not in INTEGRATION_REGISTRY:
             return CommandResult(
                 success=False,
                 message=f"Integration not available: {self._integration_name}",
@@ -76,7 +82,6 @@ class IntegrationCommand(Command):
         subcommand = args[0].lower()
         sub_args = args[1:]
 
-        # Handle common commands
         if subcommand == "status":
             return await self._show_status()
         elif subcommand == "connect":
@@ -84,20 +89,13 @@ class IntegrationCommand(Command):
         elif subcommand == "disconnect":
             return await self._disconnect()
 
-        # Try handler-specific command
-        if hasattr(self._handler, "handle_command"):
+        # Delegate handler-specific subcommands (login-qr, invite, etc.)
+        if self._handler:
             try:
-                result = await self._handler.handle_command(subcommand, sub_args)
-                if result:
-                    return CommandResult(
-                        success=result.get("success", False),
-                        message=result.get("message", ""),
-                    )
+                success, message = await self._handler.handle(subcommand, sub_args)
+                return CommandResult(success=success, message=message)
             except Exception as e:
-                return CommandResult(
-                    success=False,
-                    message=f"Command error: {e}",
-                )
+                return CommandResult(success=False, message=f"Command error: {e}")
 
         return CommandResult(
             success=False,
@@ -105,68 +103,80 @@ class IntegrationCommand(Command):
         )
 
     async def _show_status(self) -> CommandResult:
-        """Show integration status."""
+        """Show integration status via the centralised integration_settings module."""
         try:
-            if hasattr(self._handler, "get_status"):
-                status = self._handler.get_status()
-                connected = status.get("connected", False)
+            info = get_integration_info(self._integration_name)
+            if not info:
+                return CommandResult(success=False, message="Integration not found.")
 
-                lines = [f"{self._integration_name.title()} integration status:", ""]
-                lines.append(f"  Connected: {'Yes' if connected else 'No'}")
+            lines = [f"{info['name']} integration status:", ""]
+            lines.append(f"  Connected: {'Yes' if info['connected'] else 'No'}")
 
-                if connected:
-                    account = status.get("account", "")
-                    if account:
-                        lines.append(f"  Account: {account}")
+            for account in info.get("accounts", []):
+                display = account.get("display", "")
+                acct_id = account.get("id", "")
+                if display and acct_id and display != acct_id:
+                    lines.append(f"  Account: {display} ({acct_id})")
+                else:
+                    lines.append(f"  Account: {display or acct_id}")
 
-                return CommandResult(success=True, message="\n".join(lines))
-            else:
-                return CommandResult(
-                    success=True,
-                    message=f"{self._integration_name}: Status not available",
-                )
+            return CommandResult(success=True, message="\n".join(lines))
         except Exception as e:
-            return CommandResult(
-                success=False,
-                message=f"Failed to get status: {e}",
-            )
+            return CommandResult(success=False, message=f"Failed to get status: {e}")
 
     async def _connect(self, args: List[str]) -> CommandResult:
-        """Connect to the integration."""
+        """Connect via the centralised integration_settings module.
+
+        Determines the correct auth flow (token / oauth / interactive)
+        based on the integration's auth_type and the arguments provided.
+        """
         try:
-            if hasattr(self._handler, "connect"):
-                result = await self._handler.connect(*args)
-                return CommandResult(
-                    success=result.get("success", False),
-                    message=result.get("message", "Connected successfully" if result.get("success") else "Connection failed"),
-                )
-            else:
-                return CommandResult(
-                    success=False,
-                    message=f"{self._integration_name}: Connect not supported",
-                )
-        except Exception as e:
+            auth_type = get_integration_auth_type(self._integration_name)
+            info = INTEGRATION_REGISTRY.get(self._integration_name, {})
+            fields = info.get("fields", [])
+
+            # Token-based: args should provide credential values in field order
+            if auth_type in ("token", "both", "token_with_interactive") and (args or fields):
+                credentials: dict[str, str] = {}
+                for i, field in enumerate(fields):
+                    if i < len(args):
+                        credentials[field["key"]] = args[i]
+
+                if credentials:
+                    success, message = await connect_integration_token(
+                        self._integration_name, credentials
+                    )
+                    return CommandResult(success=success, message=message)
+
+                # No args provided — show required fields
+                if fields:
+                    field_list = ", ".join(f["label"] for f in fields)
+                    return CommandResult(
+                        success=False,
+                        message=f"Usage: /{self._integration_name} connect <{field_list}>",
+                    )
+
+            # OAuth-based
+            if auth_type in ("oauth", "both"):
+                success, message = await connect_integration_oauth(self._integration_name)
+                return CommandResult(success=success, message=message)
+
+            # Interactive (QR code, etc.)
+            if auth_type in ("interactive", "token_with_interactive"):
+                success, message = await connect_integration_interactive(self._integration_name)
+                return CommandResult(success=success, message=message)
+
             return CommandResult(
                 success=False,
-                message=f"Connection failed: {e}",
+                message=f"Unsupported auth type '{auth_type}' for {self._integration_name}.",
             )
+        except Exception as e:
+            return CommandResult(success=False, message=f"Connection failed: {e}")
 
     async def _disconnect(self) -> CommandResult:
-        """Disconnect from the integration."""
+        """Disconnect via the centralised integration_settings module."""
         try:
-            if hasattr(self._handler, "disconnect"):
-                result = await self._handler.disconnect()
-                return CommandResult(
-                    success=result.get("success", False),
-                    message=result.get("message", "Disconnected successfully" if result.get("success") else "Disconnect failed"),
-                )
-            else:
-                return CommandResult(
-                    success=False,
-                    message=f"{self._integration_name}: Disconnect not supported",
-                )
+            success, message = await _disconnect_integration(self._integration_name)
+            return CommandResult(success=success, message=message)
         except Exception as e:
-            return CommandResult(
-                success=False,
-                message=f"Disconnect failed: {e}",
-            )
+            return CommandResult(success=False, message=f"Disconnect failed: {e}")
