@@ -135,7 +135,7 @@ Recommended proactive behaviour:
 - When you identify a proactive opportunity:
 	1. Acknowledge the potential for automation
 	2. Ask the user if they would like you to set up a proactive task (can be recurring task, one-time immediate task, or one-time task scheduled for later)
-	3. If approved, use `proactive_add` action to add recurring task to PROACTIVE.md or `schedule_task` action to add one-time proactive task.
+	3. If approved, use `recurring_add` action to add recurring task to PROACTIVE.md or `schedule_task` action to add one-time proactive task.
 	4. Confirm the setup with the user
 IMPORTANT: DO NOT automatically create proactive tasks without user consent. Always ask first.
 </proactive>

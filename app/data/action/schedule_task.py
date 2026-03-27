@@ -82,10 +82,14 @@ from agent_core import action
         }
     }
 )
-def schedule_task(input_data: dict) -> dict:
+async def schedule_task(input_data: dict) -> dict:
     """Add a new scheduled task or queue an immediate trigger."""
     import app.internal_action_interface as iai
     from datetime import datetime
+    import asyncio
+    import time
+    import uuid
+    from agent_core import Trigger
 
     scheduler = iai.InternalActionInterface.scheduler
     if scheduler is None:
@@ -114,10 +118,15 @@ def schedule_task(input_data: dict) -> dict:
 
         # Handle immediate execution
         if schedule_expr.lower() == "immediate":
-            import asyncio
-            import time
-            import uuid
-            from agent_core import Trigger
+            return await scheduler.queue_immediate_trigger(
+                name=name,
+                instruction=instruction,
+                priority=priority,
+                mode=mode,
+                action_sets=action_sets,
+                skills=skills,
+                payload=payload
+            )
 
             session_id = f"immediate_{uuid.uuid4().hex[:8]}_{int(time.time())}"
 
@@ -131,7 +140,9 @@ def schedule_task(input_data: dict) -> dict:
                 "skills": skills,
                 **payload
             }
-
+            
+            # TODO: Should not have to create additional trigger (create using queue_immediate_trigger)
+            # Workaround for now
             trigger = Trigger(
                 fire_at=time.time(),
                 priority=priority,

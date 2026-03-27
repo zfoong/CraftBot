@@ -164,12 +164,13 @@ class SchedulerManager:
         # Add to schedules
         self._schedules[schedule_id] = task
 
-        # Save config
-        self._save_config()
-
-        # Start loop if running and enabled
+        # Start loop if running and enabled (BEFORE saving config)
+        # This ensures the loop is in _scheduler_tasks when reload() runs
         if self._is_running and enabled:
             asyncio.create_task(self._start_schedule_loop(schedule_id))
+
+        # Save config (triggers hot-reload via file watcher)
+        self._save_config()
 
         logger.info(f"[SCHEDULER] Added schedule: {schedule_id} - {name}")
         return schedule_id
@@ -276,6 +277,78 @@ class SchedulerManager:
         """Get a schedule by ID."""
         return self._schedules.get(schedule_id)
 
+    async def queue_immediate_trigger(
+        self,
+        name: str,
+        instruction: str,
+        priority: int = 50,
+        mode: str = "simple",
+        action_sets: Optional[List[str]] = None,
+        skills: Optional[List[str]] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Queue a trigger for immediate execution.
+
+        Creates a new session and queues it to the TriggerQueue
+        for immediate processing by the scheduler.
+
+        Args:
+            name: Human-readable name for the task
+            instruction: What the agent should do
+            priority: Trigger priority (lower = higher priority)
+            mode: Task mode ("simple" or "complex")
+            action_sets: Action sets to enable for the task
+            skills: Skills to load for the task
+            payload: Additional payload data to pass to the task
+
+        Returns:
+            Dictionary with status, session_id, and message
+        """
+        if not self._trigger_queue:
+            return {
+                "status": "error",
+                "error": "Trigger queue not initialized"
+            }
+
+        # Generate unique session ID
+        session_id = f"immediate_{uuid.uuid4().hex[:8]}_{int(time.time())}"
+
+        # Build trigger payload (matching the format used by _fire_schedule)
+        trigger_payload = {
+            "type": "scheduled",
+            "schedule_id": f"immediate_{uuid.uuid4().hex[:8]}",
+            "schedule_name": name,
+            "instruction": instruction,
+            "mode": mode,
+            "action_sets": action_sets or [],
+            "skills": skills or [],
+            **(payload or {}),
+        }
+
+        # Create trigger
+        trigger = Trigger(
+            fire_at=time.time(),  # Fire immediately
+            priority=priority,
+            next_action_description=f"[Immediate] {name}: {instruction}",
+            payload=trigger_payload,
+            session_id=session_id,
+        )
+
+        # Queue the trigger
+        await self._trigger_queue.put(trigger)
+
+        logger.info(f"[SCHEDULER] Queued immediate trigger: {name} (session: {session_id})")
+
+        return {
+            "status": "ok",
+            "schedule_id": session_id,
+            "name": name,
+            "recurring": False,
+            "scheduled_for": "immediate",
+            "message": f"Task '{name}' queued for immediate execution (session: {session_id})"
+        }
+
     def get_status(self) -> Dict[str, Any]:
         """Get scheduler status for monitoring."""
         return {
@@ -296,18 +369,76 @@ class SchedulerManager:
             ],
         }
 
+    async def reload(self, config_path: Optional[Path] = None) -> Dict[str, Any]:
+        """
+        Hot-reload scheduler configuration from disk.
+
+        Stops all loops, clears schedules, re-reads config, and restarts.
+        """
+        try:
+            # 1. Stop all existing loops
+            for schedule_id in list(self._scheduler_tasks.keys()):
+                await self._stop_schedule_loop(schedule_id)
+
+            # 2. Clear schedules
+            self._schedules.clear()
+
+            # 3. Load config from disk
+            config = self._load_config()
+            self._master_enabled = config.enabled
+
+            if not config.enabled:
+                logger.info("[SCHEDULER] Scheduler disabled in config")
+                return {"success": True, "message": "Scheduler disabled", "total": 0}
+
+            # 4. Add schedules and start loops
+            for task in config.schedules:
+                self._schedules[task.id] = task
+                if self._is_running and task.enabled:
+                    await self._start_schedule_loop(task.id)
+
+            logger.info(f"[SCHEDULER] Reloaded {len(self._schedules)} schedule(s)")
+            return {
+                "success": True,
+                "message": f"Reloaded {len(self._schedules)} schedules",
+                "total": len(self._schedules)
+            }
+        except Exception as e:
+            logger.error(f"[SCHEDULER] Reload failed: {e}")
+            return {"success": False, "message": str(e), "total": 0}
+
+    async def _stop_schedule_loop(self, schedule_id: str) -> None:
+        """Stop a background loop for a schedule."""
+        if schedule_id not in self._scheduler_tasks:
+            return
+
+        task = self._scheduler_tasks[schedule_id]
+        if not task.done():
+            try:
+                task.cancel()
+                await task
+            except (asyncio.CancelledError, RuntimeError, Exception):
+                pass  # Ignore all errors during cancellation
+
+        del self._scheduler_tasks[schedule_id]
+
     # ─────────────── Internal Methods ───────────────
 
     async def _start_schedule_loop(self, schedule_id: str) -> None:
         """Start a background loop for a schedule."""
         if schedule_id in self._scheduler_tasks:
-            return  # Already running
+            existing_task = self._scheduler_tasks[schedule_id]
+            if not existing_task.done():
+                return  # Already running
+            # Task exists but is done - clean up before creating new one
+            del self._scheduler_tasks[schedule_id]
+            logger.debug(f"[SCHEDULER] Cleaned up done task for: {schedule_id}")
 
         task = asyncio.create_task(self._schedule_loop(schedule_id))
         self._scheduler_tasks[schedule_id] = task
 
         schedule = self._schedules[schedule_id]
-        logger.debug(f"[SCHEDULER] Started loop for: {schedule_id} - {schedule.name}")
+        logger.info(f"[SCHEDULER] Started loop for: {schedule_id} - {schedule.name}")
 
     async def _schedule_loop(self, schedule_id: str) -> None:
         """
@@ -315,10 +446,16 @@ class SchedulerManager:
 
         Calculates delay to next fire time, sleeps, then fires the trigger.
         """
+        logger.info(f"[SCHEDULER] Loop starting for: {schedule_id}")
+
         while self._is_running:
             try:
                 schedule = self._schedules.get(schedule_id)
-                if not schedule or not schedule.enabled:
+                if not schedule:
+                    logger.warning(f"[SCHEDULER] Schedule {schedule_id} not found, exiting loop")
+                    break
+                if not schedule.enabled:
+                    logger.info(f"[SCHEDULER] Schedule {schedule_id} disabled, exiting loop")
                     break
 
                 # Calculate next fire time
@@ -332,18 +469,27 @@ class SchedulerManager:
                 delay = next_fire - now
                 if delay > 0:
                     next_fire_str = datetime.fromtimestamp(next_fire).strftime("%Y-%m-%d %H:%M:%S")
-                    logger.debug(
-                        f"[SCHEDULER] {schedule_id} sleeping until {next_fire_str} "
-                        f"({delay / 3600:.2f} hours)"
+                    logger.info(
+                        f"[SCHEDULER] {schedule_id} ({schedule.name}) sleeping until {next_fire_str} "
+                        f"({delay:.1f}s / {delay / 60:.1f}min)"
                     )
                     await asyncio.sleep(delay)
 
                 # Check if still running and schedule still exists
                 schedule = self._schedules.get(schedule_id)
-                if not schedule or not schedule.enabled or not self._is_running:
+                logger.info(f"[SCHEDULER] {schedule_id} woke up, checking conditions before fire")
+                if not schedule:
+                    logger.warning(f"[SCHEDULER] {schedule_id} schedule was removed while sleeping")
+                    break
+                if not schedule.enabled:
+                    logger.info(f"[SCHEDULER] {schedule_id} was disabled while sleeping")
+                    break
+                if not self._is_running:
+                    logger.info(f"[SCHEDULER] {schedule_id} scheduler stopped while sleeping")
                     break
 
                 # Fire the schedule
+                logger.info(f"[SCHEDULER] {schedule_id} about to fire!")
                 await self._fire_schedule(schedule)
 
                 # Small delay before recalculating (for interval schedules)
@@ -354,12 +500,16 @@ class SchedulerManager:
                     await asyncio.sleep(60)
 
             except asyncio.CancelledError:
-                logger.debug(f"[SCHEDULER] Loop cancelled for: {schedule_id}")
+                logger.info(f"[SCHEDULER] Loop cancelled for: {schedule_id}")
                 break
             except Exception as e:
-                logger.warning(f"[SCHEDULER] Error in loop for {schedule_id}: {e}")
+                logger.error(f"[SCHEDULER] Error in loop for {schedule_id}: {e}")
+                import traceback
+                logger.error(f"[SCHEDULER] Traceback: {traceback.format_exc()}")
                 # Wait before retrying to avoid tight error loops
                 await asyncio.sleep(60)
+
+        logger.info(f"[SCHEDULER] Loop exited for: {schedule_id}")
 
     async def _fire_schedule(self, schedule: ScheduledTask) -> None:
         """
@@ -426,8 +576,8 @@ class SchedulerManager:
         try:
             with open(self._config_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.error(f"[SCHEDULER] Invalid JSON in config: {e}")
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"[SCHEDULER] Config read error, using defaults: {e}")
             return SchedulerConfig()
 
         # Parse schedules
@@ -485,5 +635,3 @@ class SchedulerManager:
                     temp_path.unlink()
         except Exception as e:
             logger.error(f"[SCHEDULER] Failed to save config: {e}")
-            if temp_path.exists():
-                temp_path.unlink()

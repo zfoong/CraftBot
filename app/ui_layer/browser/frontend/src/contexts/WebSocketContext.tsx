@@ -174,8 +174,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      ws.onclose = () => {
-        console.log('[WS] Disconnected, reconnectCount =', reconnectCountRef.current)
+      ws.onclose = (event) => {
+        console.log('[WS] Disconnected, code:', event.code, 'reason:', event.reason, 'wasClean:', event.wasClean, 'reconnectCount:', reconnectCountRef.current)
         isConnectingRef.current = false
         setState(prev => ({
           ...prev,
@@ -559,12 +559,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
   const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'message',
-        content,
-        attachments: attachments || [],
-        replyContext: replyContext || null,
-      }))
+      try {
+        const payload = {
+          type: 'message',
+          content,
+          attachments: attachments || [],
+          replyContext: replyContext || null,
+        }
+        const payloadStr = JSON.stringify(payload)
+        console.log('[WebSocket] Sending message, payload size:', payloadStr.length, 'bytes, attachments:', attachments?.length || 0)
+        wsRef.current.send(payloadStr)
+        console.log('[WebSocket] Message sent successfully')
+      } catch (error) {
+        console.error('[WebSocket] Error sending message:', error)
+      }
+    } else {
+      console.warn('[WebSocket] Cannot send message - WebSocket not open, state:', wsRef.current?.readyState)
     }
   }, [])
 

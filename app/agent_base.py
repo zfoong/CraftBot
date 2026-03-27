@@ -97,7 +97,7 @@ class TriggerData:
     parent_id: str | None
     session_id: str | None = None
     user_message: str | None = None  # Original user message without routing prefix
-    platform: str | None = None  # Source platform (e.g., "CraftBot TUI", "Telegram", "Whatsapp")
+    platform: str | None = None  # Source platform (e.g., "CraftBot Interface", "Telegram", "Whatsapp")
     is_self_message: bool = False  # True when the user sent themselves a message
     contact_id: str | None = None  # Sender/chat ID from external platform
     channel_id: str | None = None  # Channel/group ID from external platform
@@ -243,7 +243,7 @@ class AgentBase:
             context_engine=self.context_engine,
         )
 
-        # Initialize footage callback (will be set by TUI interface later)
+        # Initialize footage callback (will be set by CraftBot interface later)
         self._tui_footage_callback = None
 
         # Only initialize GUIModule if GUI mode is globally enabled
@@ -563,10 +563,10 @@ class AgentBase:
     def _extract_trigger_data(self, trigger: Trigger) -> TriggerData:
         """Extract and structure data from trigger."""
         # Extract platform from payload (already formatted by _handle_chat_message)
-        # Default to "CraftBot TUI" for local messages without platform info
+        # Default to "CraftBot Interface" for local messages without platform info
         payload = trigger.payload or {}
         raw_platform = payload.get("platform", "")
-        platform = raw_platform if raw_platform else "CraftBot TUI"
+        platform = raw_platform if raw_platform else "CraftBot Interface"
 
         return TriggerData(
             query=trigger.next_action_description,
@@ -1534,13 +1534,13 @@ class AgentBase:
 
             # Determine platform - use payload's platform if available, otherwise default
             # External messages (WhatsApp, Telegram, etc.) have platform set by _handle_external_event
-            # TUI/CLI messages don't have platform in payload, so use "CraftBot TUI"
+            # Interface/CLI messages don't have platform in payload, so use "CraftBot Interface"
             if payload.get("platform"):
                 # External message - capitalize for display (e.g., "whatsapp" -> "Whatsapp")
                 platform = payload["platform"].capitalize()
             else:
-                # Local TUI/CLI message
-                platform = "CraftBot TUI"
+                # Local Interface/CLI message
+                platform = "CraftBot Interface"
 
             # Direct reply bypass - skip routing LLM when target_session_id is provided
             target_session_id = payload.get("target_session_id")
@@ -1692,7 +1692,7 @@ class AgentBase:
             # the correct platform-specific send action for replies.
             # Must be directive (not just informational) for weaker LLMs.
             platform_hint = ""
-            if platform and platform.lower() != "craftbot tui":
+            if platform and platform.lower() != "craftbot interface":
                 platform_hint = f" from {platform} (reply on {platform}, NOT send_message)"
 
             await self.triggers.put(
@@ -2382,6 +2382,13 @@ class AgentBase:
             trigger_queue=self.triggers,
         )
         await self.scheduler.start()
+
+        # Register scheduler_config for hot-reload (after scheduler is initialized)
+        config_watcher.register(
+            scheduler_config_path,
+            self.scheduler.reload,
+            name="scheduler_config.json"
+        )
 
         # Trigger soft onboarding if needed (BEFORE starting interface)
         # This ensures agent handles onboarding logic, not the interfaces

@@ -39,15 +39,19 @@ from agent_core import action
 def send_message(input_data: dict) -> dict:
     import json
     import asyncio
-    
+
     message = input_data['message']
     wait_for_user_reply = bool(input_data.get('wait_for_user_reply', False))
     simulated_mode = input_data.get('simulated_mode', False)
-    
+    # Extract session_id injected by ActionManager for multi-task isolation
+    session_id = input_data.get('_session_id')
+
     # In simulated mode, skip the actual interface call for testing
     if not simulated_mode:
         import app.internal_action_interface as internal_action_interface
-        asyncio.run(internal_action_interface.InternalActionInterface.do_chat(message))
+        asyncio.run(internal_action_interface.InternalActionInterface.do_chat(
+            message, session_id=session_id
+        ))
     
     fire_at_delay = 10800 if wait_for_user_reply else 0
     # Return 'success' for test compatibility, but keep 'ok' in production if needed

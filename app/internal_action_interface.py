@@ -150,19 +150,30 @@ class InternalActionInterface:
         return {"description": description, "file_path": img_path}
 
     @staticmethod
-    async def do_chat(message: str, platform: str = "CraftBot TUI") -> None:
+    async def do_chat(
+        message: str,
+        platform: str = "CraftBot TUI",
+        session_id: Optional[str] = None,
+    ) -> None:
         """Record an agent-authored chat message to the event stream.
 
         Args:
             message: The message content to record.
             platform: The platform the message is sent to (default: "CraftBot TUI").
+            session_id: Optional task/session ID for multi-task isolation.
         """
         if InternalActionInterface.state_manager is None:
             raise RuntimeError("InternalActionInterface not initialized with StateManager.")
-        InternalActionInterface.state_manager.record_agent_message(message, platform=platform)
+        InternalActionInterface.state_manager.record_agent_message(
+            message, session_id=session_id, platform=platform
+        )
 
     @staticmethod
-    async def do_chat_with_attachment(message: str, file_path: str) -> Dict[str, Any]:
+    async def do_chat_with_attachment(
+        message: str,
+        file_path: str,
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Send a chat message with a single attachment to the user.
 
@@ -171,20 +182,28 @@ class InternalActionInterface:
         Args:
             message: The message content
             file_path: Path to the file (absolute or relative to workspace)
+            session_id: Optional task/session ID for multi-task isolation.
 
         Returns:
             Dict with 'success', 'files_sent', and optionally 'errors'
         """
-        return await InternalActionInterface.do_chat_with_attachments(message, [file_path])
+        return await InternalActionInterface.do_chat_with_attachments(
+            message, [file_path], session_id=session_id
+        )
 
     @staticmethod
-    async def do_chat_with_attachments(message: str, file_paths: List[str]) -> Dict[str, Any]:
+    async def do_chat_with_attachments(
+        message: str,
+        file_paths: List[str],
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Send a chat message with one or more attachments to the user.
 
         Args:
             message: The message content
             file_paths: List of paths to the files (absolute or relative to workspace)
+            session_id: Optional task/session ID for multi-task isolation.
 
         Returns:
             Dict with 'success' (bool), 'files_sent' (int), and optionally 'errors' (list of str)
@@ -198,7 +217,9 @@ class InternalActionInterface:
 
         # Check if UI adapter supports attachments (browser adapter)
         if ui_adapter and hasattr(ui_adapter, 'send_message_with_attachments'):
-            return await ui_adapter.send_message_with_attachments(message, file_paths, sender=agent_name)
+            return await ui_adapter.send_message_with_attachments(
+                message, file_paths, sender=agent_name, session_id=session_id
+            )
         else:
             # Fallback: send message with attachment notes for non-browser adapters
             if InternalActionInterface.state_manager is None:
@@ -206,7 +227,8 @@ class InternalActionInterface:
 
             attachment_notes = "\n".join([f"[Attachment: {fp}]" for fp in file_paths])
             InternalActionInterface.state_manager.record_agent_message(
-                f"{message}\n\n{attachment_notes}"
+                f"{message}\n\n{attachment_notes}",
+                session_id=session_id,
             )
             # For non-browser adapters, we can't verify files exist, so assume success
             return {"success": True, "files_sent": len(file_paths), "errors": None}

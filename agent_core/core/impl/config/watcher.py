@@ -233,25 +233,20 @@ class ConfigWatcher:
             # Check if callback is async
             if asyncio.iscoroutinefunction(callback):
                 if self._event_loop and self._event_loop.is_running():
-                    # Schedule in the event loop
-                    asyncio.run_coroutine_threadsafe(callback(), self._event_loop)
+                    # Schedule in the event loop (non-blocking)
+                    future = asyncio.run_coroutine_threadsafe(callback(), self._event_loop)
+                    future.add_done_callback(lambda f: f.exception())  # Suppress unhandled exception warning
                 else:
-                    # Create new event loop for this thread
                     asyncio.run(callback())
             else:
-                # Sync callback
                 callback()
 
             # Update last modified time
             if config.path.exists():
                 config.last_modified = config.path.stat().st_mtime
 
-            logger.info(f"[CONFIG_WATCHER] Reload complete for {file_path.name}")
-
         except Exception as e:
-            logger.error(f"[CONFIG_WATCHER] Reload failed for {file_path.name}: {e}")
-            import traceback
-            logger.debug(traceback.format_exc())
+            logger.warning(f"[CONFIG_WATCHER] Reload error for {file_path.name}: {e}")
 
 
 # Global singleton instance

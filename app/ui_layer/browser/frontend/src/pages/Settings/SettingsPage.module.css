@@ -232,13 +232,14 @@
 .toggle::before {
   content: '';
   position: absolute;
-  top: 2px;
+  top: 50%;
   left: 2px;
   width: 18px;
   height: 18px;
   background: var(--color-white);
   border-radius: 50%;
   transition: transform var(--transition-fast);
+  transform: translateY(-50%);
 }
 
 .toggle:checked {
@@ -246,7 +247,7 @@
 }
 
 .toggle:checked::before {
-  transform: translateX(18px);
+  transform: translateY(-50%) translateX(18px);
 }
 
 /* Action Group */

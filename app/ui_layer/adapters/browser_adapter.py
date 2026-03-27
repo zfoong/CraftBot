@@ -206,6 +206,7 @@ class BrowserChatComponent(ChatComponentProtocol):
                     timestamp=stored.timestamp,
                     message_id=stored.message_id,
                     attachments=attachments,
+                    task_session_id=stored.task_session_id,
                 ))
         except Exception:
             # Storage may not be available, continue without persistence
@@ -833,6 +834,25 @@ class BrowserAdapter(InterfaceAdapter):
     async def _on_start(self) -> None:
         """Start the browser interface."""
         from aiohttp import web
+        from app.onboarding import onboarding_manager
+        import uuid
+
+        # Display welcome system message if soft onboarding is pending
+        if onboarding_manager.needs_soft_onboarding:
+            welcome_message = ChatMessage(
+                sender="System",
+                content="""**Welcome to CraftBot**
+
+CraftBot can perform virtually any computer-based task by configuring the right MCP servers, skills, or connecting to apps.
+
+If you need help setting up MCP servers or skills, just ask the agent.
+
+A quick Q&A will now begin to understand your preferences and serve you better:""",
+                style="system",
+                timestamp=time.time(),
+                message_id=f"welcome-{uuid.uuid4().hex[:8]}",
+            )
+            self._chat._messages.insert(0, welcome_message)
 
         self._app = web.Application()
 
@@ -963,16 +983,23 @@ class BrowserAdapter(InterfaceAdapter):
                         break
                 except json.JSONDecodeError as e:
                     # Continue on JSON errors, don't close connection
-                    pass
+                    import traceback
+                    error_detail = f"JSON decode error: {e}"
+                    print(f"[BROWSER ADAPTER] {error_detail}")
+                    await self._broadcast_error_to_chat(error_detail)
                 except Exception as e:
                     # Continue on message errors, don't close connection
-                    pass
+                    import traceback
+                    error_detail = f"WebSocket message error: {type(e).__name__}: {e}\n{traceback.format_exc()}"
+                    print(f"[BROWSER ADAPTER] {error_detail}")
+                    await self._broadcast_error_to_chat(error_detail)
         except asyncio.CancelledError:
-            pass
-        except (ClientConnectionResetError, ConnectionResetError):
-            pass  # Silently handle expected connection errors
+            print("[BROWSER ADAPTER] WebSocket cancelled")
+        except (ClientConnectionResetError, ConnectionResetError) as e:
+            print(f"[BROWSER ADAPTER] WebSocket connection reset: {type(e).__name__}: {e}")
         except Exception as e:
-            pass
+            import traceback
+            print(f"[BROWSER ADAPTER] WebSocket loop error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         finally:
             self._ws_clients.discard(ws)
 
@@ -3328,6 +3355,24 @@ class BrowserAdapter(InterfaceAdapter):
         # Clean up disconnected clients
         self._ws_clients -= disconnected
 
+    async def _broadcast_error_to_chat(self, error_message: str) -> None:
+        """Broadcast an error message to the chat panel for debugging."""
+        import time
+        try:
+            await self._broadcast({
+                "type": "chat_message",
+                "data": {
+                    "sender": "System",
+                    "content": f"[DEBUG ERROR] {error_message}",
+                    "style": "error",
+                    "timestamp": time.time(),
+                    "messageId": f"error:{time.time()}",
+                },
+            })
+        except Exception:
+            # If broadcast fails, at least print to console
+            print(f"[BROWSER ADAPTER] Failed to broadcast error: {error_message}")
+
     async def _broadcast_metrics_loop(self) -> None:
         """Periodically broadcast dashboard metrics to connected clients."""
         while self._running:
@@ -4243,6 +4288,7 @@ class BrowserAdapter(InterfaceAdapter):
         file_paths: list,
         sender: Optional[str] = None,
         style: str = "agent",
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Send a chat message with one or more attachments from the agent.
@@ -4255,6 +4301,7 @@ class BrowserAdapter(InterfaceAdapter):
             file_paths: List of absolute paths or paths relative to workspace
             sender: Message sender (default: uses agent name from onboarding)
             style: Message style (default: "agent")
+            session_id: Optional task/session ID for multi-task isolation.
 
         Returns:
             Dict with 'success' (bool), 'files_sent' (int), and optionally 'errors' (list of str)
@@ -4283,6 +4330,7 @@ class BrowserAdapter(InterfaceAdapter):
                     content=message,
                     style=style,
                     attachments=attachments,
+                    task_session_id=session_id,
                 )
                 await self._chat.append_message(chat_message)
 
@@ -4356,6 +4404,7 @@ class BrowserAdapter(InterfaceAdapter):
                         }
                         for att in m.attachments
                     ]} if m.attachments else {}),
+                    **({"taskSessionId": m.task_session_id} if m.task_session_id else {}),
                 }
                 for m in self._chat.get_messages()
             ],

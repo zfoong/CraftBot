@@ -73,10 +73,12 @@ Note any personality traits, preferences, or working style observations from the
 3. **Update AGENT.md** if user provided a name for the agent:
    - Update the "Agent Given Name" field
 
-4. **Suggest tasks based on life goals**: Send a message suggesting 3-5 specific tasks that CraftBot can help with to improve their life and get closer to achieving their goals. Focus on:
+4. **Suggest tasks based on life goals**: Send a message suggesting 1-3 tasks that CraftBot can help with to improve their life and get closer to achieving their goals. Focus on:
    - Tasks that leverage CraftBot's automation capabilities
-   - Recurring tasks that save time
-   - Goal-tracking or accountability tasks
+   - Recurring tasks that save time in the long run
+   - Immediate tasks that can show impact in short-term
+   - Bite-size tasks that is specialized, be specific with numbers or actionable items. DO NOT suggest generic task.
+   - Avoid giving mutliple approaches in each suggested task, provide the BEST option to achieve goal.
    - Tasks that align with their work and personal aspirations
 
 5. **End task immediately**: Use `task_end` right after suggesting tasks. Do NOT wait for confirmation or ask if information is accurate.
