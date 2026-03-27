@@ -1,6 +1,6 @@
 ---
 name: living-ui-creator
-description: Create custom Living UI applications with MVC-A architecture. Scaffolds, develops, tests, and launches dynamic agent-aware user interfaces.
+description: Create custom Living UI applications with backend-first architecture. Scaffolds, develops, tests, and launches dynamic web apps with persistent state.
 user-invocable: false
 action-sets:
   - file_operations
@@ -9,317 +9,324 @@ action-sets:
 
 # Living UI Creator
 
-Create dynamic, agent-aware user interfaces that the CraftBot agent can see and interact with.
+Create interactive web applications that persist state and survive page reloads.
 
-## Architecture: MVC-A (Model-View-Controller-Agent)
+## Architecture Overview
 
-Living UIs extend standard MVC with an Agent layer:
-- **Model** (`src/models/`): Data structures and state types
-- **View** (`src/views/`): React components that render the UI
-- **Controller** (`src/controllers/`): Business logic and user interactions
-- **Agent** (`src/agent/`): Bridge to CraftBot for state reporting and commands
-
-## Project Information
-
-The project path is provided in the task instruction. All edits should be within this path.
-
-**Key template files to customize:**
-- `config/manifest.json` - Project metadata (already customized)
-- `src/models/types.ts` - Data type definitions
-- `src/views/MainView.tsx` - Main UI component
-- `src/controllers/AppController.ts` - Business logic
-- `src/agent/AgentBridge.ts` - Agent connection (pre-configured)
-- `src/agent/hooks.ts` - React hooks for agent awareness
-
-## Todo Tracking (REQUIRED)
-
-Use `task_update_todos` to track progress through each phase:
+Living UI uses a **backend-first, stateless frontend** pattern:
 
 ```
-1. [pending] Analyze requirements and plan implementation
-2. [pending] Design data models (src/models/types.ts)
-3. [pending] Create view components (src/views/)
-4. [pending] Implement controller logic (src/controllers/)
-5. [pending] Configure agent awareness
-6. [pending] Test the application
-7. [pending] Build for production
-8. [pending] Call living_ui_notify_ready action (MUST call this action!)
+┌─────────────────────────────────────────────────────────────────┐
+│   BACKEND (FastAPI + SQLite)                                    │
+│   Location: backend/                                            │
+│   - THE source of truth for ALL application state               │
+│   - Persists data to SQLite database                            │
+│   - Exposes REST API at http://localhost:<backend_port>         │
+│   - State survives page reloads and tab switches                │
+├─────────────────────────────────────────────────────────────────┤
+│   FRONTEND (React + TypeScript)                                 │
+│   Location: frontend/                                           │
+│   - Stateless view layer - fetches state FROM backend           │
+│   - Sends user actions TO backend                               │
+│   - Uses localStorage as cache only (fallback)                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**IMPORTANT:** For step 8, you must ACTUALLY CALL the `living_ui_notify_ready` action.
-Do NOT mark it completed until the action has been executed successfully.
+**Key Principle**: Frontend is a dumb view. Backend owns all state.
+
+## Architecture Decision
+
+Before coding, determine what your app needs:
+
+| Need | Solution |
+|------|----------|
+| Persist user data | Database models (SQLite) |
+| Fetch external data | Backend proxy endpoint |
+| Agent provides data | `PUT /api/state` to push data |
+| Agent reads app data | `GET /api/state` endpoint |
+| Agent observes UI | `GET /api/ui-snapshot` (auto-captured) |
+| Agent sees visually | `GET /api/ui-screenshot` |
+| Agent triggers actions | `POST /api/action` |
+| Complex UI state | Multiple frontend components |
+
+**Default:** Most apps need all layers (DB + Backend + Frontend).
+**Agent APIs are built-in** - no extra work needed.
+
+See [MVC-A.md](references/MVC-A.md) for detailed architecture guidance.
+
+## Directory Structure
+
+```
+project_root/
+├── backend/                    # Python FastAPI backend
+│   ├── main.py                 # FastAPI app entry point (rarely edit)
+│   ├── models.py               # SQLAlchemy models - EDIT THIS for data
+│   ├── routes.py               # API endpoints - EDIT THIS for actions
+│   ├── database.py             # DB connection (rarely edit)
+│   └── living_ui.db            # SQLite database (auto-created)
+│
+├── frontend/                   # React TypeScript frontend
+│   ├── main.tsx                # Entry point (rarely edit)
+│   ├── App.tsx                 # Main app component
+│   ├── AppController.ts        # State management & backend communication
+│   ├── types.ts                # TypeScript interfaces - EDIT THIS
+│   ├── components/             # React components - EDIT/ADD HERE
+│   │   ├── ui/                 # Pre-built UI components (USE THESE)
+│   │   │   └── index.tsx       # Button, Card, Input, Modal, etc.
+│   │   └── MainView.tsx        # Main UI component
+│   ├── services/               # API & UI capture (rarely edit)
+│   │   ├── ApiService.ts       # Backend API client
+│   │   └── UICapture.ts        # UI snapshot/screenshot for agent
+│   └── styles/global.css       # CraftBot design tokens
+│
+├── config/manifest.json        # Project metadata (port info here)
+├── index.html
+├── package.json
+├── vite.config.ts
+└── LIVING_UI.md                # Project documentation - UPDATE THIS
+```
+
+## UI Component Presets (USE THESE)
+
+Living UI includes **pre-built components** matching CraftBot design. **Use these by default** instead of creating custom styles.
+
+### Import
+```typescript
+import { Button, Card, Input, Alert, Table, Modal } from './components/ui'
+```
+
+### Available Components
+
+| Category | Components |
+|----------|------------|
+| **Forms** | `Input`, `Textarea`, `Select`, `Checkbox`, `Toggle` |
+| **Buttons** | `Button` (variants: primary, secondary, danger, ghost) |
+| **Layout** | `Card`, `Container`, `Divider` |
+| **Feedback** | `Alert`, `Badge`, `EmptyState` |
+| **Data** | `Table`, `List`, `ListItem` |
+| **Overlays** | `Modal`, `Tabs`, `TabList`, `Tab`, `TabPanel` |
+
+### Quick Examples
+
+```tsx
+// Button variants
+<Button variant="primary">Save</Button>
+<Button variant="danger">Delete</Button>
+<Button variant="ghost" size="sm">Cancel</Button>
+
+// Form with validation
+<Input label="Email" type="email" error="Invalid email" />
+<Select label="Role" options={[{value: 'admin', label: 'Admin'}]} />
+
+// Alert
+<Alert variant="success" title="Saved!">Changes have been saved.</Alert>
+
+// Table
+<Table
+  columns={[
+    { key: 'name', header: 'Name' },
+    { key: 'status', header: 'Status', render: (item) => <Badge>{item.status}</Badge> }
+  ]}
+  data={items}
+/>
+
+// Modal
+<Modal open={show} onClose={() => setShow(false)} title="Confirm">
+  Are you sure?
+</Modal>
+```
+
+### Best Practices
+
+**DO:**
+- Use preset components for all standard UI needs
+- Customize via props, not custom CSS
+- Combine components for complex layouts
+
+**DON'T:**
+- Create custom buttons, inputs, or cards
+- Add inline styles for basic styling
+- Build custom modal or alert systems
+
+See [COMPONENTS.md](references/COMPONENTS.md) for full component reference.
+
+## Agent API (Built-in)
+
+Living UI provides standard HTTP endpoints for agent observation:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/ui-snapshot` | GET | UI state (DOM, text, form values) |
+| `/api/ui-screenshot` | GET | Visual screenshot (PNG base64) |
+| `/api/state` | GET/PUT | Application data |
+| `/api/action` | POST | Trigger actions |
+
+Frontend auto-captures UI state on meaningful events (page load, state changes, user interactions). See [MVC-A.md](references/MVC-A.md) for details.
 
 ## Development Workflow
 
-### Phase 1: Requirements Analysis
-1. Read the project description from task instruction
-2. Identify key data structures needed
-3. Plan the UI layout and components
-4. Update todos with implementation plan
+Follow these phases in order. Use TodoWrite to track progress.
 
-### Phase 2: Model Design
-1. Open `src/models/types.ts`
-2. Define TypeScript interfaces for your data:
+### Phase 1: Understand Requirements
 
-```typescript
-// Example: News Dashboard
-export interface NewsItem {
-  id: string
-  title: string
-  source: string
-  summary: string
-  url: string
-  publishedAt: number
-  category: string
-}
+Read the project description and identify:
+- Data entities needed (boards, cards, items, etc.)
+- User actions (create, update, delete, etc.)
+- UI layout
 
-export interface DashboardState {
-  news: NewsItem[]
-  selectedCategory: string | null
-  loading: boolean
-  lastUpdated: number
-}
+### Phase 2: Define Backend Models
+
+**Edit: `backend/models.py`**
+
+- Define SQLAlchemy models for your data
+- NEVER use `metadata` as column name (reserved by SQLAlchemy)
+- Always include `to_dict()` method for JSON serialization
+- Use `extra_data` for flexible JSON columns
+
+### Phase 3: Define Backend Routes
+
+**Edit: `backend/routes.py`**
+
+- Add API endpoints for CRUD operations
+- If model name conflicts with Python built-ins, use alias:
+  ```python
+  from models import List as ListModel  # Avoid shadowing typing.List
+  ```
+
+### Phase 4: Define Frontend Types
+
+**Edit: `frontend/types.ts`**
+
+Define TypeScript interfaces matching backend models.
+
+### Phase 5: Build UI Components
+
+**Edit: `frontend/components/`**
+
+Create React components. Main entry point is `MainView.tsx`.
+
+### Phase 6: Connect Frontend to Backend
+
+**Edit: `frontend/AppController.ts`**
+
+Add methods to call your backend APIs.
+
+### Phase 7: Update MainView
+
+**Edit: `frontend/components/MainView.tsx`**
+
+Wire up UI to use the controller.
+
+### Phase 8: Verify and Build
+
+**CRITICAL: Read [VERIFY.md](references/VERIFY.md) and complete the verification checklist.**
+
+You must verify:
+1. **Build succeeds** - `npm run build` exits with code 0
+2. **Backend works** - Models import without errors
+3. **State persists** - Data survives page refresh
+4. **UI quality** - Looks good, consistent, no visual bugs
+5. **Features complete** - All user requirements met
+6. **No errors** - Console is clean
+
+```bash
+# Verify backend
+cd backend && python -c "from models import *; from routes import *; print('OK')"
+
+# Build frontend
+npm run build
 ```
 
-### Phase 3: View Development
-1. Create React components in `src/views/`
-2. Use `useAgentAware` hook for components the agent should track:
+**DO NOT proceed if build fails.** Fix all errors first.
 
-```typescript
-import { useAgentAware } from '../agent/hooks'
+### Phase 9: Update Documentation
 
-export function NewsList({ items }: { items: NewsItem[] }) {
-  // Register this component's state with agent
-  useAgentAware('NewsList', {
-    itemCount: items.length,
-    items: items.map(i => i.title),
-  })
+**Edit: `LIVING_UI.md`**
 
-  return (
-    <ul>
-      {items.map(item => (
-        <li key={item.id}>{item.title}</li>
-      ))}
-    </ul>
-  )
-}
-```
+Fill in all sections with implementation details.
 
-3. Follow design guidelines:
-   - Use CSS variables from `src/styles/global.css`
-   - Responsive design (mobile-first)
-   - Loading states for async operations
-   - Error handling with user-friendly messages
+### Phase 10: Notify Ready (MANDATORY)
 
-### Phase 4: Controller Implementation
-1. Open `src/controllers/AppController.ts`
-2. Implement business logic:
+**YOU MUST call `living_ui_notify_ready` to complete the task.**
 
-```typescript
-export class AppController {
-  // Add methods for:
-  // - Data fetching
-  // - State management
-  // - User action handlers
-
-  async fetchNews(): Promise<NewsItem[]> {
-    // Fetch from API or generate mock data
-  }
-
-  handleCategoryChange(category: string): void {
-    // Filter news by category
-  }
-}
-```
-
-### Phase 5: Agent Awareness
-1. Configure `AgentBridge` connection (pre-configured in template)
-2. Register important components with `useAgentAware`
-3. Handle agent commands in `AppController`:
-
-```typescript
-handleAgentCommand(command: AgentCommand): void {
-  switch (command.type) {
-    case 'refresh':
-      this.fetchNews()
-      break
-    case 'action':
-      if (command.payload.action === 'selectCategory') {
-        this.handleCategoryChange(command.payload.category as string)
-      }
-      break
-  }
-}
-```
-
-### Phase 6: Testing
-1. Install dependencies: Run `npm install` in project directory
-2. Start dev server: Run `npm run dev` (in background or check quickly)
-3. Verify:
-   - UI renders correctly
-   - Data loads (mock or real)
-   - User interactions work
-   - No TypeScript/build errors
-4. Fix any issues found
-5. **IMPORTANT: Stop the dev server after testing** - Do NOT leave it running!
-
-### Phase 7: Build for Production
-1. Build for production: `npm run build`
-2. Verify build succeeds with no errors
-3. **DO NOT start the preview server yourself** - The system will launch it automatically
-
-### Phase 8: Notify Ready (MANDATORY)
-**YOU MUST call the `living_ui_notify_ready` action to complete this task.**
-
-This is NOT optional. The Living UI will NOT launch until you call this action.
-DO NOT mark the "Notify browser UI is ready" todo as completed until you have ACTUALLY CALLED the action.
+**CRITICAL - project_id Parameter:**
+- The `project_id` is in your **task instruction** (e.g., "Project ID: abc12345")
+- **DO NOT use task session ID** - that's different
+- The project_id is a short hex string like `c8cda731`
 
 ```
 living_ui_notify_ready(
-  project_id="<from task instruction>",
+  project_id="<PROJECT_ID from task instruction>",
   url="http://localhost:<port from manifest.json>",
   port=<port from manifest.json>
 )
 ```
 
-**Example for project with port 3100:**
-```
-living_ui_notify_ready(
-  project_id="b022f7bb",
-  url="http://localhost:3100",
-  port=3100
-)
-```
+## Common Mistakes
 
-After calling `living_ui_notify_ready`, the system will automatically launch the Living UI server.
+See [TROUBLESHOOTING.md](references/TROUBLESHOOTING.md) for more debugging help.
 
-**CRITICAL REMINDERS:**
-- You MUST call `living_ui_notify_ready` action explicitly - just marking a todo as completed does NOT notify the system
-- Do NOT run `npm run preview` or `npm run dev` and leave it running - it blocks the task session
-- The system handles server launching - you just need to build and call the notify action
+## Files Summary
 
-## Code Quality Standards
+| File | Purpose | When to Edit |
+|------|---------|--------------|
+| `backend/models.py` | Database models | Define data entities |
+| `backend/routes.py` | API endpoints | Add CRUD operations |
+| `frontend/types.ts` | TypeScript types | Match backend models |
+| `frontend/components/` | UI components | Build the interface |
+| `frontend/AppController.ts` | State management | Connect UI to backend |
+| `LIVING_UI.md` | Documentation | Document your app |
 
-- TypeScript strict mode
-- No `any` types unless absolutely necessary
-- Proper error handling with try/catch
-- Loading states for all async operations
-- Meaningful variable and function names
-- Comments for complex logic only
+## Quality Standards
 
-## Agent Awareness Requirements
+Every Living UI must meet these standards:
 
-Every Living UI MUST:
-1. Connect to CraftBot WebSocket on startup (pre-configured)
-2. Report state at configured interval (default 1s)
-3. Include visible text content in state reports
-4. Report all user input values
-5. Handle agent commands gracefully
+### Must Have (Blocking)
+- [ ] Data persists across page refreshes
+- [ ] UI is responsive (works at 320px mobile width)
+- [ ] Loading states for async operations
+- [ ] Error handling with user feedback
+- [ ] No console errors
+- [ ] Build succeeds (exit code 0)
 
-## Data Fetching Options
+### Should Have (Quality)
+- [ ] Empty states when no data
+- [ ] Confirmation for destructive actions
+- [ ] Keyboard navigation works
+- [ ] Consistent visual design
 
-### Option 1: Mock Data
-Generate realistic mock data for demonstration:
-
-```typescript
-const mockNews: NewsItem[] = [
-  {
-    id: '1',
-    title: 'Breaking: New AI Breakthrough',
-    source: 'Tech News',
-    summary: 'Researchers announce...',
-    url: '#',
-    publishedAt: Date.now(),
-    category: 'technology',
-  },
-  // More items...
-]
-```
-
-### Option 2: Real API
-If data source is provided in task:
-
-```typescript
-async fetchFromAPI(): Promise<NewsItem[]> {
-  const response = await fetch('https://api.example.com/news')
-  const data = await response.json()
-  return data.articles.map(transformToNewsItem)
-}
-```
-
-### Option 3: Backend API
-If using the Python backend:
-1. Uncomment code in `backend/main.py`
-2. Run `pip install -r requirements.txt`
-3. Start with `python backend/main.py`
-
-## FORBIDDEN Actions
-
-- NEVER hardcode API keys or secrets
-- NEVER expose sensitive data in state reports
-- NEVER modify files outside the project directory
-- NEVER skip testing phase
-- NEVER use `send_message` - this is a background task
-- NEVER leave `npm run dev` or `npm run preview` running - it blocks the task session!
-- NEVER start the production server yourself - the system handles this automatically
-
-## Example: Todo List Living UI
-
-Given: "Create a simple todo list with add, complete, and delete"
-
-**Models:**
-```typescript
-interface Todo {
-  id: string
-  text: string
-  completed: boolean
-}
-```
-
-**Views:**
-- TodoList.tsx - Renders list
-- TodoItem.tsx - Single item with checkbox/delete
-- AddTodoForm.tsx - Input form
-
-**Controller:**
-- addTodo(text: string)
-- toggleTodo(id: string)
-- deleteTodo(id: string)
-
-**Agent awareness:**
-- Report: todoCount, completedCount, items (titles only)
-- Handle: refresh, add, complete, delete commands
-
-## Progress Reporting
-
-Report progress using `living_ui_report_progress`:
-
-```
-living_ui_report_progress(
-  project_id="<id>",
-  phase="coding",
-  progress=50,
-  message="Implementing view components..."
-)
-```
-
-Phases: `initializing`, `scaffolding`, `coding`, `testing`, `building`, `launching`
+See [STANDARDS.md](references/STANDARDS.md) for complete quality checklist.
 
 ## Completion Checklist
 
 Before calling `living_ui_notify_ready`:
 
-- [ ] All required components implemented
-- [ ] Data fetching/mock data working
-- [ ] User interactions functional
-- [ ] Agent awareness configured
-- [ ] No TypeScript errors
-- [ ] No console errors
-- [ ] Build successful (`npm run build` completed without errors)
-- [ ] Dev server stopped (not running)
+- [ ] Backend models defined in `backend/models.py`
+- [ ] Backend routes added in `backend/routes.py`
+- [ ] Frontend types defined in `frontend/types.ts`
+- [ ] UI components built in `frontend/components/`
+- [ ] Controller methods connect UI to backend
+- [ ] **[VERIFY.md](references/VERIFY.md) checklist completed**
+- [ ] `npm run build` **succeeds with exit code 0**
+- [ ] `LIVING_UI.md` documentation updated
+- [ ] **Verified project_id from task instruction** (NOT task session ID)
+- [ ] **CALLED `living_ui_notify_ready` action**
 
-**FINAL STEP - DO NOT SKIP:**
-- [ ] CALLED `living_ui_notify_ready` action with project_id, url, and port
-- [ ] Received success response from the action
+## FORBIDDEN Actions
 
-Only call `task_end` AFTER `living_ui_notify_ready` returns success.
+- NEVER use `metadata` as a column name in SQLAlchemy
+- NEVER leave `npm run dev` or `npm run preview` running
+- NEVER store important state only in React (use backend)
+- NEVER start the production server yourself
+- NEVER use `send_message` - this is a background task
+- NEVER skip calling `living_ui_notify_ready`
+- NEVER use the task session ID as the project_id parameter
+- NEVER call `living_ui_notify_ready` if `npm run build` failed
+
+## References
+
+- [MVC-A Architecture](references/MVC-A.md) - When to use each layer, agent data access methods
+- [Quality Standards](references/STANDARDS.md) - Professional standards for Living UIs
+- [Code Examples](references/EXAMPLES.md) - Complete code examples for each phase
+- [Verification Checklist](references/VERIFY.md) - QA checklist before launch (REQUIRED)
+- [Troubleshooting](references/TROUBLESHOOTING.md) - Debug common issues

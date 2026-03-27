@@ -39,15 +39,17 @@ class LivingUIProject:
     description: str
     path: str
     status: str = 'created'  # created, creating, ready, running, stopped, error
-    port: Optional[int] = None
-    backend_port: Optional[int] = None
-    url: Optional[str] = None
+    port: Optional[int] = None  # Frontend port
+    backend_port: Optional[int] = None  # Backend API port
+    url: Optional[str] = None  # Frontend URL
+    backend_url: Optional[str] = None  # Backend API URL
     created_at: float = field(default_factory=lambda: datetime.now().timestamp())
     features: List[str] = field(default_factory=list)
     theme: str = 'system'
     error: Optional[str] = None
     task_id: Optional[str] = None
-    process: Optional[subprocess.Popen] = None
+    process: Optional[subprocess.Popen] = None  # Frontend process
+    backend_process: Optional[subprocess.Popen] = None  # Backend process
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -58,7 +60,9 @@ class LivingUIProject:
             'path': self.path,
             'status': self.status,
             'port': self.port,
+            'backendPort': self.backend_port,
             'url': self.url,
+            'backendUrl': self.backend_url,
             'createdAt': int(self.created_at * 1000),  # Convert to JS timestamp
             'features': self.features,
             'theme': self.theme,
@@ -126,6 +130,7 @@ class LivingUIManager:
                             path=project_data['path'],
                             status=project_data.get('status', 'stopped'),
                             port=project_data.get('port'),
+                            backend_port=project_data.get('backendPort'),
                             created_at=project_data.get('createdAt', datetime.now().timestamp()) / 1000,
                             features=project_data.get('features', []),
                             theme=project_data.get('theme', 'system'),
@@ -133,8 +138,11 @@ class LivingUIManager:
                         # Reset status to stopped for all loaded projects
                         project.status = 'stopped' if project.status == 'running' else project.status
                         self.projects[project.id] = project
+                        # Track both frontend and backend ports
                         if project.port:
                             self._used_ports.add(project.port)
+                        if project.backend_port:
+                            self._used_ports.add(project.backend_port)
                 logger.info(f"[LIVING_UI] Loaded {len(self.projects)} projects")
             except Exception as e:
                 logger.error(f"[LIVING_UI] Failed to load projects: {e}")
@@ -291,6 +299,156 @@ class LivingUIManager:
             await asyncio.sleep(0.5)
         return False
 
+    async def _wait_for_health_check(self, url: str, timeout: int = 15) -> bool:
+        """
+        Wait for a server's health endpoint to respond.
+
+        Args:
+            url: The health check URL (e.g., http://localhost:3101/health)
+            timeout: Maximum seconds to wait
+
+        Returns:
+            True if health check passes, False if timeout
+        """
+        import urllib.request
+        import urllib.error
+
+        for _ in range(timeout * 2):
+            try:
+                req = urllib.request.Request(url, method='GET')
+                with urllib.request.urlopen(req, timeout=2) as response:
+                    if response.status == 200:
+                        return True
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
+                pass
+            await asyncio.sleep(0.5)
+        return False
+
+    async def launch_backend(self, project_id: str) -> bool:
+        """
+        Launch the backend (FastAPI) server for a Living UI project.
+
+        The backend holds all state and persists to SQLite.
+        It should be launched before the frontend.
+
+        Args:
+            project_id: Project ID to launch backend for
+
+        Returns:
+            True if backend launch was successful
+        """
+        project = self.projects.get(project_id)
+        if not project:
+            logger.error(f"[LIVING_UI] Project not found: {project_id}")
+            return False
+
+        project_path = Path(project.path)
+        backend_path = project_path / 'backend'
+
+        if not backend_path.exists():
+            logger.warning(f"[LIVING_UI] No backend directory for {project_id}")
+            return True  # Not an error, just no backend
+
+        # Check if backend is already running
+        backend_port = project.backend_port
+        if backend_port and self._is_port_in_use(backend_port):
+            # Verify it's responding
+            health_url = f"http://localhost:{backend_port}/health"
+            if await self._wait_for_health_check(health_url, timeout=2):
+                logger.info(f"[LIVING_UI] Backend already running on port {backend_port}")
+                project.backend_url = f"http://localhost:{backend_port}"
+                return True
+            else:
+                # Port in use but not responding - kill and restart
+                logger.warning(f"[LIVING_UI] Port {backend_port} in use but not responding, killing...")
+                self._kill_process_on_port(backend_port)
+                await asyncio.sleep(1)
+
+        # Allocate port if needed
+        if not backend_port:
+            backend_port = self._allocate_port()
+            project.backend_port = backend_port
+
+        try:
+            # Start the FastAPI backend using uvicorn
+            logger.info(f"[LIVING_UI] Starting backend for {project_id} on port {backend_port}")
+
+            # Use python -m uvicorn to run the backend
+            if os.name == 'nt':
+                # Windows
+                backend_process = subprocess.Popen(
+                    ['python', '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
+                    cwd=str(backend_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    shell=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                )
+            else:
+                # Linux/Mac
+                backend_process = subprocess.Popen(
+                    ['python', '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
+                    cwd=str(backend_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+
+            project.backend_process = backend_process
+
+            # Wait for health check to pass
+            health_url = f"http://localhost:{backend_port}/health"
+            logger.info(f"[LIVING_UI] Waiting for backend health check at {health_url}...")
+            backend_ready = await self._wait_for_health_check(health_url, timeout=20)
+
+            if not backend_ready:
+                # Backend didn't start
+                if backend_process.poll() is not None:
+                    stderr = backend_process.stderr.read().decode() if backend_process.stderr else ''
+                    logger.error(f"[LIVING_UI] Backend process exited: {stderr[:500]}")
+                else:
+                    logger.error(f"[LIVING_UI] Backend not responding on port {backend_port}")
+                    backend_process.terminate()
+                project.backend_process = None
+                return False
+
+            project.backend_url = f"http://localhost:{backend_port}"
+            logger.info(f"[LIVING_UI] Backend started successfully on port {backend_port}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Failed to launch backend: {e}")
+            return False
+
+    async def stop_backend(self, project_id: str) -> bool:
+        """
+        Stop the backend server for a Living UI project.
+
+        Args:
+            project_id: Project ID to stop backend for
+
+        Returns:
+            True if stop was successful
+        """
+        project = self.projects.get(project_id)
+        if not project:
+            return False
+
+        if project.backend_process:
+            try:
+                project.backend_process.terminate()
+                project.backend_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                project.backend_process.kill()
+            project.backend_process = None
+
+        # Also try to kill by port in case process reference is stale
+        if project.backend_port and self._is_port_in_use(project.backend_port):
+            self._kill_process_on_port(project.backend_port)
+
+        project.backend_url = None
+        logger.info(f"[LIVING_UI] Stopped backend for {project_id}")
+        return True
+
     def _kill_process_on_port(self, port: int) -> bool:
         """
         Kill any process listening on the specified port (Windows-specific).
@@ -348,7 +506,7 @@ class LivingUIManager:
         Clean up orphan processes and folders on startup.
 
         This should be called after loading projects to:
-        1. Kill any orphan Living UI server processes on tracked ports
+        1. Kill any orphan Living UI server processes on tracked ports (frontend + backend)
         2. Delete project folders not tracked in the registry
         3. Reset all project statuses to 'stopped'
 
@@ -358,9 +516,14 @@ class LivingUIManager:
         """
         logger.info("[LIVING_UI] Running startup cleanup...")
 
-        # 1. Kill orphan processes - only on ports tracked by projects
+        # 1. Kill orphan processes - on both frontend and backend ports
         killed_count = 0
-        tracked_ports = {p.port for p in self.projects.values() if p.port}
+        tracked_ports = set()
+        for p in self.projects.values():
+            if p.port:
+                tracked_ports.add(p.port)
+            if p.backend_port:
+                tracked_ports.add(p.backend_port)
 
         if tracked_ports:
             # Get all port -> PID mappings with a single system call
@@ -380,11 +543,14 @@ class LivingUIManager:
         if orphan_count > 0:
             logger.info(f"[LIVING_UI] Removed {orphan_count} orphan folder(s)")
 
-        # 3. Reset all project statuses to 'stopped'
+        # 3. Reset all project statuses to 'stopped' and clear process references
         for project in self.projects.values():
             if project.status == 'running':
                 project.status = 'stopped'
                 project.process = None
+                project.backend_process = None
+                project.url = None
+                project.backend_url = None
         self._save_projects()
 
         logger.info("[LIVING_UI] Startup cleanup complete")
@@ -605,7 +771,10 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
 
     async def launch_project(self, project_id: str) -> bool:
         """
-        Launch a Living UI project.
+        Launch a Living UI project (backend + frontend).
+
+        Launches the backend first (FastAPI for state persistence),
+        then the frontend (Vite preview server).
 
         Args:
             project_id: Project ID to launch
@@ -630,7 +799,16 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
             return False
 
         try:
-            # Check if npm dependencies are installed
+            # Step 1: Launch backend first (for state persistence)
+            backend_path = project_path / 'backend'
+            if backend_path.exists():
+                logger.info(f"[LIVING_UI] Launching backend for {project_id}...")
+                backend_success = await self.launch_backend(project_id)
+                if not backend_success:
+                    logger.warning(f"[LIVING_UI] Backend failed to start for {project_id}, continuing with frontend only")
+                    # Don't fail - frontend can still work (with localStorage fallback)
+
+            # Step 2: Check if npm dependencies are installed
             node_modules = project_path / 'node_modules'
             if not node_modules.exists():
                 logger.info(f"[LIVING_UI] Installing dependencies for {project_id}")
@@ -642,7 +820,7 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
                 )
                 await install_process.wait()
 
-            # Get the port (use assigned port or allocate new one)
+            # Step 3: Get the frontend port (use assigned port or allocate new one)
             port = project.port or self._allocate_port()
 
             # Check if port is already in use and try to free it
@@ -659,8 +837,8 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
                     self._save_projects()
                     return False
 
-            # Start the preview server
-            logger.info(f"[LIVING_UI] Starting server for {project_id} on port {port}")
+            # Step 4: Start the frontend preview server
+            logger.info(f"[LIVING_UI] Starting frontend for {project_id} on port {port}")
             process = subprocess.Popen(
                 ['npm', 'run', 'preview', '--', '--port', str(port)],
                 cwd=str(project_path),
@@ -673,7 +851,7 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
             project.port = port
 
             # Wait for server to actually start and verify it's responding
-            logger.info(f"[LIVING_UI] Waiting for server to start on port {port}...")
+            logger.info(f"[LIVING_UI] Waiting for frontend to start on port {port}...")
             server_ready = await self._wait_for_server(port, timeout=15)
 
             if not server_ready:
@@ -681,26 +859,31 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
                 if process.poll() is not None:
                     # Process exited
                     stderr = process.stderr.read().decode() if process.stderr else ''
-                    logger.error(f"[LIVING_UI] Server process exited: {stderr[:500]}")
+                    logger.error(f"[LIVING_UI] Frontend process exited: {stderr[:500]}")
                     project.status = 'error'
-                    project.error = f'Server failed to start: {stderr[:200]}'
+                    project.error = f'Frontend failed to start: {stderr[:200]}'
                 else:
                     # Process running but not responding
-                    logger.error(f"[LIVING_UI] Server not responding on port {port}")
+                    logger.error(f"[LIVING_UI] Frontend not responding on port {port}")
                     process.terminate()
                     project.status = 'error'
-                    project.error = f'Server started but not responding on port {port}'
+                    project.error = f'Frontend started but not responding on port {port}'
                 project.process = None
+                # Also stop backend if frontend failed
+                await self.stop_backend(project_id)
                 self._save_projects()
                 return False
 
-            # Server is up and running
+            # Success - both backend and frontend are running
             project.url = f"http://localhost:{port}"
             project.status = 'running'
             project.error = None
 
             self._save_projects()
-            logger.info(f"[LIVING_UI] Successfully launched project {project_id} on port {port}")
+            logger.info(f"[LIVING_UI] Successfully launched project {project_id}")
+            logger.info(f"[LIVING_UI]   Frontend: {project.url}")
+            if project.backend_url:
+                logger.info(f"[LIVING_UI]   Backend: {project.backend_url}")
             return True
 
         except Exception as e:
@@ -710,12 +893,13 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
             self._save_projects()
             return False
 
-    async def stop_project(self, project_id: str) -> bool:
+    async def stop_project(self, project_id: str, stop_backend: bool = True) -> bool:
         """
-        Stop a running Living UI project.
+        Stop a running Living UI project (frontend and optionally backend).
 
         Args:
             project_id: Project ID to stop
+            stop_backend: Whether to also stop the backend (default: True)
 
         Returns:
             True if stop was successful
@@ -725,6 +909,7 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
             logger.error(f"[LIVING_UI] Project not found: {project_id}")
             return False
 
+        # Stop frontend process
         if project.process:
             try:
                 project.process.terminate()
@@ -733,8 +918,17 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
                 project.process.kill()
             project.process = None
 
-        project.status = 'stopped'
+        # Also kill by port in case process reference is stale
+        if project.port and self._is_port_in_use(project.port):
+            self._kill_process_on_port(project.port)
+
         project.url = None
+
+        # Stop backend if requested
+        if stop_backend:
+            await self.stop_backend(project_id)
+
+        project.status = 'stopped'
         self._save_projects()
 
         logger.info(f"[LIVING_UI] Stopped project: {project_id}")

@@ -1,31 +1,63 @@
 """
 Living UI Database Configuration
 
-SQLite database setup with async support.
+SQLite database setup for persistent state storage.
+Uses synchronous SQLite with SQLAlchemy for simplicity and reliability.
 """
 
-# from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-# from sqlalchemy.orm import sessionmaker
-# from models import Base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from models import Base
+from pathlib import Path
+import logging
 
-# DATABASE_URL = "sqlite+aiosqlite:///./living_ui.db"
+logger = logging.getLogger(__name__)
 
-# engine = create_async_engine(DATABASE_URL, echo=True)
-# async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# Database file stored in the project directory
+DATABASE_PATH = Path(__file__).parent / "living_ui.db"
+DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
-# async def init_db():
-#     """Initialize database tables"""
-#     async with engine.begin() as conn:
-#         await conn.run_sync(Base.metadata.create_all)
+# Create engine with check_same_thread=False for FastAPI compatibility
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    echo=False,  # Set to True for SQL debugging
+)
 
-# async def get_session():
-#     """Dependency to get database session"""
-#     async with async_session() as session:
-#         try:
-#             yield session
-#             await session.commit()
-#         except Exception:
-#             await session.rollback()
-#             raise
+# Session factory
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-print("Living UI Database - Uncomment and customize")
+
+async def init_db():
+    """Initialize database tables."""
+    logger.info(f"[Database] Creating tables at {DATABASE_PATH}")
+    Base.metadata.create_all(bind=engine)
+
+    # Ensure default app state exists
+    from models import AppState
+    db = SessionLocal()
+    try:
+        state = db.query(AppState).first()
+        if not state:
+            state = AppState()
+            db.add(state)
+            db.commit()
+            logger.info("[Database] Created default app state")
+    finally:
+        db.close()
+
+
+def get_db():
+    """
+    Dependency to get database session.
+
+    Usage in routes:
+        @router.get("/items")
+        def get_items(db: Session = Depends(get_db)):
+            return db.query(Item).all()
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

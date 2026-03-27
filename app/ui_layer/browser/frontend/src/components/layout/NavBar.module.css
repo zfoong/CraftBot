@@ -88,6 +88,14 @@
   background: var(--bg-tertiary);
 }
 
+/* Separator between static nav and Living UI */
+.separator {
+  color: var(--border-primary);
+  font-size: var(--text-sm);
+  padding: 0 var(--space-1);
+  user-select: none;
+}
+
 /* Spinner animation */
 .spinner {
   animation: spin 1s linear infinite;
