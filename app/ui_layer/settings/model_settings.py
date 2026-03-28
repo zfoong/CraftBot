@@ -51,24 +51,24 @@ PROVIDER_INFO = {
         "settings_key": "byteplus",
         "requires_api_key": True,
     },
-    "minimax": {
-        "name": "MiniMax",
-        "api_key_env": "MINIMAX_API_KEY",
-        "settings_key": "minimax",
-        "requires_api_key": True,
-    },
+    # "minimax": {
+    #     "name": "MiniMax",
+    #     "api_key_env": "MINIMAX_API_KEY",
+    #     "settings_key": "minimax",
+    #     "requires_api_key": True,
+    # },
     "deepseek": {
         "name": "DeepSeek",
         "api_key_env": "DEEPSEEK_API_KEY",
         "settings_key": "deepseek",
         "requires_api_key": True,
     },
-    "moonshot": {
-        "name": "Moonshot",
-        "api_key_env": "MOONSHOT_API_KEY",
-        "settings_key": "moonshot",
-        "requires_api_key": True,
-    },
+    # "moonshot": {
+    #     "name": "Moonshot",
+    #     "api_key_env": "MOONSHOT_API_KEY",
+    #     "settings_key": "moonshot",
+    #     "requires_api_key": True,
+    # },
     "remote": {
         "name": "Local (Ollama)",
         "base_url_env": "REMOTE_MODEL_URL",
