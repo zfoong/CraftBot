@@ -29,7 +29,7 @@ export function SettingsPage() {
       case 'skills':
         return <SkillsSettings />
       case 'integrations':
-        return <IntegrationsSettings />
+        return <p>Integrations are not available in the demo</p>
       case 'living_ui':
         return <LivingUISettings />
       default:
