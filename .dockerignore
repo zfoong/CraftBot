@@ -23,3 +23,6 @@ install.bat
 OmniParser_CraftOS
 debug_images
 workspace
+agent_logs.txt
+app/data/agent_logs.txt
+logs

@@ -24,7 +24,7 @@ load_dotenv()
 
 # -- Configuration -----------------------------------------------------------
 
-E2B_API_KEY = "e2b_803987e34b14f6acd8d29100171442b9af473be5"
+E2B_API_KEY = ""
 
 CRAFTBOT_DIR = Path(__file__).parent
 
@@ -141,12 +141,31 @@ def build_template(template_name: str) -> str:
             print(f"  Pre-installing: {cmd}")
             template = template.run_cmd(cmd, user="root")
 
+    # Copy only the directories and files needed for the agent (avoids uploading
+    # .git, logs, node_modules, chroma_db_memory, .credentials, agent_logs.txt, etc.)
+    _copy_dirs = [
+        "agent_core", "agents", "app", "assets", "decorators",
+        "diagnostic", "docker", "hooks", "rthooks", "scripts", "skills",
+    ]
+    _copy_files = [
+        "main.py", "run.py", "install.py", "config.json",
+        "requirements.txt", "e2b-start.sh", "build_template.py",
+        "docker-compose.yml", "docker-compose.gpu.yml", "environment.yml",
+    ]
+    for d in _copy_dirs:
+        if (CRAFTBOT_DIR / d).is_dir():
+            template = template.copy(d, f"/home/user/agent/{d}")
+    for f in _copy_files:
+        if (CRAFTBOT_DIR / f).is_file():
+            template = template.copy(f, f"/home/user/agent/{f}")
+
     # Copy full CraftBot code and build frontend
     template = (
         template
-        .copy(".", "/home/user/agent/")
         # Remove credentials/data that should not be in the template
-        .run_cmd("rm -rf /home/user/agent/.credentials /home/user/agent/agent_file_system /home/user/agent/chroma_db_memory")
+        .run_cmd("rm -rf /home/user/agent/.credentials /home/user/agent/agent_file_system /home/user/agent/chroma_db_memory /home/user/agent/app/data/agent_logs.txt")
+        # Override config.json to disable conda (not available in the sandbox)
+        .run_cmd('echo \'{"use_conda": false, "gui_mode_enabled": false}\' > /home/user/agent/config.json')
         .run_cmd(
             "cd /home/user/agent/app/ui_layer/browser/frontend"
             " && npm install --legacy-peer-deps"
@@ -159,7 +178,7 @@ def build_template(template_name: str) -> str:
             "sed -i 's/\\r$//' /home/user/agent/e2b-start.sh"
             " && chmod +x /home/user/agent/e2b-start.sh"
         )
-        .run_cmd("chmod -R 755 /home/user/agent")
+        .run_cmd("chmod -R 755 /home/user/agent 2>&1 || echo 'WARN: chmod had errors (non-fatal)'")
         # Install systemd service so the agent starts automatically on sandbox boot
         .run_cmd(
             'cat > /etc/systemd/system/craftbot.service << \'UNIT\'\n'
