@@ -14,7 +14,17 @@ from agent_core import action
 
 @action(
     name="schedule_task",
-    description="Schedule a task for execution. Supports immediate execution, one-time scheduled tasks, and recurring schedules. One-time tasks are auto-removed after firing.",
+    description=(
+        "Schedule a task for execution. Supports immediate, one-time, and recurring schedules. "
+        "One-time tasks are auto-removed after firing.\n"
+        "IMPORTANT: The 'schedule' field must use one of these EXACT formats:\n"
+        "- Immediate: 'immediate'\n"
+        "- One-time: 'at 3pm', 'at 3:30pm', 'at 3:30pm today', 'tomorrow at 9am', 'in 2 hours', 'in 30 minutes'\n"
+        "- Recurring: 'every day at 7am', 'every day at 3:30pm', 'every monday at 9am', "
+        "'every 3 hours', 'every 30 minutes', or cron like '0 7 * * *'\n"
+        "DO NOT use: 'daily at', 'every weekday', 'every morning', 'weekly', or other freeform text. "
+        "Only the exact patterns listed above are supported."
+    ),
     action_sets=["scheduler", "core", "proactive"],
     input_schema={
         "name": {
@@ -29,8 +39,20 @@ from agent_core import action
         },
         "schedule": {
             "type": "string",
-            "description": "Schedule expression. Immediate: 'immediate'. One-time: 'at 3pm', 'at 3:30pm today', 'tomorrow at 9am', 'in 2 hours', 'in 30 minutes'. Recurring: 'every day at 7am', 'every monday at 9am', 'every 3 hours', 'every 30 minutes', or cron '0 7 * * *'",
-            "example": "at 3pm"
+            "description": (
+                "Schedule expression. Must match one of these exact patterns:\n"
+                "- 'immediate' — execute right now\n"
+                "- 'at <time>' — e.g. 'at 3pm', 'at 3:30pm', 'at 3:30pm today'\n"
+                "- 'tomorrow at <time>' — e.g. 'tomorrow at 9am'\n"
+                "- 'in <N> hours' or 'in <N> minutes' — e.g. 'in 2 hours', 'in 30 minutes'\n"
+                "- 'every day at <time>' — e.g. 'every day at 7am', 'every day at 3:30pm'\n"
+                "- 'every <weekday> at <time>' — e.g. 'every monday at 9am'\n"
+                "- 'every <N> hours' or 'every <N> minutes' — e.g. 'every 3 hours', 'every 30 minutes'\n"
+                "- Cron expression — e.g. '0 7 * * *' (5-field cron)\n"
+                "Times must include am/pm (e.g. '9am', '3:30pm'). "
+                "Do NOT use 'daily', 'weekly', 'every weekday', 'every morning', or other freeform text."
+            ),
+            "example": "every day at 9am"
         },
         "priority": {
             "type": "integer",
@@ -115,6 +137,22 @@ async def schedule_task(input_data: dict) -> dict:
             return {"status": "error", "error": "instruction is required"}
         if not schedule_expr:
             return {"status": "error", "error": "schedule is required"}
+
+        # Validate schedule expression before doing anything
+        if schedule_expr.lower() != "immediate":
+            from app.scheduler.parser import ScheduleParser, ScheduleParseError
+            try:
+                ScheduleParser.parse(schedule_expr)
+            except ScheduleParseError as e:
+                return {
+                    "status": "error",
+                    "error": (
+                        f"Invalid schedule expression: '{schedule_expr}'. {e} "
+                        "Supported formats: 'at 3pm', 'tomorrow at 9am', 'in 2 hours', 'in 30 minutes', "
+                        "'every day at 7am', 'every monday at 9am', 'every 3 hours', 'every 30 minutes', "
+                        "or a cron expression like '0 7 * * *'."
+                    )
+                }
 
         # Handle immediate execution
         if schedule_expr.lower() == "immediate":
