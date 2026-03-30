@@ -8,7 +8,7 @@ from agent_core.core.credentials.embedded_credentials import (
     encode_credential,
     generate_credentials_block,
 )
-from agent_core.core.credentials.oauth_server import run_oauth_flow
+from agent_core.core.credentials.oauth_server import run_oauth_flow, run_oauth_flow_async
 
 __all__ = [
     "get_credential",
@@ -17,4 +17,5 @@ __all__ = [
     "encode_credential",
     "generate_credentials_block",
     "run_oauth_flow",
+    "run_oauth_flow_async",
 ]

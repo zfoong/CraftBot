@@ -150,19 +150,30 @@ class InternalActionInterface:
         return {"description": description, "file_path": img_path}
 
     @staticmethod
-    async def do_chat(message: str, platform: str = "CraftBot TUI") -> None:
+    async def do_chat(
+        message: str,
+        platform: str = "CraftBot TUI",
+        session_id: Optional[str] = None,
+    ) -> None:
         """Record an agent-authored chat message to the event stream.
 
         Args:
             message: The message content to record.
             platform: The platform the message is sent to (default: "CraftBot TUI").
+            session_id: Optional task/session ID for multi-task isolation.
         """
         if InternalActionInterface.state_manager is None:
             raise RuntimeError("InternalActionInterface not initialized with StateManager.")
-        InternalActionInterface.state_manager.record_agent_message(message, platform=platform)
+        InternalActionInterface.state_manager.record_agent_message(
+            message, session_id=session_id, platform=platform
+        )
 
     @staticmethod
-    async def do_chat_with_attachment(message: str, file_path: str) -> Dict[str, Any]:
+    async def do_chat_with_attachment(
+        message: str,
+        file_path: str,
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Send a chat message with a single attachment to the user.
 
@@ -171,20 +182,28 @@ class InternalActionInterface:
         Args:
             message: The message content
             file_path: Path to the file (absolute or relative to workspace)
+            session_id: Optional task/session ID for multi-task isolation.
 
         Returns:
             Dict with 'success', 'files_sent', and optionally 'errors'
         """
-        return await InternalActionInterface.do_chat_with_attachments(message, [file_path])
+        return await InternalActionInterface.do_chat_with_attachments(
+            message, [file_path], session_id=session_id
+        )
 
     @staticmethod
-    async def do_chat_with_attachments(message: str, file_paths: List[str]) -> Dict[str, Any]:
+    async def do_chat_with_attachments(
+        message: str,
+        file_paths: List[str],
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Send a chat message with one or more attachments to the user.
 
         Args:
             message: The message content
             file_paths: List of paths to the files (absolute or relative to workspace)
+            session_id: Optional task/session ID for multi-task isolation.
 
         Returns:
             Dict with 'success' (bool), 'files_sent' (int), and optionally 'errors' (list of str)
@@ -198,7 +217,9 @@ class InternalActionInterface:
 
         # Check if UI adapter supports attachments (browser adapter)
         if ui_adapter and hasattr(ui_adapter, 'send_message_with_attachments'):
-            return await ui_adapter.send_message_with_attachments(message, file_paths, sender=agent_name)
+            return await ui_adapter.send_message_with_attachments(
+                message, file_paths, sender=agent_name, session_id=session_id
+            )
         else:
             # Fallback: send message with attachment notes for non-browser adapters
             if InternalActionInterface.state_manager is None:
@@ -206,7 +227,8 @@ class InternalActionInterface:
 
             attachment_notes = "\n".join([f"[Attachment: {fp}]" for fp in file_paths])
             InternalActionInterface.state_manager.record_agent_message(
-                f"{message}\n\n{attachment_notes}"
+                f"{message}\n\n{attachment_notes}",
+                session_id=session_id,
             )
             # For non-browser adapters, we can't verify files exist, so assume success
             return {"success": True, "files_sent": len(file_paths), "errors": None}
@@ -652,6 +674,17 @@ class InternalActionInterface:
             logger.info(f"[TASK] LLM response: skills={selected_skills}, action_sets={selected_sets}")
             logger.info(f"[TASK] Valid selection: skills={valid_skills}, action_sets={valid_sets}")
 
+            # Record skill selection for metrics (skill is "invoked" when selected for prompt)
+            if valid_skills:
+                try:
+                    from app.ui_layer.metrics.collector import MetricsCollector
+                    collector = MetricsCollector.get_instance()
+                    if collector:
+                        for skill_name in valid_skills:
+                            collector.record_skill_invocation(skill_name)
+                except Exception:
+                    pass  # Don't fail skill selection if metrics recording fails
+
             return valid_skills, valid_sets
 
         except json.JSONDecodeError as e:
@@ -881,29 +914,42 @@ class InternalActionInterface:
     @classmethod
     def _invalidate_action_selection_caches(cls) -> None:
         """
-        Invalidate action selection session caches when action sets change.
+        Invalidate and re-create action selection session caches when action sets change.
 
         When action sets are added or removed, the cached prompt becomes stale
-        because the <actions> section has changed. This method clears the
-        session caches for both CLI and GUI action selection.
+        because the <actions> section has changed. This method clears the old
+        session caches, resets event stream sync points, and re-creates fresh
+        session caches so the next action selection call sees the updated actions.
         """
         task_id = cls._get_current_task_id()
         if not task_id or not cls.llm_interface:
             return
 
         try:
-            # End action selection caches (both CLI and GUI)
+            # End old action selection caches (both CLI and GUI)
             cls.llm_interface.end_session_cache(task_id, LLMCallType.ACTION_SELECTION)
             cls.llm_interface.end_session_cache(task_id, LLMCallType.GUI_ACTION_SELECTION)
 
-            # Also reset event stream sync points
+            # Reset event stream sync points
             if cls.context_engine:
                 cls.context_engine.reset_event_stream_sync(LLMCallType.ACTION_SELECTION)
                 cls.context_engine.reset_event_stream_sync(LLMCallType.GUI_ACTION_SELECTION)
 
-            logger.info(f"[CACHE] Invalidated action selection caches for task {task_id} due to action set change")
+            # Re-create session caches with fresh system prompt so the next
+            # action selection call establishes a new session with updated actions
+            if cls.context_engine:
+                system_prompt, _ = cls.context_engine.make_prompt(
+                    user_flags={"query": False, "expected_output": False},
+                    system_flags={"policy": False},
+                )
+                for call_type in [LLMCallType.ACTION_SELECTION, LLMCallType.GUI_ACTION_SELECTION]:
+                    cache_id = cls.llm_interface.create_session_cache(task_id, call_type, system_prompt)
+                    if cache_id:
+                        logger.debug(f"[CACHE] Re-created session cache {cache_id} for {task_id}:{call_type}")
+
+            logger.info(f"[CACHE] Invalidated and re-created action selection caches for task {task_id} due to action set change")
         except Exception as e:
-            logger.warning(f"[CACHE] Failed to invalidate caches for task {task_id}: {e}")
+            logger.warning(f"[CACHE] Failed to invalidate/re-create caches for task {task_id}: {e}")
 
     @classmethod
     def list_action_sets(cls) -> Dict[str, Any]:

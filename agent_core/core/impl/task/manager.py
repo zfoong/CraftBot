@@ -271,7 +271,6 @@ class TaskManager:
 
         self.tasks[task_id] = task
         self._current_session_id = task_id  # CraftBot compatibility
-        self.db_interface.log_task(task)
         self._sync_state_manager(task)
 
         # Notify state manager for two-tier state tracking
@@ -400,7 +399,6 @@ class TaskManager:
                     transitions.append((item, "pending", "in_progress"))
 
         self.active.todos = new_todos
-        self.db_interface.log_task(self.active)
         self._sync_state_manager(self.active)
 
         # Report transitions via hook if provided (WCA)
@@ -585,7 +583,6 @@ class TaskManager:
         task.final_summary = summary
         task.errors = errors or []
 
-        self.db_interface.log_task(task)
         self._sync_state_manager(task)
 
         self.event_stream_manager.log(

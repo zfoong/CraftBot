@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { Badge, StatusIndicator } from '../../components/ui'
+import { useDerivedAgentStatus } from '../../hooks'
 import type { MetricsTimePeriod } from '../../types'
 import styles from './DashboardPage.module.css'
 
@@ -98,12 +99,23 @@ function getChartLabels(period: MetricsTimePeriod): { title: string; description
 }
 
 export function DashboardPage() {
-  const { status, actions, dashboardMetrics, filteredMetricsCache, requestFilteredMetrics } = useWebSocket()
+  const { connected, actions, messages, dashboardMetrics, filteredMetricsCache, requestFilteredMetrics } = useWebSocket()
+
+  // Derive agent status from actions and messages
+  const status = useDerivedAgentStatus({
+    actions,
+    messages,
+    connected,
+  })
 
   // Time period state for each card
   const [taskPeriod, setTaskPeriod] = useState<MetricsTimePeriod>('total')
   const [tokenPeriod, setTokenPeriod] = useState<MetricsTimePeriod>('total')
   const [usagePeriod, setUsagePeriod] = useState<MetricsTimePeriod>('total')
+
+  // Expand/collapse state for top tools/skills lists
+  const [showAllTools, setShowAllTools] = useState(false)
+  const [showAllSkills, setShowAllSkills] = useState(false)
 
   // Request filtered metrics when period changes (for all periods including 'total')
   const handlePeriodChange = useCallback((
@@ -468,19 +480,16 @@ export function DashboardPage() {
           <div className={styles.panelHeader}>
             <Hammer size={16} />
             <h3>MCP Servers</h3>
-            <Badge variant={mcpConnectedServers > 0 ? 'success' : 'default'}>
-              {mcpConnectedServers}/{mcpTotalServers}
-            </Badge>
           </div>
           <div className={styles.panelContent}>
             <div className={styles.compactStats}>
               <div className={styles.compactStatItem}>
-                <Wrench size={14} className={styles.primaryIcon} />
-                <span className={styles.compactStatValue}>{mcpTotalTools}</span>
-                <span className={styles.compactStatLabel}>Tools</span>
+                <CheckCircle size={14} className={styles.successIcon} />
+                <span className={styles.compactStatValue}>{mcpConnectedServers}</span>
+                <span className={styles.compactStatLabel}>Connected</span>
               </div>
               <div className={styles.compactStatItem}>
-                <Activity size={14} className={styles.successIcon} />
+                <Activity size={14} className={styles.primaryIcon} />
                 <span className={styles.compactStatValue}>{mcpTotalCalls}</span>
                 <span className={styles.compactStatLabel}>Calls</span>
               </div>
@@ -489,13 +498,21 @@ export function DashboardPage() {
               <div className={styles.usageSectionHeader}>Top Tools</div>
               {mcpTopTools.length > 0 ? (
                 <div className={styles.usageList}>
-                  {mcpTopTools.slice(0, 3).map((tool, index) => (
+                  {(showAllTools ? mcpTopTools : mcpTopTools.slice(0, 3)).map((tool, index) => (
                     <div key={tool.name} className={styles.usageItem}>
                       <span className={styles.usageRank}>#{index + 1}</span>
                       <span className={styles.usageName}>{tool.name}</span>
                       <span className={styles.usageCount}>{tool.count}</span>
                     </div>
                   ))}
+                  {mcpTopTools.length > 3 && (
+                    <button
+                      className={styles.viewAllButton}
+                      onClick={() => setShowAllTools(!showAllTools)}
+                    >
+                      {showAllTools ? 'Show less' : `View all (${mcpTopTools.length})`}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className={styles.emptyUsage}>No usage yet</div>
@@ -509,9 +526,6 @@ export function DashboardPage() {
           <div className={styles.panelHeader}>
             <Package size={16} />
             <h3>Skills</h3>
-            <Badge variant={skillEnabled > 0 ? 'success' : 'default'}>
-              {skillEnabled}/{skillTotal}
-            </Badge>
           </div>
           <div className={styles.panelContent}>
             <div className={styles.compactStats}>
@@ -530,13 +544,21 @@ export function DashboardPage() {
               <div className={styles.usageSectionHeader}>Top Skills</div>
               {topSkills.length > 0 ? (
                 <div className={styles.usageList}>
-                  {topSkills.slice(0, 3).map((skill, index) => (
+                  {(showAllSkills ? topSkills : topSkills.slice(0, 3)).map((skill, index) => (
                     <div key={skill.name} className={styles.usageItem}>
                       <span className={styles.usageRank}>#{index + 1}</span>
                       <span className={styles.usageName}>{skill.name}</span>
                       <span className={styles.usageCount}>{skill.count}</span>
                     </div>
                   ))}
+                  {topSkills.length > 3 && (
+                    <button
+                      className={styles.viewAllButton}
+                      onClick={() => setShowAllSkills(!showAllSkills)}
+                    >
+                      {showAllSkills ? 'Show less' : `View all (${topSkills.length})`}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className={styles.emptyUsage}>No usage yet</div>

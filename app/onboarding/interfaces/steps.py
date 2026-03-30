@@ -127,11 +127,9 @@ class ProviderStep:
 
 
 class ApiKeyStep:
-    """API key input step."""
+    """API key input step — or Ollama connection setup for the remote provider."""
 
     name = "api_key"
-    title = "Enter API Key"
-    description = "Enter your API key for the selected provider."
     required = True
 
     # Maps provider to environment variable name
@@ -140,19 +138,39 @@ class ApiKeyStep:
         "gemini": "GOOGLE_API_KEY",
         "byteplus": "BYTEPLUS_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
-        "remote": None,  # Ollama doesn't need API key
+        "remote": None,  # Ollama uses a base URL, not an API key
     }
 
     def __init__(self, provider: str = "openai"):
         self.provider = provider
+
+    @property
+    def title(self) -> str:
+        if self.provider == "remote":
+            return "Connect Ollama"
+        return "Enter API Key"
+
+    @property
+    def description(self) -> str:
+        if self.provider == "remote":
+            return (
+                "Connect to your local Ollama instance.\n"
+                "If Ollama isn't installed yet, we'll help you set it up."
+            )
+        return "Enter your API key for the selected provider."
 
     def get_options(self) -> List[StepOption]:
         # Free-form input, no options
         return []
 
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
-        # Remote (Ollama) doesn't need API key
         if self.provider == "remote":
+            # Value is the Ollama base URL
+            if not value or not isinstance(value, str):
+                return True, None  # Empty = use default URL
+            v = value.strip()
+            if not (v.startswith("http://") or v.startswith("https://")):
+                return False, "Please enter a valid URL (e.g. http://localhost:11434)"
             return True, None
 
         if not value or not isinstance(value, str):
@@ -164,6 +182,8 @@ class ApiKeyStep:
         return True, None
 
     def get_default(self) -> str:
+        if self.provider == "remote":
+            return "http://localhost:11434"
         # Check settings.json for existing key
         from app.config import get_api_key
         return get_api_key(self.provider)

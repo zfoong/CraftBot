@@ -64,6 +64,9 @@ def recurring_read(input_data: dict) -> dict:
         # Convert tasks to dictionaries
         task_list = []
         for task in tasks:
+            # Calculate next_run dynamically (clock-aligned to heartbeat slots)
+            next_run = task.calculate_next_run()
+
             task_dict = {
                 "id": task.id,
                 "name": task.name,
@@ -80,8 +83,8 @@ def recurring_read(input_data: dict) -> dict:
                 task_dict["day"] = task.day
             if task.last_run:
                 task_dict["last_run"] = task.last_run.isoformat()
-            if task.next_run:
-                task_dict["next_run"] = task.next_run.isoformat()
+            if next_run:
+                task_dict["next_run"] = next_run.isoformat()
             if task.conditions:
                 task_dict["conditions"] = [c.to_dict() for c in task.conditions]
             if task.outcome_history:

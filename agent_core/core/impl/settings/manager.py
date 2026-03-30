@@ -38,7 +38,10 @@ DEFAULT_SETTINGS = {
         "openai": "",
         "anthropic": "",
         "google": "",
-        "byteplus": ""
+        "byteplus": "",
+        "minimax": "",
+        "deepseek": "",
+        "moonshot": ""
     },
     "endpoints": {
         "remote_model_url": "",

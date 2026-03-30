@@ -64,7 +64,7 @@ class EventStreamProtocol(Protocol):
         ...
 
     def summarize_if_needed(self) -> None:
-        """Trigger summarization when threshold exceeded."""
+        """Trigger summarization when threshold exceeded (synchronous, blocking)."""
         ...
 
     def mark_session_synced(self, call_type: str) -> None:

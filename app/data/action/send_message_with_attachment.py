@@ -60,6 +60,8 @@ def send_message_with_attachment(input_data: dict) -> dict:
     file_paths = input_data.get('file_paths', [])
     wait_for_user_reply = bool(input_data.get('wait_for_user_reply', False))
     simulated_mode = input_data.get('simulated_mode', False)
+    # Extract session_id injected by ActionManager for multi-task isolation
+    session_id = input_data.get('_session_id')
 
     # Ensure file_paths is a list
     if isinstance(file_paths, str):
@@ -78,7 +80,7 @@ def send_message_with_attachment(input_data: dict) -> dict:
 
     # Use the do_chat_with_attachments method which handles browser/CLI fallback
     result = asyncio.run(internal_action_interface.InternalActionInterface.do_chat_with_attachments(
-        message, file_paths
+        message, file_paths, session_id=session_id
     ))
 
     fire_at_delay = 10800 if wait_for_user_reply else 0

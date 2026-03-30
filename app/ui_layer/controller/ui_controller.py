@@ -219,7 +219,12 @@ class UIController:
     # Message Handling
     # ─────────────────────────────────────────────────────────────────────
 
-    async def submit_message(self, message: str, adapter_id: str = "") -> None:
+    async def submit_message(
+        self,
+        message: str,
+        adapter_id: str = "",
+        target_session_id: Optional[str] = None
+    ) -> None:
         """
         Handle user input from any interface.
 
@@ -228,6 +233,7 @@ class UIController:
         Args:
             message: The user's input message
             adapter_id: ID of the adapter that sent the message
+            target_session_id: Optional session ID for direct reply (bypasses routing)
         """
         if not message.strip():
             return
@@ -237,8 +243,9 @@ class UIController:
             return
 
         # Not a command - send to agent
-        # Update state
-        self._state_store.dispatch("SET_AGENT_STATE", AgentStateType.WORKING.value)
+        # Note: Task status updates (waiting -> running) are handled in _handle_chat_message
+        # after routing determines the correct session. We don't update here to avoid
+        # incorrectly changing status of unrelated tasks.
 
         # Emit state change event so adapters can update status immediately
         self._event_bus.emit(
@@ -267,6 +274,10 @@ class UIController:
             "sender": {"id": adapter_id or "user", "type": "user"},
             "gui_mode": self._state_store.state.gui_mode,
         }
+        # Include target session ID for direct reply (bypasses routing LLM)
+        if target_session_id:
+            payload["target_session_id"] = target_session_id
+
         await self._agent._handle_chat_message(payload)
 
     # ─────────────────────────────────────────────────────────────────────
@@ -407,6 +418,43 @@ class UIController:
             self._state_store.dispatch(
                 "SET_GUI_MODE", event.data.get("gui_mode", False)
             )
+
+        elif event.type == UIEventType.WAITING_FOR_USER:
+            task_id = event.data.get("task_id", "")
+            if task_id:
+                # Update specific task status to "waiting"
+                self._state_store.dispatch(
+                    "UPDATE_ACTION_ITEM",
+                    {
+                        "id": task_id,
+                        "status": "waiting",
+                    },
+                )
+            # Update global agent state
+            self._state_store.dispatch(
+                "SET_AGENT_STATE", AgentStateType.WAITING_FOR_USER.value
+            )
+            # Emit state change event for status bar
+            self._event_bus.emit(
+                UIEvent(
+                    type=UIEventType.AGENT_STATE_CHANGED,
+                    data={
+                        "state": AgentStateType.WAITING_FOR_USER.value,
+                        "status_message": "Waiting for your response",
+                    },
+                )
+            )
+
+        elif event.type == UIEventType.TASK_UPDATE:
+            task_id = event.data.get("task_id", "")
+            if task_id:
+                self._state_store.dispatch(
+                    "UPDATE_ACTION_ITEM",
+                    {
+                        "id": task_id,
+                        "status": event.data.get("status", "running"),
+                    },
+                )
 
     async def _consume_triggers(self) -> None:
         """Consume triggers and run agent reactions."""

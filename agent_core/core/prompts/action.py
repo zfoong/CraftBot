@@ -51,9 +51,9 @@ CRITICAL - Message Source Routing Rules:
 - If platform is WhatsApp → MUST use send_whatsapp_web_text_message (use to="user" for self-messages)
 - If platform is Discord → MUST use send_discord_message or send_discord_dm
 - If platform is Slack → MUST use send_slack_message
-- If platform is CraftBot TUI (or no platform specified) → use send_message
+- If platform is CraftBot interface (or no platform specified) → use send_message
 - ONLY fall back to send_message if the platform's send action is not in the available actions list.
-- send_message is for local TUI display ONLY. It does NOT reach external platforms.
+- send_message is for local interface display ONLY. It does NOT reach external platforms.
 
 Third-Party Message Handling:
 - Third-party messages show as "[Incoming X message from NAME]" in event stream.
@@ -67,7 +67,7 @@ Third-Party Message Handling:
 Preferred Platform Routing (for notifications):
 - Check USER.md for "Preferred Messaging Platform" setting when notifying user.
 - For notifications about third-party messages, use preferred platform if available.
-- If preferred platform's send action is unavailable, fall back to send_message (TUI).
+- If preferred platform's send action is unavailable, fall back to send_message (interface).
 </rules>
 
 <parallel_actions>
@@ -164,9 +164,9 @@ CRITICAL - Message Source Routing Rules:
 - If platform is WhatsApp → MUST use send_whatsapp_web_text_message (use to="user" for self-messages)
 - If platform is Discord → MUST use send_discord_message or send_discord_dm
 - If platform is Slack → MUST use send_slack_message
-- If platform is CraftBot TUI (or no platform specified) → use send_message
+- If platform is CraftBot interface (or no platform specified) → use send_message
 - ONLY fall back to send_message if the platform's send action is not in the available actions list.
-- send_message is for local TUI display ONLY. It does NOT reach external platforms.
+- send_message is for local interface display ONLY. It does NOT reach external platforms.
 
 Adaptive Execution:
 - If you lack information during EXECUTE, go back to COLLECT phase (add new collect todos)
@@ -395,9 +395,9 @@ CRITICAL - Message Source Routing Rules:
 - If platform is WhatsApp → MUST use send_whatsapp_web_text_message (use to="user" for self-messages)
 - If platform is Discord → MUST use send_discord_message or send_discord_dm
 - If platform is Slack → MUST use send_slack_message
-- If platform is CraftBot TUI (or no platform specified) → use send_message
+- If platform is CraftBot interface (or no platform specified) → use send_message
 - ONLY fall back to send_message if the platform's send action is not in the available actions list.
-- send_message is for local TUI display ONLY. It does NOT reach external platforms.
+- send_message is for local interface display ONLY. It does NOT reach external platforms.
 
 Action Selection:
 - Choose the most direct action to accomplish the goal

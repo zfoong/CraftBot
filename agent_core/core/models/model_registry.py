@@ -29,4 +29,19 @@ MODEL_REGISTRY = {
         InterfaceType.VLM: "llava-v1.6",
         InterfaceType.EMBEDDING: "nomic-embed-text",
     },
+    "minimax": {
+        InterfaceType.LLM: "MiniMax-Text-01",
+        InterfaceType.VLM: None,
+        InterfaceType.EMBEDDING: None,
+    },
+    "deepseek": {
+        InterfaceType.LLM: "deepseek-chat",
+        InterfaceType.VLM: "deepseek-chat",
+        InterfaceType.EMBEDDING: None,
+    },
+    "moonshot": {
+        InterfaceType.LLM: "moonshot-v1-8k",
+        InterfaceType.VLM: None,
+        InterfaceType.EMBEDDING: None,
+    },
 }

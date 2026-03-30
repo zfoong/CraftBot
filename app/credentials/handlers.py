@@ -76,8 +76,8 @@ class GoogleHandler(IntegrationHandler):
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
         }
-        from agent_core import run_oauth_flow
-        code, error = run_oauth_flow(f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}")
+        from agent_core import run_oauth_flow_async
+        code, error = await run_oauth_flow_async(f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}")
         if error: return False, f"Google OAuth failed: {error}"
 
         token_data = {
@@ -141,8 +141,8 @@ class SlackHandler(IntegrationHandler):
 
         scopes = "chat:write,channels:read,channels:history,groups:read,groups:history,users:read,files:write,im:read,im:write,im:history"
         params = {"client_id": SLACK_SHARED_CLIENT_ID, "scope": scopes, "redirect_uri": REDIRECT_URI_HTTPS, "state": secrets.token_urlsafe(32)}
-        from agent_core import run_oauth_flow
-        code, error = run_oauth_flow(f"https://slack.com/oauth/v2/authorize?{urlencode(params)}", use_https=True)
+        from agent_core import run_oauth_flow_async
+        code, error = await run_oauth_flow_async(f"https://slack.com/oauth/v2/authorize?{urlencode(params)}", use_https=True)
         if error: return False, f"Slack OAuth failed: {error}"
 
         import aiohttp
@@ -206,8 +206,8 @@ class NotionHandler(IntegrationHandler):
             return False, "CraftOS Notion integration not configured. Set NOTION_SHARED_CLIENT_ID and NOTION_SHARED_CLIENT_SECRET env vars.\nAlternatively, use /notion login <token> with your own integration token."
 
         params = {"client_id": NOTION_SHARED_CLIENT_ID, "redirect_uri": REDIRECT_URI, "response_type": "code", "owner": "user", "state": secrets.token_urlsafe(32)}
-        from agent_core import run_oauth_flow
-        code, error = run_oauth_flow(f"https://api.notion.com/v1/oauth/authorize?{urlencode(params)}")
+        from agent_core import run_oauth_flow_async
+        code, error = await run_oauth_flow_async(f"https://api.notion.com/v1/oauth/authorize?{urlencode(params)}")
         if error: return False, f"Notion OAuth failed: {error}"
 
         import aiohttp
@@ -264,8 +264,8 @@ class LinkedInHandler(IntegrationHandler):
             return False, "Not configured. Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET env vars."
 
         params = {"response_type": "code", "client_id": LINKEDIN_CLIENT_ID, "redirect_uri": REDIRECT_URI, "scope": "openid profile email w_member_social", "state": secrets.token_urlsafe(32)}
-        from agent_core import run_oauth_flow
-        code, error = run_oauth_flow(f"https://www.linkedin.com/oauth/v2/authorization?{urlencode(params)}")
+        from agent_core import run_oauth_flow_async
+        code, error = await run_oauth_flow_async(f"https://www.linkedin.com/oauth/v2/authorization?{urlencode(params)}")
         if error: return False, f"LinkedIn OAuth failed: {error}"
 
         import aiohttp
@@ -818,8 +818,8 @@ class OutlookHandler(IntegrationHandler):
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
         }
-        from agent_core import run_oauth_flow
-        code, error = run_oauth_flow(
+        from agent_core import run_oauth_flow_async
+        code, error = await run_oauth_flow_async(
             f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?{urlencode(params)}"
         )
         if error:
@@ -917,6 +917,218 @@ class WhatsAppBusinessHandler(IntegrationHandler):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# Jira (API token)
+# ═══════════════════════════════════════════════════════════════════
+
+class JiraHandler(IntegrationHandler):
+    async def login(self, args):
+        if len(args) < 3:
+            return False, "Usage: /jira login <domain> <email> <api_token>\nGet an API token from https://id.atlassian.com/manage-profile/security/api-tokens"
+        domain, email, api_token = args[0], args[1], args[2]
+
+        # Normalize domain
+        clean_domain = domain.strip().rstrip("/")
+        if clean_domain.startswith("https://"):
+            clean_domain = clean_domain[len("https://"):]
+        if clean_domain.startswith("http://"):
+            clean_domain = clean_domain[len("http://"):]
+        # Auto-append .atlassian.net if user only entered the subdomain
+        if "." not in clean_domain:
+            clean_domain = f"{clean_domain}.atlassian.net"
+
+        email = email.strip()
+        api_token = api_token.strip()
+
+        # Validate by calling /myself (try API v3, then v2 as fallback)
+        import httpx as _httpx
+        raw_auth = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+        auth_headers = {"Authorization": f"Basic {raw_auth}", "Accept": "application/json"}
+
+        data = None
+        last_status = 0
+        try:
+            for api_ver in ("3", "2"):
+                url = f"https://{clean_domain}/rest/api/{api_ver}/myself"
+                logger.info(f"[Jira] Trying {url} with email={email}")
+                r = _httpx.get(url, headers=auth_headers, timeout=15, follow_redirects=True)
+                if r.status_code == 200:
+                    data = r.json()
+                    break
+                body = r.text
+                logger.warning(f"[Jira] API v{api_ver} returned HTTP {r.status_code}: {body[:300]}")
+                last_status = r.status_code
+
+            if data is None:
+                hints = [f"Tried: https://{clean_domain}/rest/api/3/myself"]
+                if last_status == 401:
+                    hints.append("Ensure you are using an API token, not your account password.")
+                    hints.append("The email must match your Atlassian account email exactly.")
+                    hints.append("Generate a token at: https://id.atlassian.com/manage-profile/security/api-tokens")
+                elif last_status == 403:
+                    hints.append("Your account may not have REST API access. Check Jira permissions.")
+                elif last_status == 404:
+                    hints.append(f"Domain '{clean_domain}' not reachable or has no REST API.")
+                hint_str = "\n".join(f"  - {h}" for h in hints)
+                return False, f"Jira auth failed (HTTP {last_status}).\n{hint_str}"
+        except _httpx.ConnectError:
+            return False, f"Cannot connect to https://{clean_domain} — check the domain name."
+        except Exception as e:
+            return False, f"Jira connection error: {e}"
+
+        from app.external_comms.platforms.jira import JiraCredential
+        save_credential("jira.json", JiraCredential(
+            domain=clean_domain,
+            email=email,
+            api_token=api_token,
+        ))
+        display_name = data.get("displayName", email)
+        return True, f"Jira connected as {display_name} ({clean_domain})"
+
+    async def logout(self, args):
+        if not has_credential("jira.json"):
+            return False, "No Jira credentials found."
+        try:
+            from app.external_comms.manager import get_external_comms_manager
+            manager = get_external_comms_manager()
+            if manager:
+                await manager.stop_platform("jira")
+        except Exception:
+            pass
+        remove_credential("jira.json")
+        return True, "Removed Jira credential."
+
+    async def status(self):
+        if not has_credential("jira.json"):
+            return True, "Jira: Not connected"
+        from app.external_comms.platforms.jira import JiraCredential
+        cred = load_credential("jira.json", JiraCredential)
+        if not cred:
+            return True, "Jira: Not connected"
+        domain = cred.domain or cred.site_url or "unknown"
+        email = cred.email or "OAuth"
+        labels = cred.watch_labels
+        label_info = f" [watching: {', '.join(labels)}]" if labels else ""
+        return True, f"Jira: Connected\n  - {email} ({domain}){label_info}"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GitHub (personal access token)
+# ═══════════════════════════════════════════════════════════════════
+
+class GitHubHandler(IntegrationHandler):
+    async def login(self, args):
+        if not args:
+            return False, "Usage: /github login <personal_access_token>\nGenerate one at: https://github.com/settings/tokens"
+        token = args[0].strip()
+
+        import httpx as _httpx
+        try:
+            r = _httpx.get(
+                "https://api.github.com/user",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+                timeout=15,
+            )
+            if r.status_code != 200:
+                return False, f"GitHub auth failed (HTTP {r.status_code}). Check your token."
+            data = r.json()
+        except Exception as e:
+            return False, f"GitHub connection error: {e}"
+
+        from app.external_comms.platforms.github import GitHubCredential
+        save_credential("github.json", GitHubCredential(
+            access_token=token,
+            username=data.get("login", ""),
+        ))
+        return True, f"GitHub connected as @{data.get('login')} ({data.get('name', '')})"
+
+    async def logout(self, args):
+        if not has_credential("github.json"):
+            return False, "No GitHub credentials found."
+        try:
+            from app.external_comms.manager import get_external_comms_manager
+            manager = get_external_comms_manager()
+            if manager:
+                await manager.stop_platform("github")
+        except Exception:
+            pass
+        remove_credential("github.json")
+        return True, "Removed GitHub credential."
+
+    async def status(self):
+        if not has_credential("github.json"):
+            return True, "GitHub: Not connected"
+        from app.external_comms.platforms.github import GitHubCredential
+        cred = load_credential("github.json", GitHubCredential)
+        if not cred:
+            return True, "GitHub: Not connected"
+        username = cred.username or "unknown"
+        tag = cred.watch_tag
+        tag_info = f" [tag: {tag}]" if tag else ""
+        repos_info = f" [repos: {', '.join(cred.watch_repos)}]" if cred.watch_repos else ""
+        return True, f"GitHub: Connected\n  - @{username}{tag_info}{repos_info}"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Twitter/X (API key + secret + access tokens)
+# ═══════════════════════════════════════════════════════════════════
+
+class TwitterHandler(IntegrationHandler):
+    async def login(self, args):
+        if len(args) < 4:
+            return False, "Usage: /twitter login <api_key> <api_secret> <access_token> <access_token_secret>\nGet these from developer.x.com"
+        api_key, api_secret, access_token, access_token_secret = args[0].strip(), args[1].strip(), args[2].strip(), args[3].strip()
+
+        # Validate by calling /users/me
+        try:
+            from app.external_comms.platforms.twitter import TwitterCredential, _oauth1_header
+            import httpx as _httpx
+
+            url = "https://api.twitter.com/2/users/me"
+            params = {"user.fields": "id,name,username"}
+            auth_hdr = _oauth1_header("GET", url, params, api_key, api_secret, access_token, access_token_secret)
+            r = _httpx.get(url, headers={"Authorization": auth_hdr}, params=params, timeout=15)
+            if r.status_code != 200:
+                return False, f"Twitter auth failed (HTTP {r.status_code}). Check your API credentials.\nGet them from developer.x.com → Dashboard → Keys and tokens"
+            data = r.json().get("data", {})
+        except Exception as e:
+            return False, f"Twitter connection error: {e}"
+
+        save_credential("twitter.json", TwitterCredential(
+            api_key=api_key,
+            api_secret=api_secret,
+            access_token=access_token,
+            access_token_secret=access_token_secret,
+            user_id=data.get("id", ""),
+            username=data.get("username", ""),
+        ))
+        return True, f"Twitter/X connected as @{data.get('username')} ({data.get('name', '')})"
+
+    async def logout(self, args):
+        if not has_credential("twitter.json"):
+            return False, "No Twitter credentials found."
+        try:
+            from app.external_comms.manager import get_external_comms_manager
+            manager = get_external_comms_manager()
+            if manager:
+                await manager.stop_platform("twitter")
+        except Exception:
+            pass
+        remove_credential("twitter.json")
+        return True, "Removed Twitter credential."
+
+    async def status(self):
+        if not has_credential("twitter.json"):
+            return True, "Twitter/X: Not connected"
+        from app.external_comms.platforms.twitter import TwitterCredential
+        cred = load_credential("twitter.json", TwitterCredential)
+        if not cred:
+            return True, "Twitter/X: Not connected"
+        username = cred.username or "unknown"
+        tag_info = f" [tag: {cred.watch_tag}]" if cred.watch_tag else ""
+        return True, f"Twitter/X: Connected\n  - @{username}{tag_info}"
+
+
+# ═══════════════════════════════════════════════════════════════════
 # Registry
 # ═══════════════════════════════════════════════════════════════════
 
@@ -930,4 +1142,7 @@ INTEGRATION_HANDLERS: dict[str, IntegrationHandler] = {
     "whatsapp":           WhatsAppHandler(),
     "outlook":            OutlookHandler(),
     "whatsapp_business":  WhatsAppBusinessHandler(),
+    "jira":               JiraHandler(),
+    "github":             GitHubHandler(),
+    "twitter":            TwitterHandler(),
 }

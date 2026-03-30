@@ -156,6 +156,7 @@ class StdioTransport(MCPTransport):
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                         env=full_env,
+                        limit=10 * 1024 * 1024,  # 10MB limit for large MCP responses (e.g., screenshots)
                     )
                 else:
                     self._process = await asyncio.create_subprocess_exec(
@@ -165,6 +166,7 @@ class StdioTransport(MCPTransport):
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                         env=full_env,
+                        limit=10 * 1024 * 1024,  # 10MB limit for large MCP responses (e.g., screenshots)
                     )
             except FileNotFoundError as e:
                 logger.error(f"[StdioTransport] Command not found: '{command}'. Make sure it is installed and in PATH. Error: {e}")

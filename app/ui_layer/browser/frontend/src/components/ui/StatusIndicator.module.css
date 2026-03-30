@@ -29,9 +29,12 @@
 }
 
 .pending,
-.waiting,
 .idle {
   color: var(--color-gray-500);
+}
+
+.waiting {
+  color: #3b82f6;
 }
 
 /* Spinning animation for loader icon */
@@ -82,7 +85,7 @@
 .dot_working,
 .dot_thinking,
 .dot_running {
-  background: var(#ff4f18, #ff9878);
+  background: #ff4f18;
 }
 
 .dot_error,
@@ -90,9 +93,12 @@
   background: var(--color-error);
 }
 
-.dot_pending,
-.dot_waiting {
+.dot_pending {
   background: var(--color-gray-500);
+}
+
+.dot_waiting {
+  background: #3b82f6;
 }
 
 /* Pulse animation for active agent states */

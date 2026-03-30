@@ -15,7 +15,6 @@ APIs:
 """
 
 from __future__ import annotations
-import asyncio
 from datetime import datetime, timezone, timedelta
 import re
 import time
@@ -92,8 +91,8 @@ class EventStream:
         self,
         *,
         llm: LLMInterfaceProtocol,
-        summarize_at_tokens: int = 8000,
-        tail_keep_after_summarize_tokens: int = 4000,
+        summarize_at_tokens: int = 30000,
+        tail_keep_after_summarize_tokens: int = 10000,
         temp_dir: Path | None = None,
     ) -> None:
         self.head_summary: Optional[str] = None
@@ -112,7 +111,6 @@ class EventStream:
             )
             self.tail_keep_after_summarize_tokens = summarize_at_tokens - MINIMUM_BUFFER_TOKENS_BEFORE_NEXT_SUMMARIZATION
 
-        self._summarize_task: asyncio.Task | None = None
         self._lock = threading.RLock()
         self._total_tokens: int = 0
 
@@ -157,10 +155,13 @@ class EventStream:
         ev = Event(message=msg, kind=kind.strip(), severity=severity, display_message=display)
         rec = EventRecord(event=ev)
 
-        self.tail_events.append(rec)
-        self._total_tokens += get_cached_token_count(rec)
-        self.summarize_if_needed()
-        return len(self.tail_events) - 1
+        with self._lock:
+            self.tail_events.append(rec)
+            self._total_tokens += get_cached_token_count(rec)
+            # Summarization runs inside the lock - blocks other log() calls
+            # until summarization completes
+            self.summarize_if_needed()
+            return len(self.tail_events) - 1
 
     # Convenience wrappers for common event families (optional use)
     def log_action_start(self, name: str) -> int:
@@ -206,32 +207,14 @@ class EventStream:
         """
         Trigger summarization when the tail token count exceeds the configured threshold.
 
-        Uses asyncio.create_task to schedule summarize_by_LLM() without requiring
-        callers of log() to be async/await.
+        This is a SYNCHRONOUS blocking call - if summarization is needed, it runs
+        immediately and waits for completion before returning.
         """
         if self._total_tokens < self.summarize_at_tokens:
             return
 
-        if self._summarize_task is not None and not self._summarize_task.done():
-            return
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            logger.warning("[EventStream] No running event loop; cannot schedule summarization.")
-            return
-
         logger.debug(f"[EventStream] Triggering summarization: {self._total_tokens} tokens >= {self.summarize_at_tokens} threshold")
-        self._summarize_task = loop.create_task(self.summarize_by_LLM(), name="eventstream_summarize")
-        self._summarize_task.add_done_callback(self._on_summarize_done)
-
-    def _on_summarize_done(self, task: asyncio.Task) -> None:
-        try:
-            task.result()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            logger.exception("[EventStream] summarize_by_LLM task crashed unexpectedly")
+        self.summarize_by_LLM()
 
     def _find_token_cutoff(self, events: List[EventRecord], keep_tokens: int) -> int:
         """
@@ -263,43 +246,44 @@ class EventStream:
         )
         return cutoff
 
-    async def summarize_by_LLM(self) -> None:
+    def summarize_by_LLM(self) -> None:
         """
         Summarize the oldest tail events using the language model.
 
-        This version is concurrency-safe with synchronous log() calls:
-        - Snapshot the chunk under a lock
-        - Release lock while awaiting the LLM
-        - Re-acquire lock to apply summary + prune using the *current* tail
-          so events appended during the await are not lost.
+        This is a SYNCHRONOUS blocking call that holds the lock for the entire
+        duration, including the LLM call. This ensures no events can be added
+        while summarization is in progress.
+
+        Called from log() which already holds the lock (RLock allows reentry).
         """
-        with self._lock:
-            if not self.tail_events:
-                return
+        if not self.tail_events:
+            return
 
-            # Find cutoff based on tokens to keep
-            cutoff = self._find_token_cutoff(self.tail_events, self.tail_keep_after_summarize_tokens)
+        # Find cutoff based on tokens to keep
+        cutoff = self._find_token_cutoff(self.tail_events, self.tail_keep_after_summarize_tokens)
 
-            if cutoff <= 0:
-                # Nothing old enough to summarize
-                return
+        if cutoff <= 0:
+            # Nothing old enough to summarize
+            return
 
-            chunk = list(self.tail_events[:cutoff])
-            first_ts = chunk[0].ts if chunk else None
-            last_ts = chunk[-1].ts if chunk else None
-            window = ""
-            if first_ts and last_ts:
-                window = f"{first_ts.isoformat()} to {last_ts.isoformat()}"
+        chunk = list(self.tail_events[:cutoff])
+        first_ts = chunk[0].ts if chunk else None
+        last_ts = chunk[-1].ts if chunk else None
+        window = ""
+        if first_ts and last_ts:
+            window = f"{first_ts.isoformat()} to {last_ts.isoformat()}"
 
-            compact_lines = "\n".join(r.compact_line() for r in chunk)
-            previous_summary = self.head_summary or "(none)"
+        compact_lines = "\n".join(r.compact_line() for r in chunk)
+        previous_summary = self.head_summary or "(none)"
 
-        prompt = EVENT_STREAM_SUMMARIZATION_PROMPT.format(window=window, previous_summary=previous_summary, compact_lines=compact_lines)
+        prompt = EVENT_STREAM_SUMMARIZATION_PROMPT.format(
+            window=window, previous_summary=previous_summary, compact_lines=compact_lines
+        )
 
         try:
-            llm_output = await self.llm.generate_response_async(user_prompt=prompt)
+            logger.info(f"[EventStream] Running synchronous summarization ({self._total_tokens} tokens)")
+            llm_output = self.llm.generate_response(user_prompt=prompt)
             new_summary = (llm_output or "").strip()
-            # timestamp can be added here. For example: (from 'start time' to 'end time')
 
             logger.debug(f"[EVENT STREAM SUMMARIZATION] llm_output_len={len(llm_output or '')}")
 
@@ -307,25 +291,19 @@ class EventStream:
                 logger.warning("[EVENT STREAM SUMMARIZATION] LLM returned empty summary; not updating.")
                 return
 
-            # Apply + prune under lock
-            with self._lock:
-                self.head_summary = new_summary
-                # Calculate tokens being removed (using cached values)
-                removed_tokens = sum(get_cached_token_count(r) for r in self.tail_events[:cutoff])
-                self._total_tokens -= removed_tokens
-                if cutoff >= len(self.tail_events):
-                    self.tail_events = []
-                else:
-                    self.tail_events = self.tail_events[cutoff:]
+            # Apply summary and prune events
+            self.head_summary = new_summary
+            # Calculate tokens being removed from the snapshotted chunk
+            removed_tokens = sum(get_cached_token_count(r) for r in chunk)
+            self._total_tokens -= removed_tokens
+            self.tail_events = self.tail_events[cutoff:]
 
-                # Reset all session sync points - event indices are now invalid
-                # Session caches will be recreated on next access
-                self._session_sync_points.clear()
-                logger.info("[EventStream] Cleared all session sync points after summarization")
+            # Reset all session sync points - event indices are now invalid
+            self._session_sync_points.clear()
+            logger.info(f"[EventStream] Summarization complete. Tokens: {self._total_tokens}")
 
         except Exception:
             logger.exception("[EventStream] LLM summarization failed. Keeping all events without summarization.")
-            return
 
     # ───────────────────── utilities ─────────────────────
 

@@ -30,6 +30,7 @@ class UIEventType(Enum):
     # State events
     AGENT_STATE_CHANGED = auto()
     GUI_MODE_CHANGED = auto()
+    WAITING_FOR_USER = auto()
 
     # Footage events (for GUI mode screenshots)
     FOOTAGE_UPDATE = auto()

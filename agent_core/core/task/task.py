@@ -67,6 +67,8 @@ class Task:
     token_count: int = 0
     # UUID for the task-level "divisible" action on the chatserver (CraftBot)
     chatserver_action_id: Optional[str] = None
+    # Whether the task is waiting for user reply (pauses trigger scheduling)
+    waiting_for_user_reply: bool = False
 
     def get_current_todo(self) -> Optional[TodoItem]:
         """
@@ -111,6 +113,7 @@ class Task:
             "action_count": self.action_count,
             "token_count": self.token_count,
             "chatserver_action_id": self.chatserver_action_id,
+            "waiting_for_user_reply": self.waiting_for_user_reply,
         }
 
     @classmethod
@@ -136,4 +139,5 @@ class Task:
             action_count=data.get("action_count", 0),
             token_count=data.get("token_count", 0),
             chatserver_action_id=data.get("chatserver_action_id"),
+            waiting_for_user_reply=data.get("waiting_for_user_reply", False),
         )

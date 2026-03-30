@@ -24,11 +24,16 @@ interface WorkspaceState {
   currentDirectory: string
   files: FileItem[]
   loading: boolean
+  loadingMore: boolean
   error: string | null
   selectedFile: FileItem | null
   fileContent: string | null
   fileIsBinary: boolean
   connected: boolean
+  total: number
+  hasMore: boolean
+  offset: number
+  search: string
 }
 
 interface PendingOperation<T> {
@@ -42,6 +47,8 @@ interface WorkspaceContextType extends WorkspaceState {
   refresh: () => Promise<void>
   selectFile: (file: FileItem | null) => void
   listDirectory: (directory: string) => Promise<FileItem[]>
+  loadMore: () => Promise<void>
+  setSearch: (query: string) => void
 
   // File operations
   readFile: (path: string) => Promise<FileReadResponse>
@@ -56,15 +63,22 @@ interface WorkspaceContextType extends WorkspaceState {
   downloadFile: (path: string) => Promise<Blob | null>
 }
 
+const FILE_PAGE_SIZE = 50
+
 const defaultState: WorkspaceState = {
   currentDirectory: '',
   files: [],
   loading: false,
+  loadingMore: false,
   error: null,
   selectedFile: null,
   fileContent: null,
   fileIsBinary: false,
   connected: false,
+  total: 0,
+  hasMore: false,
+  offset: 0,
+  search: '',
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -99,12 +113,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     switch (msg.type) {
       case 'file_list': {
         const data = msg.data as unknown as FileListResponse
-        setState(prev => ({
-          ...prev,
-          files: data.files || [],
-          loading: false,
-          error: data.success ? null : data.error || 'Failed to list files',
-        }))
+        setState(prev => {
+          // If offset > 0, append (load more). Otherwise replace (fresh load).
+          const isLoadMore = data.offset > 0
+          return {
+            ...prev,
+            files: isLoadMore ? [...prev.files, ...(data.files || [])] : (data.files || []),
+            total: data.total ?? 0,
+            hasMore: data.hasMore ?? false,
+            offset: (data.offset ?? 0) + (data.files?.length ?? 0),
+            loading: false,
+            loadingMore: false,
+            error: data.success ? null : data.error || 'Failed to list files',
+          }
+        })
         resolvePending('file_list', data)
         break
       }
@@ -356,9 +378,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // ─────────────────────────────────────────────────────────────────────
 
   const navigateTo = useCallback(async (directory: string) => {
-    setState(prev => ({ ...prev, loading: true, error: null, currentDirectory: directory }))
+    setState(prev => ({
+      ...prev, loading: true, error: null, currentDirectory: directory,
+      files: [], offset: 0, hasMore: false, total: 0, search: '',
+    }))
     try {
-      await sendOperation<FileListResponse>('file_list', { directory }, 'file_list')
+      await sendOperation<FileListResponse>(
+        'file_list', { directory, offset: 0, limit: FILE_PAGE_SIZE }, 'file_list'
+      )
     } catch (error) {
       setState(prev => ({
         ...prev,
@@ -369,8 +396,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [sendOperation])
 
   const refresh = useCallback(async () => {
-    await navigateTo(state.currentDirectory)
-  }, [navigateTo, state.currentDirectory])
+    setState(prev => ({ ...prev, loading: true, error: null, files: [], offset: 0, hasMore: false, total: 0 }))
+    try {
+      await sendOperation<FileListResponse>(
+        'file_list',
+        { directory: state.currentDirectory, offset: 0, limit: FILE_PAGE_SIZE, search: state.search },
+        'file_list'
+      )
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error.message : 'Failed to refresh',
+      }))
+    }
+  }, [sendOperation, state.currentDirectory, state.search])
+
+  const loadMore = useCallback(async () => {
+    if (!state.hasMore || state.loadingMore) return
+    setState(prev => ({ ...prev, loadingMore: true }))
+    try {
+      await sendOperation<FileListResponse>(
+        'file_list',
+        { directory: state.currentDirectory, offset: state.offset, limit: FILE_PAGE_SIZE, search: state.search },
+        'file_list'
+      )
+    } catch (error) {
+      setState(prev => ({ ...prev, loadingMore: false }))
+    }
+  }, [sendOperation, state.hasMore, state.loadingMore, state.currentDirectory, state.offset, state.search])
+
+  const setSearch = useCallback((query: string) => {
+    setState(prev => ({ ...prev, search: query, loading: true, files: [], offset: 0, hasMore: false, total: 0 }))
+    sendOperation<FileListResponse>(
+      'file_list',
+      { directory: state.currentDirectory, offset: 0, limit: FILE_PAGE_SIZE, search: query },
+      'file_list'
+    ).catch(() => {
+      setState(prev => ({ ...prev, loading: false }))
+    })
+  }, [sendOperation, state.currentDirectory])
 
   const selectFile = useCallback((file: FileItem | null) => {
     setState(prev => ({
@@ -506,6 +571,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         refresh,
         selectFile,
         listDirectory,
+        loadMore,
+        setSearch,
         readFile,
         writeFile,
         createFile,

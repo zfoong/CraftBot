@@ -43,6 +43,7 @@ class ChatMessage:
         timestamp: Unix timestamp when the message was created
         message_id: Optional unique identifier for the message
         attachments: Optional list of file attachments
+        task_session_id: Optional task session ID for reply feature
     """
 
     sender: str
@@ -51,6 +52,7 @@ class ChatMessage:
     timestamp: float = field(default_factory=time.time)
     message_id: Optional[str] = None
     attachments: Optional[List[Attachment]] = None
+    task_session_id: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Generate message_id if not provided."""

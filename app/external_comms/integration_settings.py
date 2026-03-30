@@ -69,6 +69,35 @@ INTEGRATION_REGISTRY: Dict[str, Dict[str, Any]] = {
             {"key": "phone_number_id", "label": "Phone Number ID", "placeholder": "Enter phone number ID", "password": False},
         ],
     },
+    "jira": {
+        "name": "Jira",
+        "description": "Issue tracking and project management",
+        "auth_type": "token",
+        "fields": [
+            {"key": "domain", "label": "Jira Domain", "placeholder": "mycompany.atlassian.net", "password": False},
+            {"key": "email", "label": "Email", "placeholder": "you@example.com", "password": False},
+            {"key": "api_token", "label": "API Token", "placeholder": "Enter Jira API token", "password": True},
+        ],
+    },
+    "github": {
+        "name": "GitHub",
+        "description": "Repositories, issues, and pull requests",
+        "auth_type": "token",
+        "fields": [
+            {"key": "access_token", "label": "Personal Access Token", "placeholder": "ghp_...", "password": True},
+        ],
+    },
+    "twitter": {
+        "name": "Twitter/X",
+        "description": "Tweets, mentions, and timeline",
+        "auth_type": "token",
+        "fields": [
+            {"key": "api_key", "label": "Consumer Key", "placeholder": "Enter Consumer key", "password": True},
+            {"key": "api_secret", "label": "Consumer Secret", "placeholder": "Enter Consumer secret", "password": True},
+            {"key": "access_token", "label": "Access Token", "placeholder": "Enter access token", "password": True},
+            {"key": "access_token_secret", "label": "Access Token Secret", "placeholder": "Enter access token secret", "password": True},
+        ],
+    },
 }
 
 
@@ -205,6 +234,9 @@ PLATFORM_MAP = {
     "whatsapp": ["whatsapp_web"],
     "telegram": ["telegram_bot", "telegram_user"],
     "google": ["google_workspace"],
+    "jira": ["jira"],
+    "github": ["github"],
+    "twitter": ["twitter"],
 }
 
 
@@ -271,6 +303,29 @@ async def connect_integration_token(integration_id: str, credentials: Dict[str, 
         if not access_token or not phone_number_id:
             return False, "Access token and phone number ID are required"
         args = [access_token, phone_number_id]
+
+    elif integration_id == "jira":
+        domain = credentials.get("domain", "")
+        email = credentials.get("email", "")
+        api_token = credentials.get("api_token", "")
+        if not domain or not email or not api_token:
+            return False, "Domain, email, and API token are required"
+        args = [domain, email, api_token]
+
+    elif integration_id == "github":
+        access_token = credentials.get("access_token", "")
+        if not access_token:
+            return False, "Personal access token is required"
+        args = [access_token]
+
+    elif integration_id == "twitter":
+        api_key = credentials.get("api_key", "")
+        api_secret = credentials.get("api_secret", "")
+        access_token = credentials.get("access_token", "")
+        access_token_secret = credentials.get("access_token_secret", "")
+        if not all([api_key, api_secret, access_token, access_token_secret]):
+            return False, "All four Twitter API credentials are required"
+        args = [api_key, api_secret, access_token, access_token_secret]
 
     else:
         return False, f"Token-based login not supported for {integration_id}"

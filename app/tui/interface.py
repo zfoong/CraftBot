@@ -45,6 +45,7 @@ class TUIInterface:
             enable_action_panel=True,  # TUI has action panel
         )
         self._controller = UIController(agent, self._config)
+        agent.ui_controller = self._controller  # Back-reference for event emission
 
         # Create TUI adapter
         self._adapter = TUIAdapter(self._controller)

@@ -39,6 +39,70 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Default timeout for action execution (100 minutes, GUI mode might need more time)
 DEFAULT_ACTION_TIMEOUT = 6000
 
+# Persistent venv for sandboxed actions (reused across calls)
+_PERSISTENT_VENV_DIR: Optional[Path] = None
+_PERSISTENT_VENV_LOCK = None  # Will be initialized lazily to avoid issues with ProcessPoolExecutor
+
+# Base packages that must be installed in the sandbox venv (empty - venv isolation is the sandbox)
+_SANDBOX_BASE_PACKAGES = []
+
+
+def _get_persistent_venv_dir() -> Path:
+    """Get the persistent venv directory path."""
+    # Store venv in user's home directory under .craftbot
+    return Path.home() / ".craftbot" / "sandbox_venv"
+
+
+def _ensure_persistent_venv() -> Path:
+    """
+    Ensure the persistent venv exists and return the path to its Python binary.
+    Creates the venv lazily on first use. Subsequent calls reuse the existing venv.
+    Ensures base packages (like RestrictedPython) are installed.
+    """
+    global _PERSISTENT_VENV_DIR
+
+    venv_dir = _get_persistent_venv_dir()
+    python_bin = (
+        venv_dir / "Scripts" / "python.exe"
+        if os.name == "nt"
+        else venv_dir / "bin" / "python"
+    )
+
+    venv_existed = venv_dir.exists() and python_bin.exists()
+
+    if not venv_existed:
+        # Create parent directory if needed
+        venv_dir.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create the venv (only happens once)
+        logger.info(f"[VENV] Creating persistent sandbox venv at {venv_dir}")
+        venv.EnvBuilder(with_pip=True).create(venv_dir)
+        logger.info(f"[VENV] Persistent sandbox venv created successfully")
+
+    _PERSISTENT_VENV_DIR = venv_dir
+
+    # Ensure base packages are installed (check even for existing venvs)
+    # Use a marker file to avoid checking pip on every call
+    marker_file = venv_dir / ".base_packages_installed"
+    if not marker_file.exists() and _SANDBOX_BASE_PACKAGES:
+        logger.info(f"[VENV] Installing base packages: {_SANDBOX_BASE_PACKAGES}")
+        try:
+            result = subprocess.run(
+                [str(python_bin), "-m", "pip", "install", "--quiet"] + _SANDBOX_BASE_PACKAGES,
+                capture_output=True,
+                timeout=120
+            )
+            if result.returncode == 0:
+                # Create marker file to skip this check on future calls
+                marker_file.write_text("installed")
+                logger.info(f"[VENV] Base packages installed successfully")
+            else:
+                logger.warning(f"[VENV] pip install returned non-zero: {result.stderr}")
+        except Exception as e:
+            logger.warning(f"[VENV] Failed to install base packages: {e}")
+
+    return python_bin
+
 # Optional GUI handler hook - set by agent at startup if GUI mode is needed
 _gui_execute_hook: Optional[Callable[[str, str, Dict, str], Dict]] = None
 
@@ -248,8 +312,11 @@ def _atomic_action_venv_process(
     requirements: Optional[List[str]] = None,
 ) -> dict:
     """
-    Executes an action inside an ephemeral virtual environment.
+    Executes an action inside a persistent virtual environment.
     Runs in a SEPARATE PROCESS via ProcessPoolExecutor.
+
+    The venv is created once and reused across all calls. Packages installed
+    via pip persist in the venv, eliminating redundant installations.
 
     stdout/stderr are suppressed at the OS level so that venv creation
     and other subprocess calls do not corrupt the parent's TUI.
@@ -261,9 +328,43 @@ def _atomic_action_venv_process(
     # Suppress worker stdout/stderr to prevent TUI corruption
     saved_stdout, saved_stderr = _suppress_worker_stdio()
 
-    # Sandboxed mode - NOT in a Docker container
     try:
-        with tempfile.TemporaryDirectory(prefix="action_venv_") as tmpdir:
+        # Get or create persistent venv (reused across calls)
+        python_bin = _ensure_persistent_venv()
+
+        # Install requirements only if not already installed
+        if requirements:
+            for pkg in requirements:
+                pkg = pkg.strip()
+                if not pkg:
+                    continue
+                # Check if package is already installed before attempting install
+                check_result = subprocess.run(
+                    [str(python_bin), "-m", "pip", "show", "--quiet", pkg],
+                    capture_output=True,
+                    timeout=15
+                )
+                if check_result.returncode == 0:
+                    continue  # Already installed, skip
+
+                try:
+                    pip_result = subprocess.run(
+                        [str(python_bin), "-m", "pip", "install", "--quiet", pkg],
+                        capture_output=True,
+                        text=True,
+                        timeout=120
+                    )
+                    if pip_result.returncode != 0:
+                        stderr_lower = pip_result.stderr.lower()
+                        if "no matching distribution" not in stderr_lower and "could not find" not in stderr_lower:
+                            print(f"Warning: Could not install '{pkg}': {pip_result.stderr.strip()[:100]}", file=sys.stderr)
+                except subprocess.TimeoutExpired:
+                    print(f"Warning: Installation timed out for '{pkg}'", file=sys.stderr)
+                except Exception as e:
+                    print(f"Warning: Error installing '{pkg}': {e}", file=sys.stderr)
+
+        # Write action script to temp file (only the script is temporary, not the venv)
+        with tempfile.TemporaryDirectory(prefix="action_script_") as tmpdir:
             tmp = Path(tmpdir)
 
             # In E2B sandbox, skip venv creation — the sandbox IS the isolation

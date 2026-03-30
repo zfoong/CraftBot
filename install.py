@@ -1177,8 +1177,6 @@ if __name__ == "__main__":
         print(" Mode: Global pip")
     if install_gui:
         print(" GUI:  Enabled (OmniParser)")
-    else:
-        print(" GUI:  Disabled")
     print("="*60 + "\n")
 
     # Pre-flight check: Disk space (especially important for Kali)

@@ -19,13 +19,14 @@ export interface ChatMessage {
   timestamp: number
   messageId: string
   attachments?: Attachment[]
+  taskSessionId?: string  // Links message to a task session for reply feature
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // Action/Task Types
 // ─────────────────────────────────────────────────────────────────────
 
-export type ActionStatus = 'running' | 'completed' | 'error' | 'pending' | 'cancelled'
+export type ActionStatus = 'running' | 'completed' | 'error' | 'pending' | 'cancelled' | 'waiting'
 export type ItemType = 'task' | 'action' | 'reasoning'
 
 export interface ActionItem {
@@ -100,6 +101,15 @@ export type WSMessageType =
   | 'onboarding_skip'
   | 'onboarding_back'
   | 'onboarding_complete'
+  // Local LLM (Ollama)
+  | 'local_llm_check'
+  | 'local_llm_test'
+  | 'local_llm_install'
+  | 'local_llm_install_progress'
+  | 'local_llm_start'
+  | 'local_llm_suggested_models'
+  | 'local_llm_pull_model'
+  | 'local_llm_pull_progress'
 
 export interface WSMessage {
   type: WSMessageType
@@ -386,6 +396,9 @@ export interface FileItem {
 export interface FileListResponse {
   directory: string
   files: FileItem[]
+  total: number
+  hasMore: boolean
+  offset: number
   success: boolean
   error?: string
 }
@@ -521,6 +534,76 @@ export interface OnboardingStep {
   total: number
   options: OnboardingStepOption[]
   default: string | string[] | null
+  provider?: string | null   // only present on the api_key step
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Local LLM (Ollama) Types
+// ─────────────────────────────────────────────────────────────────────
+
+export type LocalLLMPhase =
+  | 'idle'
+  | 'checking'
+  | 'not_installed'
+  | 'not_running'
+  | 'running'
+  | 'installing'
+  | 'starting'
+  | 'connected'
+  | 'error'
+  | 'selecting_model'
+  | 'pulling_model'
+
+export interface SuggestedModel {
+  name: string
+  label: string
+  size: string
+  recommended: boolean
+}
+
+export interface LocalLLMState {
+  phase: LocalLLMPhase
+  version?: string
+  defaultUrl: string
+  installProgress: string[]
+  pullProgress: string[]
+  pullBytes: { completed: number; total: number; percent: number } | null
+  suggestedModels: SuggestedModel[]
+  testResult?: { success: boolean; message?: string; error?: string; models?: string[] }
+  error?: string
+}
+
+export interface LocalLLMCheckResponse {
+  success: boolean
+  installed: boolean
+  running: boolean
+  version?: string
+  default_url: string
+  error?: string
+}
+
+export interface LocalLLMTestResponse {
+  success: boolean
+  message?: string
+  models?: string[]
+  error?: string
+}
+
+export interface LocalLLMInstallResponse {
+  success: boolean
+  message?: string
+  error?: string
+}
+
+export interface LocalLLMProgressResponse {
+  message: string
+}
+
+export interface LocalLLMPullProgressResponse {
+  message: string
+  total: number
+  completed: number
+  percent: number
 }
 
 export interface OnboardingStepResponse {

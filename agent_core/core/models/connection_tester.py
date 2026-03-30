@@ -51,6 +51,9 @@ def test_provider_connection(
         elif provider == "remote":
             url = base_url or cfg.default_base_url
             return _test_remote(url, timeout)
+        elif provider in ("minimax", "deepseek", "moonshot"):
+            url = cfg.default_base_url
+            return _test_openai_compat(provider, api_key, url, timeout)
         else:
             return {
                 "success": False,
@@ -348,3 +351,37 @@ def _test_remote(base_url: Optional[str], timeout: float) -> Dict[str, Any]:
             "provider": "remote",
             "error": f"Could not connect to {url}: {str(e)}",
         }
+
+
+def _test_openai_compat(
+    provider: str, api_key: Optional[str], base_url: str, timeout: float
+) -> Dict[str, Any]:
+    """Test an OpenAI-compatible API (MiniMax, DeepSeek, Moonshot)."""
+    names = {"minimax": "MiniMax", "deepseek": "DeepSeek", "moonshot": "Moonshot"}
+    display = names.get(provider, provider)
+
+    if not api_key:
+        return {
+            "success": False,
+            "message": f"API key is required for {display}",
+            "provider": provider,
+            "error": "Missing API key",
+        }
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(
+                f"{base_url.rstrip('/')}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+
+        if response.status_code == 200:
+            return {"success": True, "message": f"Successfully connected to {display} API", "provider": provider}
+        elif response.status_code == 401:
+            return {"success": False, "message": "Invalid API key", "provider": provider, "error": "Authentication failed - check your API key"}
+        else:
+            return {"success": False, "message": f"API returned status {response.status_code}", "provider": provider, "error": response.text[:200] if response.text else "Unknown error"}
+    except httpx.TimeoutException:
+        return {"success": False, "message": "Connection timed out", "provider": provider, "error": "Request timed out - check your network connection"}
+    except httpx.RequestError as e:
+        return {"success": False, "message": "Network error", "provider": provider, "error": str(e)}

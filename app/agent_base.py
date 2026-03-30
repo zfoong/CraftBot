@@ -98,7 +98,7 @@ class TriggerData:
     parent_id: str | None
     session_id: str | None = None
     user_message: str | None = None  # Original user message without routing prefix
-    platform: str | None = None  # Source platform (e.g., "CraftBot TUI", "Telegram", "Whatsapp")
+    platform: str | None = None  # Source platform (e.g., "CraftBot Interface", "Telegram", "Whatsapp")
     is_self_message: bool = False  # True when the user sent themselves a message
     contact_id: str | None = None  # Sender/chat ID from external platform
     channel_id: str | None = None  # Channel/group ID from external platform
@@ -150,7 +150,6 @@ class AgentBase:
             provider=llm_provider,
             api_key=llm_api_key,
             base_url=llm_base_url,
-            db_interface=self.db_interface,
             deferred=deferred_init,
         )
         self.vlm = VLMInterface(
@@ -245,7 +244,7 @@ class AgentBase:
             context_engine=self.context_engine,
         )
 
-        # Initialize footage callback (will be set by TUI interface later)
+        # Initialize footage callback (will be set by CraftBot interface later)
         self._tui_footage_callback = None
 
         # Only initialize GUIModule if GUI mode is globally enabled
@@ -270,6 +269,7 @@ class AgentBase:
         # ── misc ──
         self.is_running: bool = True
         self._interface_mode: str = "tui"  # Will be updated in run() based on selected interface
+        self.ui_controller = None  # Set by interface after UIController is created
         self._extra_system_prompt: str = self._load_extra_system_prompt()
 
         # Scheduler for periodic tasks (memory processing, proactive checks, etc.)
@@ -381,6 +381,20 @@ class AgentBase:
                 logger.info(f"[REACT] Recording routed user message: {user_message[:50]}...")
                 # Use platform from trigger_data (already formatted by _extract_trigger_data)
                 self.state_manager.record_user_message(user_message, platform=trigger_data.platform)
+
+            # Check if task is waiting for user reply but no message was received
+            # In this case, re-schedule the wait trigger instead of executing actions
+            if session_id and self.task_manager and not user_message:
+                task = self.task_manager.tasks.get(session_id)
+                if task and task.waiting_for_user_reply:
+                    logger.info(f"[REACT] Task {session_id} is waiting for user reply but no message received. Re-scheduling wait trigger.")
+                    # Re-schedule the wait trigger with another 3-hour delay
+                    await self._create_new_trigger(
+                        session_id,
+                        {"fire_at_delay": 10800, "wait_for_user_reply": True},  # 3 hours
+                        STATE
+                    )
+                    return
 
             # Debug: Log state after session initialization
             logger.debug(
@@ -564,10 +578,10 @@ class AgentBase:
     def _extract_trigger_data(self, trigger: Trigger) -> TriggerData:
         """Extract and structure data from trigger."""
         # Extract platform from payload (already formatted by _handle_chat_message)
-        # Default to "CraftBot TUI" for local messages without platform info
+        # Default to "CraftBot Interface" for local messages without platform info
         payload = trigger.payload or {}
         raw_platform = payload.get("platform", "")
-        platform = raw_platform if raw_platform else "CraftBot TUI"
+        platform = raw_platform if raw_platform else "CraftBot Interface"
 
         return TriggerData(
             query=trigger.next_action_description,
@@ -582,21 +596,20 @@ class AgentBase:
         )
 
     def _extract_user_message_from_trigger(self, trigger: Trigger) -> Optional[str]:
-        """Extract user message that was appended by triggers.fire().
+        """Extract and consume user message that was stored by triggers.fire().
 
         When a message is routed to an existing session, the fire() method
-        appends it as '[NEW USER MESSAGE]: {message}' to next_action_description.
-        This message needs to be recorded to the event stream so the LLM can see it.
+        stores it in the trigger's payload. This message needs to be recorded
+        to the event stream so the LLM can see it.
+
+        Uses pop() to consume the message, preventing it from being carried
+        forward to subsequent triggers via create_new_trigger().
 
         Returns:
             The user message if found, None otherwise.
         """
-        marker = "[NEW USER MESSAGE]:"
-        desc = trigger.next_action_description
-        if marker in desc:
-            idx = desc.index(marker) + len(marker)
-            return desc[idx:].strip()
-        return None
+        payload = trigger.payload or {}
+        return payload.pop("pending_user_message", None)
 
     async def _initialize_session(self, gui_mode: bool | None, session_id: str) -> None:
         """Initialize the agent session and set current task ID.
@@ -684,31 +697,48 @@ class AgentBase:
         return False
 
     async def _handle_proactive_heartbeat(self, frequency: str) -> bool:
-        """Create heartbeat processing task for the given frequency."""
+        """Create a unified heartbeat task that checks all due tasks.
+
+        A single heartbeat runs hourly and collects due tasks across all
+        frequencies (hourly, daily, weekly, monthly) so only one schedule
+        entry is needed in scheduler_config.json.
+
+        Args:
+            frequency: Ignored (kept for backward-compat with old configs
+                       that still pass a single frequency).
+        """
         import time
 
-        # Check if there are any tasks for this frequency
-        tasks = self.proactive_manager.get_tasks(frequency=frequency, enabled_only=True)
-        if not tasks:
-            logger.info(f"[PROACTIVE] No {frequency} tasks enabled, skipping heartbeat")
+        # Collect due tasks across ALL frequencies
+        all_due_tasks = self.proactive_manager.get_all_due_tasks()
+        if not all_due_tasks:
+            logger.info("[PROACTIVE] No due tasks across any frequency, skipping heartbeat")
             return False
 
-        # Create task using heartbeat-processor skill
+        # Build a concise summary for the task instruction
+        freq_counts = {}
+        for t in all_due_tasks:
+            freq_counts[t.frequency] = freq_counts.get(t.frequency, 0) + 1
+        summary = ", ".join(f"{cnt} {freq}" for freq, cnt in freq_counts.items())
+
         task_id = self.task_manager.create_task(
-            task_name=f"{frequency.title()} Heartbeat",
-            task_instruction=f"Execute {frequency} proactive tasks from PROACTIVE.md. "
-                           f"There are {len(tasks)} task(s) to process.",
+            task_name="Heartbeat",
+            task_instruction=(
+                f"Execute all due proactive tasks from PROACTIVE.md. "
+                f"Due tasks: {summary} ({len(all_due_tasks)} total). "
+                f"Use recurring_read with frequency='all' and enabled_only=true, "
+                f"then filter by each task's time/day fields."
+            ),
             mode="simple",
-            action_sets=["file_operations", "proactive"],
+            action_sets=["file_operations", "proactive", "web_research"],
             selected_skills=["heartbeat-processor"],
         )
-        logger.info(f"[PROACTIVE] Created heartbeat task: {task_id} for {frequency}")
+        logger.info(f"[PROACTIVE] Created unified heartbeat task: {task_id} ({summary})")
 
-        # Queue trigger to start the task
         trigger = Trigger(
             fire_at=time.time(),
             priority=50,
-            next_action_description=f"Execute {frequency} proactive tasks",
+            next_action_description=f"Execute due proactive tasks ({summary})",
             session_id=task_id,
             payload={},
         )
@@ -1108,6 +1138,11 @@ class AgentBase:
             (output.get("fire_at_delay", 0.0) for output in outputs), default=0.0
         )
 
+        # Preserve wait_for_user_reply if any action sets it to True
+        merged["wait_for_user_reply"] = any(
+            output.get("wait_for_user_reply", False) for output in outputs
+        )
+
         # Check for errors
         errors = [o for o in outputs if o.get("status") == "error"]
         if errors:
@@ -1123,6 +1158,16 @@ class AgentBase:
         self.state_manager.bump_event_stream()
         if not await self._check_agent_limits():
             return
+
+        # Update task's waiting_for_user_reply flag based on action output
+        wait_for_reply = action_output.get("wait_for_user_reply", False)
+        task_id = new_session_id or session_id
+        if task_id and self.task_manager:
+            task = self.task_manager.tasks.get(task_id)
+            if task:
+                task.waiting_for_user_reply = wait_for_reply
+                if wait_for_reply:
+                    logger.info(f"[TASK] Task {task_id} is now waiting for user reply")
 
         # Check if parallel actions created multiple tasks
         parallel_results = action_output.get("parallel_results")
@@ -1307,19 +1352,23 @@ class AgentBase:
 
             fire_at = time.time() + fire_at_delay
 
+            # Check if this trigger should be marked as waiting for user reply
+            wait_for_user_reply = action_output.get("wait_for_user_reply", False)
+
             logger.debug(f"[TRIGGER] Creating new trigger for session: {new_session_id}")
 
             # Check if there's a pending user message from fire() that needs to be carried forward
             pending_message, pending_platform = self.triggers.pop_pending_user_message(new_session_id)
-            if pending_message:
-                next_action_desc = f"Perform the next best action for the task based on the todos and event stream\n\n[NEW USER MESSAGE]: {pending_message}"
-            else:
-                next_action_desc = "Perform the next best action for the task based on the todos and event stream"
 
-            # Build payload with platform if available
+            # Keep description clean - pending messages go in payload
+            next_action_desc = "Perform the next best action for the task based on the todos and event stream"
+
+            # Build payload - carry forward pending message if present
             trigger_payload = {"gui_mode": STATE.gui_mode}
+            if pending_message:
+                trigger_payload["pending_user_message"] = pending_message
             if pending_platform:
-                trigger_payload["platform"] = pending_platform
+                trigger_payload["pending_platform"] = pending_platform
 
             # Build and enqueue trigger safely
             try:
@@ -1330,6 +1379,7 @@ class AgentBase:
                         next_action_description=next_action_desc,
                         session_id=new_session_id,
                         payload=trigger_payload,
+                        waiting_for_reply=wait_for_user_reply,
                     ),
                     skip_merge=True,  # Session is already explicitly set, no LLM merge check needed
                 )
@@ -1433,6 +1483,39 @@ class AgentBase:
 
         return "\n\n".join(sections)
 
+    async def _generate_unique_session_id(self) -> str:
+        """Generate a unique 6-character session ID.
+
+        Creates a short session ID using the first 6 hex characters of a UUID4.
+        Checks for duplicates against running tasks and queued/active triggers.
+
+        Returns:
+            A unique 6-character hex string session ID.
+        """
+        max_attempts = 100  # Prevent infinite loop in edge cases
+        for _ in range(max_attempts):
+            candidate = uuid.uuid4().hex[:6]
+
+            # Check against running tasks
+            existing_task_ids = set(self.task_manager.tasks.keys())
+
+            # Check against queued triggers
+            queued_triggers = await self.triggers.list_triggers()
+            queued_session_ids = {t.session_id for t in queued_triggers if t.session_id}
+
+            # Check against active triggers (being processed)
+            active_session_ids = set(self.triggers._active.keys())
+
+            # Combine all existing IDs
+            all_existing_ids = existing_task_ids | queued_session_ids | active_session_ids
+
+            if candidate not in all_existing_ids:
+                return candidate
+
+        # Fallback to full UUID if somehow all short IDs are taken (extremely unlikely)
+        logger.warning("Could not generate unique 6-char session ID after 100 attempts, using full UUID")
+        return uuid.uuid4().hex
+
     async def _route_to_session(
         self,
         item_type: str,
@@ -1491,13 +1574,73 @@ class AgentBase:
 
             # Determine platform - use payload's platform if available, otherwise default
             # External messages (WhatsApp, Telegram, etc.) have platform set by _handle_external_event
-            # TUI/CLI messages don't have platform in payload, so use "CraftBot TUI"
+            # Interface/CLI messages don't have platform in payload, so use "CraftBot Interface"
             if payload.get("platform"):
                 # External message - capitalize for display (e.g., "whatsapp" -> "Whatsapp")
                 platform = payload["platform"].capitalize()
             else:
-                # Local TUI/CLI message
-                platform = "CraftBot TUI"
+                # Local Interface/CLI message
+                platform = "CraftBot Interface"
+
+            # Direct reply bypass - skip routing LLM when target_session_id is provided
+            target_session_id = payload.get("target_session_id")
+            if target_session_id:
+                logger.info(f"[CHAT] Direct reply to session {target_session_id}")
+
+                # Fire the target trigger directly, bypassing routing LLM
+                fired = await self.triggers.fire(
+                    target_session_id, message=chat_content, platform=platform
+                )
+
+                if fired:
+                    logger.info(f"[CHAT] Successfully resumed session {target_session_id}")
+
+                    # Reset task's waiting_for_user_reply flag
+                    if self.task_manager:
+                        task = self.task_manager.tasks.get(target_session_id)
+                        if task and task.waiting_for_user_reply:
+                            task.waiting_for_user_reply = False
+                            logger.info(f"[TASK] Task {target_session_id} no longer waiting for user reply")
+
+                    # Reset task status from "waiting" to "running" when user replies
+                    if self.ui_controller:
+                        from app.ui_layer.events import UIEvent, UIEventType
+
+                        self.ui_controller.event_bus.emit(
+                            UIEvent(
+                                type=UIEventType.TASK_UPDATE,
+                                data={
+                                    "task_id": target_session_id,
+                                    "status": "running",
+                                },
+                            )
+                        )
+
+                        # Check if there are still other tasks waiting
+                        triggers = await self.triggers.list_triggers()
+                        has_waiting_tasks = any(
+                            getattr(t, 'waiting_for_reply', False)
+                            for t in triggers
+                            if t.session_id != target_session_id
+                        )
+                        if not has_waiting_tasks:
+                            self.ui_controller.event_bus.emit(
+                                UIEvent(
+                                    type=UIEventType.AGENT_STATE_CHANGED,
+                                    data={
+                                        "state": "working",
+                                        "status_message": "Agent is working...",
+                                    },
+                                )
+                            )
+
+                    return  # Task will resume with user message in event stream
+
+                # If fire() returns False, no waiting trigger found for this session
+                # Fall through to normal routing (conversation mode)
+                logger.warning(
+                    f"[CHAT] Session {target_session_id} not found or expired, falling through to normal routing"
+                )
 
             # Check active tasks — route message to matching session if possible
             # Use active_task_ids from state_manager (not just triggers in queue) to ensure
@@ -1530,6 +1673,56 @@ class AgentBase:
                             f"[CHAT] Routed message to existing session {matched_session_id} "
                             f"(fired={fired}, reason: {routing_result.get('reason', 'N/A')})"
                         )
+
+                        # Reset task's waiting_for_user_reply flag
+                        if self.task_manager:
+                            task = self.task_manager.tasks.get(matched_session_id)
+                            if task and task.waiting_for_user_reply:
+                                task.waiting_for_user_reply = False
+                                logger.info(f"[TASK] Task {matched_session_id} no longer waiting for user reply")
+
+                        # Reset task status from "waiting" to "running" when user replies
+                        # Update UI regardless of fire() result - user has replied so we should
+                        # acknowledge it. If fire() failed, the task may be stale but we still
+                        # want to reset the waiting indicator.
+                        if self.ui_controller:
+                            from app.ui_layer.events import UIEvent, UIEventType
+
+                            self.ui_controller.event_bus.emit(
+                                UIEvent(
+                                    type=UIEventType.TASK_UPDATE,
+                                    data={
+                                        "task_id": matched_session_id,
+                                        "status": "running",
+                                    },
+                                )
+                            )
+
+                            # Check if there are still other tasks waiting
+                            # If not, update global agent state back to working
+                            triggers = await self.triggers.list_triggers()
+                            has_waiting_tasks = any(
+                                getattr(t, 'waiting_for_reply', False)
+                                for t in triggers
+                                if t.session_id != matched_session_id
+                            )
+                            if not has_waiting_tasks:
+                                self.ui_controller.event_bus.emit(
+                                    UIEvent(
+                                        type=UIEventType.AGENT_STATE_CHANGED,
+                                        data={
+                                            "state": "working",
+                                            "status_message": "Agent is working...",
+                                        },
+                                    )
+                                )
+
+                        if not fired:
+                            logger.warning(
+                                f"[CHAT] Trigger not found for session {matched_session_id} - "
+                                "message may not be delivered to task"
+                            )
+
                         # Always trust routing decision - don't create new session
                         return
 
@@ -1553,7 +1746,7 @@ class AgentBase:
             # the correct platform-specific send action for replies.
             # Must be directive (not just informational) for weaker LLMs.
             platform_hint = ""
-            if platform and platform.lower() != "craftbot tui":
+            if platform and platform.lower() != "craftbot interface":
                 platform_hint = f" from {platform} (reply on {platform}, NOT send_message)"
 
             await self.triggers.put(
@@ -1564,7 +1757,7 @@ class AgentBase:
                         "Please perform action that best suit this user chat "
                         f"you just received{platform_hint}: {chat_content}"
                     ),
-                    session_id=str(uuid.uuid4()),  # Generate unique session ID
+                    session_id=await self._generate_unique_session_id(),
                     payload=trigger_payload,
                 ),
                 skip_merge=True,
@@ -2243,6 +2436,13 @@ class AgentBase:
             trigger_queue=self.triggers,
         )
         await self.scheduler.start()
+
+        # Register scheduler_config for hot-reload (after scheduler is initialized)
+        config_watcher.register(
+            scheduler_config_path,
+            self.scheduler.reload,
+            name="scheduler_config.json"
+        )
 
         # Trigger soft onboarding if needed (BEFORE starting interface)
         # This ensures agent handles onboarding logic, not the interfaces

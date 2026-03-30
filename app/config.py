@@ -187,6 +187,50 @@ def reload_settings() -> Dict[str, Any]:
     return get_settings(reload=True)
 
 
+def save_settings(settings: Dict[str, Any]) -> None:
+    """Save settings to settings.json.
+
+    Args:
+        settings: Dictionary with settings to save.
+    """
+    global _settings_cache
+    _settings_cache = settings
+    SETTINGS_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
+
+
+def get_os_language() -> str:
+    """Get OS language from settings.
+
+    Returns:
+        Language code (e.g., "en", "ja", "zh") or "en" if not set.
+    """
+    settings = get_settings()
+    return settings.get("general", {}).get("os_language", "en")
+
+
+def detect_and_save_os_language() -> str:
+    """Detect OS language and save to settings. Called on first launch only.
+
+    Returns:
+        Detected language code (e.g., "en", "ja", "zh").
+    """
+    import locale
+
+    try:
+        system_locale = locale.getdefaultlocale()[0] or "en_US"
+        lang_code = system_locale.split("_")[0]  # e.g., "en", "ja", "zh"
+    except Exception:
+        lang_code = "en"
+
+    # Save to settings.json
+    settings = get_settings()
+    settings.setdefault("general", {})["os_language"] = lang_code
+    save_settings(settings)
+    return lang_code
+
+
 MAX_ACTIONS_PER_TASK: int = 500
 MAX_TOKEN_PER_TASK: int = 12000000 # of tokens
 

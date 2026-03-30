@@ -1,5 +1,5 @@
 import React from 'react'
-import { CheckCircle, XCircle, Loader, Clock } from 'lucide-react'
+import { CheckCircle, XCircle, Loader, Clock, MessageCircle } from 'lucide-react'
 import styles from './StatusIndicator.module.css'
 import type { ActionStatus, AgentState } from '../../types'
 
@@ -55,8 +55,9 @@ export function StatusIndicator({
       case 'thinking':
       case 'working':
         return <Loader size={iconSize} className={styles.spinning} />
-      case 'pending':
       case 'waiting':
+        return <MessageCircle size={iconSize} />
+      case 'pending':
       case 'idle':
       default:
         return <Clock size={iconSize} />

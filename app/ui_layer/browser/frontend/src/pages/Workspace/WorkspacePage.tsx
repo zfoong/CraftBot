@@ -25,6 +25,7 @@ import {
   Loader2,
   ArrowLeft,
   Info,
+  Search,
 } from 'lucide-react'
 import { IconButton, Button, Badge } from '../../components/ui'
 import { useWorkspace } from '../../contexts/WorkspaceContext'
@@ -110,6 +111,12 @@ export function WorkspacePage() {
     uploadFile,
     downloadFile,
     listDirectory,
+    loadMore,
+    setSearch,
+    total,
+    hasMore,
+    loadingMore,
+    search,
   } = useWorkspace()
 
   // Selection state
@@ -132,6 +139,16 @@ export function WorkspacePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const createInputRef = useRef<HTMLInputElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
+  const searchDebounceRef = useRef<number | null>(null)
+
+  // Search handler with debounce
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = window.setTimeout(() => {
+      setSearch(query)
+    }, 300)
+  }, [setSearch])
 
   // ─────────────────────────────────────────────────────────────────────
   // Effects
@@ -974,6 +991,22 @@ export function WorkspacePage() {
       <div className={styles.content}>
         {/* File List */}
         <div className={`${styles.fileList} ${mobileShowPreview ? styles.mobileHidden : ''}`}>
+          {/* Search bar */}
+          <div className={styles.fileSearchBar}>
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder="Search files..."
+              defaultValue={search}
+              onChange={handleSearchChange}
+              className={styles.fileSearchInput}
+            />
+            {total > 0 && (
+              <span className={styles.fileCount}>
+                {files.length} of {total}
+              </span>
+            )}
+          </div>
           <div className={styles.fileListHeader}>
             <span className={styles.colCheckbox}>
               <input
@@ -1031,7 +1064,22 @@ export function WorkspacePage() {
                 </div>
               </div>
             ) : (
-              files.map((file, index) => renderFileItem(file, index))
+              <>
+                {files.map((file, index) => renderFileItem(file, index))}
+                {hasMore && (
+                  <div className={styles.loadMoreContainer}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={loadMore}
+                      disabled={loadingMore}
+                      icon={loadingMore ? <Loader2 size={14} className={styles.spinner} /> : undefined}
+                    >
+                      {loadingMore ? 'Loading...' : `Load more (${files.length} of ${total})`}
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

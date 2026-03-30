@@ -24,6 +24,7 @@ from agent_core.core.prompts import (
     AGENT_FILE_SYSTEM_CONTEXT_PROMPT,
     POLICY_PROMPT,
     USER_PROFILE_PROMPT,
+    LANGUAGE_INSTRUCTION,
 )
 from agent_core.core.state import get_state, get_session_or_none
 from agent_core.core.task import Task
@@ -223,6 +224,14 @@ class ContextEngine:
             logger.warning(f"[CONTEXT] Failed to read USER.md: {e}")
 
         return ""
+
+    def create_system_language_instruction(self) -> str:
+        """Create a system message block with language instruction.
+
+        Returns the language instruction that tells the agent to use
+        the user's preferred language as specified in USER.md.
+        """
+        return LANGUAGE_INSTRUCTION
 
     def create_system_base_instruction(self) -> str:
         """Create a system message of instruction."""
@@ -529,6 +538,74 @@ class ContextEngine:
         """Get current user info for user prompts (WCA-specific via hook)."""
         return self._get_user_info()
 
+    def _build_memory_query(self, query: Optional[str], session_id: Optional[str]) -> Optional[str]:
+        """Build a semantic query for memory retrieval.
+
+        Combines task instruction with recent conversation messages (both user
+        and agent) to provide better context for memory search.
+
+        Args:
+            query: Optional explicit query string.
+            session_id: Optional session ID for session-specific state lookup.
+
+        Returns:
+            A query string suitable for semantic memory search, or None if no context.
+        """
+        # Get task instruction as the base query
+        session = get_session_or_none(session_id)
+        if session and session.current_task:
+            task_instruction = session.current_task.instruction
+        else:
+            current_task = get_state().current_task
+            task_instruction = current_task.instruction if current_task else None
+
+        if not task_instruction:
+            # Fall back to explicit query if no task
+            return query if query else None
+
+        # Get recent conversation messages for additional context
+        recent_context = self._get_recent_conversation_for_memory(session_id, limit=5)
+
+        if recent_context:
+            return f"{task_instruction}\n\nRecent conversation:\n{recent_context}"
+        else:
+            return task_instruction
+
+    def _get_recent_conversation_for_memory(self, session_id: Optional[str], limit: int = 5) -> str:
+        """Get recent conversation messages for memory query context.
+
+        Args:
+            session_id: Optional session ID for session-specific event stream.
+            limit: Maximum number of messages to include.
+
+        Returns:
+            Formatted string of recent user and agent messages.
+        """
+        try:
+            event_stream_manager = self.state_manager.event_stream_manager
+            if not event_stream_manager:
+                return ""
+
+            # Get messages from conversation history (includes both user and agent)
+            recent_messages = event_stream_manager.get_recent_conversation_messages(limit)
+            if not recent_messages:
+                return ""
+
+            # Format messages simply for semantic search
+            lines = []
+            for event in recent_messages:
+                # Simplify the kind label for the query
+                if "user message" in event.kind:
+                    lines.append(f"User: {event.message}")
+                elif "agent message" in event.kind:
+                    lines.append(f"Agent: {event.message}")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.warning(f"[MEMORY] Failed to get recent conversation: {e}")
+            return ""
+
     def get_memory_context(
         self, query: Optional[str] = None, top_k: int = 5, session_id: Optional[str] = None
     ) -> str:
@@ -536,7 +613,7 @@ class ContextEngine:
 
         Args:
             query: Optional query string for memory retrieval. If not provided,
-                   uses current task instruction.
+                   uses current task instruction combined with recent conversation.
             top_k: Number of top memories to retrieve.
             session_id: Optional session ID for session-specific state lookup.
         """
@@ -547,21 +624,14 @@ class ContextEngine:
         if not _is_memory_enabled():
             return ""
 
-        if not query:
-            # Try session-specific state first
-            session = get_session_or_none(session_id)
-            if session and session.current_task:
-                current_task = session.current_task
-            else:
-                current_task = get_state().current_task
-
-            if current_task:
-                query = current_task.instruction
-            else:
-                return ""
+        # Build semantic query from task instruction + recent conversation
+        # This provides better context than using the raw trigger description
+        memory_query = self._build_memory_query(query, session_id)
+        if not memory_query:
+            return ""
 
         try:
-            pointers = self._memory_manager.retrieve(query, top_k=top_k, min_relevance=0.3)
+            pointers = self._memory_manager.retrieve(memory_query, top_k=top_k, min_relevance=0.3)
 
             if not pointers:
                 return ""
@@ -613,7 +683,8 @@ class ContextEngine:
             "role_info": True,
             "agent_info": True,
             "user_profile": True,
-            "policy": False,
+            "language_instruction": True,
+            "policy": True,
             "environment": True,
             "file_system": True,
             "base_instruction": True,
@@ -629,6 +700,7 @@ class ContextEngine:
         system_sections = [
             ("agent_info", self.create_system_agent_info),
             ("user_profile", self.create_system_user_profile),
+            ("language_instruction", self.create_system_language_instruction),
             ("policy", self.create_system_policy),
             ("role_info", self.create_system_role_info),
             ("environment", self.create_system_environmental_context),

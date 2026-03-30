@@ -309,13 +309,10 @@ class ProactiveManager:
         logger.info(f"[PROACTIVE] Updated planner output: {key}")
 
     def get_due_tasks(self, frequency: str) -> List[RecurringTask]:
-        """Get tasks that are due for execution.
-
-        This is used by the heartbeat processor to determine which tasks
-        should be executed for the current heartbeat.
+        """Get tasks that are due for execution for a specific frequency.
 
         Args:
-            frequency: The current heartbeat frequency
+            frequency: The heartbeat frequency to check
 
         Returns:
             List of tasks that should run
@@ -327,6 +324,31 @@ class ProactiveManager:
 
         logger.info(f"[PROACTIVE] Found {len(due_tasks)} due tasks for {frequency} heartbeat")
         return due_tasks
+
+    def get_all_due_tasks(self) -> List[RecurringTask]:
+        """Get all tasks that are due across every frequency.
+
+        Used by the unified heartbeat to collect hourly, daily, weekly,
+        and monthly tasks that should execute right now based on their
+        time/day fields and last_run timestamp.
+
+        Returns:
+            List of due tasks sorted by priority (lower = higher priority)
+        """
+        all_enabled = self.get_tasks(enabled_only=True)
+        due = [t for t in all_enabled if t.should_run()]
+        due.sort(key=lambda t: t.priority)
+
+        if due:
+            freq_counts = {}
+            for t in due:
+                freq_counts[t.frequency] = freq_counts.get(t.frequency, 0) + 1
+            summary = ", ".join(f"{cnt} {f}" for f, cnt in freq_counts.items())
+            logger.info(f"[PROACTIVE] Found {len(due)} due tasks across all frequencies: {summary}")
+        else:
+            logger.info("[PROACTIVE] No due tasks found across any frequency")
+
+        return due
 
 
 # Singleton instance (initialized by InternalActionInterface)

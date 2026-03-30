@@ -82,8 +82,10 @@
 .messageWrapper {
   display: flex;
   flex-direction: column;
+  width: fit-content;
   max-width: 80%;
   gap: var(--space-2);
+  padding-bottom: var(--space-3);
 }
 
 .messageWrapper.userWrapper {
@@ -97,9 +99,8 @@
 }
 
 .messageWrapper.systemWrapper {
-  margin: 0 auto;
-  align-items: center;
-  max-width: 90%;
+  margin-right: auto;
+  align-items: flex-start;
 }
 
 .messageWrapper.errorWrapper {
@@ -503,4 +504,108 @@
 
 .dismissError:hover {
   opacity: 1;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Reply UI Styles
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Agent wrapper needs padding-right for the reply button */
+.agentWrapper {
+  padding-right: var(--space-8);
+}
+
+/* Message bubble container - wraps bubble + reply button */
+.messageBubbleContainer {
+  position: relative;
+}
+
+/* Reply button outside the bubble - positioned in the padding area */
+.replyButtonOutside {
+  position: absolute;
+  top: var(--space-1);
+  left: 100%;
+  margin-left: var(--space-1);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.messageWrapper:hover .replyButtonOutside {
+  opacity: 1;
+}
+
+/* Reply bar above input - styled like pending attachments */
+.replyBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.replyText {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyCancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.replyCancel:hover {
+  color: var(--color-error);
+}
+
+/* Task reply button - shown on hover */
+.taskReplyBtn {
+  opacity: 0;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.taskItem:hover .taskReplyBtn {
+  opacity: 1;
+}
+
+.taskReplyBtn:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+/* Reply context callout - shown above user message when replying */
+.replyContextCallout {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(0, 0, 0, 0.05);
+  border-left: 3px solid rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: inherit;
+  opacity: 0.85;
+}
+
+.replyContextCallout p {
+  margin: 0;
+}
+
+.replyContextCallout ul,
+.replyContextCallout ol {
+  margin: var(--space-1) 0;
+  padding-left: var(--space-4);
 }

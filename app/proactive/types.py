@@ -6,7 +6,8 @@ This module defines dataclasses for recurring tasks, conditions, and outcomes.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 
@@ -109,21 +110,215 @@ class RecurringTask:
 
     MAX_OUTCOME_HISTORY = 5
 
-    def should_run(self, current_frequency: str) -> bool:
-        """Check if this task should run for the given frequency.
+    # Grace period: tasks must be picked up within this window after their
+    # scheduled time, otherwise the run is skipped until the next period.
+    # Set to 30 minutes to match the heartbeat interval (fires at :00 and :30).
+    GRACE_PERIOD = timedelta(minutes=30)
+
+    def should_run(self, current_frequency: str = "") -> bool:
+        """Check if this task should run.
+
+        When ``current_frequency`` is given, only tasks matching that exact
+        frequency are considered (legacy per-frequency heartbeat behaviour).
+        When empty or ``"all"``, the method checks the task's own frequency
+        against the current date/time to decide if it is due.
+
+        Tasks with a scheduled time have a 30-minute grace period. If the
+        heartbeat fires more than 30 minutes after the target time, the run
+        is skipped until the next period (no catch-up runs).
 
         Args:
-            current_frequency: The frequency being processed (hourly, daily, etc.)
+            current_frequency: The frequency being processed, or "" / "all"
+                               to check all frequencies against current time.
 
         Returns:
             True if the task should run, False otherwise.
         """
         if not self.enabled:
             return False
-        if self.frequency != current_frequency:
-            return False
-        # Conditions are checked by the heartbeat processor
-        return True
+
+        # Legacy per-frequency filter
+        if current_frequency and current_frequency != "all":
+            return self.frequency == current_frequency
+
+        # Unified heartbeat: check if this task is due right now
+        now = datetime.now()
+
+        if self.frequency == "hourly":
+            # Hourly tasks are always due on every heartbeat
+            return True
+
+        if self.frequency == "daily":
+            # Check if already ran today
+            if self.last_run and self.last_run.date() == now.date():
+                return False
+            # Daily tasks: check time field if present
+            if self.time:
+                task_hour, task_minute = (int(p) for p in self.time.split(":"))
+                target_time = now.replace(hour=task_hour, minute=task_minute, second=0, microsecond=0)
+                if now < target_time:
+                    return False  # Too early
+                if now > target_time + self.GRACE_PERIOD:
+                    return False  # Missed the window, skip until tomorrow
+            return True
+
+        if self.frequency == "weekly":
+            # Check if already ran this week
+            if self.last_run and self.last_run.isocalendar()[1] == now.isocalendar()[1] and self.last_run.year == now.year:
+                return False
+            # Weekly tasks: check day field
+            if self.day:
+                today_name = now.strftime("%A").lower()
+                if today_name != self.day.lower():
+                    return False
+            # Check time if present
+            if self.time:
+                task_hour, task_minute = (int(p) for p in self.time.split(":"))
+                target_time = now.replace(hour=task_hour, minute=task_minute, second=0, microsecond=0)
+                if now < target_time:
+                    return False
+                if now > target_time + self.GRACE_PERIOD:
+                    return False  # Missed the window, skip until next week
+            return True
+
+        if self.frequency == "monthly":
+            # Check if already ran this month
+            if self.last_run and self.last_run.month == now.month and self.last_run.year == now.year:
+                return False
+            # Monthly tasks: check day field (day of month)
+            if self.day:
+                try:
+                    target_day = int(self.day)
+                    if now.day != target_day:
+                        return False
+                except ValueError:
+                    pass  # Non-numeric day, skip check
+            # Check time if present
+            if self.time:
+                task_hour, task_minute = (int(p) for p in self.time.split(":"))
+                target_time = now.replace(hour=task_hour, minute=task_minute, second=0, microsecond=0)
+                if now < target_time:
+                    return False
+                if now > target_time + self.GRACE_PERIOD:
+                    return False  # Missed the window, skip until next month
+            return True
+
+        return False
+
+    @staticmethod
+    def _next_heartbeat(dt: datetime) -> datetime:
+        """Snap a datetime to the next clock-aligned heartbeat slot (:00 or :30).
+
+        Heartbeats fire at fixed 30-minute intervals aligned to the clock.
+        """
+        if dt.minute < 30:
+            return dt.replace(minute=30, second=0, microsecond=0)
+        return (dt + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+
+    def calculate_next_run(self) -> Optional[datetime]:
+        """Calculate the next execution time for this task.
+
+        Returns the next datetime when this task will actually execute,
+        snapped to the next heartbeat slot (every 30 min at :00 and :30).
+        Returns None for disabled tasks.
+        """
+        if not self.enabled:
+            return None
+
+        now = datetime.now()
+        task_hour, task_minute = 0, 0
+        if self.time:
+            parts = self.time.split(":")
+            task_hour, task_minute = int(parts[0]), int(parts[1])
+
+        if self.frequency == "hourly":
+            # Hourly tasks run on every heartbeat (every 30 min)
+            return self._next_heartbeat(now)
+
+        if self.frequency == "daily":
+            today_at_time = now.replace(hour=task_hour, minute=task_minute, second=0, microsecond=0)
+            if self.last_run and self.last_run.date() == now.date():
+                # Already ran today — next is tomorrow
+                return self._next_heartbeat(today_at_time + timedelta(days=1) - timedelta(seconds=1))
+            if now < today_at_time:
+                # Time hasn't passed yet — snap target time to heartbeat
+                return self._next_heartbeat(today_at_time - timedelta(seconds=1))
+            if self.time and now <= today_at_time + self.GRACE_PERIOD:
+                # Within grace period — next heartbeat will pick it up
+                return self._next_heartbeat(now)
+            # Missed the window — skip to tomorrow
+            return self._next_heartbeat(today_at_time + timedelta(days=1) - timedelta(seconds=1))
+
+        if self.frequency == "weekly":
+            day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+            target_day_name = (self.day or "monday").lower()
+            target_weekday = day_names.index(target_day_name) if target_day_name in day_names else 0
+
+            days_ahead = target_weekday - now.weekday()
+            if days_ahead < 0:
+                days_ahead += 7
+
+            next_date = now + timedelta(days=days_ahead)
+            next_time = next_date.replace(hour=task_hour, minute=task_minute, second=0, microsecond=0)
+
+            if self.last_run and self.last_run.isocalendar()[1] == now.isocalendar()[1] and self.last_run.year == now.year:
+                # Already ran this week — next week
+                next_time = (now + timedelta(days=(7 - now.weekday() + target_weekday))).replace(
+                    hour=task_hour, minute=task_minute, second=0, microsecond=0
+                )
+                if next_time <= now:
+                    next_time += timedelta(weeks=1)
+                return self._next_heartbeat(next_time - timedelta(seconds=1))
+
+            if next_time <= now:
+                # Target time has passed this week
+                if self.time and now <= next_time + self.GRACE_PERIOD:
+                    # Within grace period
+                    return self._next_heartbeat(now)
+                # Missed the window — skip to next week
+                next_time += timedelta(weeks=1)
+
+            return self._next_heartbeat(next_time - timedelta(seconds=1))
+
+        if self.frequency == "monthly":
+            try:
+                target_day = int(self.day) if self.day else 1
+            except ValueError:
+                target_day = 1
+
+            max_day = calendar.monthrange(now.year, now.month)[1]
+            clamped_day = min(target_day, max_day)
+            this_month_time = now.replace(day=clamped_day, hour=task_hour, minute=task_minute, second=0, microsecond=0)
+
+            if self.last_run and self.last_run.month == now.month and self.last_run.year == now.year:
+                # Already ran this month — go to next month
+                if now.month == 12:
+                    ny, nm = now.year + 1, 1
+                else:
+                    ny, nm = now.year, now.month + 1
+                clamped = min(target_day, calendar.monthrange(ny, nm)[1])
+                target = now.replace(year=ny, month=nm, day=clamped,
+                                     hour=task_hour, minute=task_minute, second=0, microsecond=0)
+                return self._next_heartbeat(target - timedelta(seconds=1))
+
+            if now < this_month_time:
+                return self._next_heartbeat(this_month_time - timedelta(seconds=1))
+
+            if self.time and now <= this_month_time + self.GRACE_PERIOD:
+                # Within grace period
+                return self._next_heartbeat(now)
+
+            # Missed the window — skip to next month
+            if now.month == 12:
+                ny, nm = now.year + 1, 1
+            else:
+                ny, nm = now.year, now.month + 1
+            clamped = min(target_day, calendar.monthrange(ny, nm)[1])
+            target = now.replace(year=ny, month=nm, day=clamped,
+                                 hour=task_hour, minute=task_minute, second=0, microsecond=0)
+            return self._next_heartbeat(target - timedelta(seconds=1))
+
+        return None
 
     def add_outcome(
         self,
@@ -150,6 +345,7 @@ class RecurringTask:
         # Update run metadata
         self.last_run = outcome.timestamp
         self.run_count += 1
+        self.next_run = self.calculate_next_run()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for YAML serialization."""

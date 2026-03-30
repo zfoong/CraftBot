@@ -29,6 +29,26 @@ except ImportError:
 
 # User-friendly messages
 MSG_AUTH = "Unable to connect to AI service. Please check your API key in Settings."
+MSG_CONSECUTIVE_FAILURE = (
+    "LLM calls have failed {count} consecutive times. "
+    "Task aborted to prevent infinite retries. Please check your LLM configuration."
+)
+
+
+class LLMConsecutiveFailureError(Exception):
+    """Raised when LLM calls fail too many times consecutively.
+
+    This exception signals that the task should be aborted to prevent
+    infinite retry loops that flood logs and waste resources.
+    """
+
+    def __init__(self, failure_count: int, last_error: Optional[Exception] = None):
+        self.failure_count = failure_count
+        self.last_error = last_error
+        message = MSG_CONSECUTIVE_FAILURE.format(count=failure_count)
+        if last_error:
+            message += f" Last error: {last_error}"
+        super().__init__(message)
 MSG_MODEL = "The selected AI model is not available. Please check your model settings."
 MSG_CONFIG = "AI service configuration error. The selected model may not support required features."
 MSG_RATE_LIMIT = "AI service is rate-limited. Please wait a moment and try again."

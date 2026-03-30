@@ -179,6 +179,8 @@ class StateManager:
         STATE.agent_properties: AgentProperties = AgentProperties(
             current_task_id="", action_count=0
         )
+        # Reset main state to clear active_task_ids and task_summaries
+        self._main_state = MainState()
         if self.event_stream_manager:
             self.event_stream_manager.clear_all()
         self.clean_state()

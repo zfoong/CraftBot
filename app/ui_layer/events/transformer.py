@@ -31,6 +31,7 @@ class EventTransformer:
     SYSTEM_KINDS = {"system", "system message"}
     INFO_KINDS = {"info", "note"}
     REASONING_KINDS = {"agent reasoning", "reasoning"}
+    WAITING_FOR_USER_KINDS = {"waiting_for_user"}
 
     # Actions that should be hidden from the UI (for action_start/action_end events)
     HIDDEN_ACTIONS = {
@@ -104,6 +105,10 @@ class EventTransformer:
             return cls._create_action_end_event(
                 message, event.message, timestamp, task_id
             )
+
+        # Handle waiting_for_user events
+        if kind in cls.WAITING_FOR_USER_KINDS or "waiting_for_user" in kind:
+            return cls._create_waiting_for_user_event(message, timestamp, task_id)
 
         if kind in cls.USER_MESSAGE_KINDS:
             # Skip - user messages are emitted directly by UIController.submit_message()
@@ -439,6 +444,24 @@ class EventTransformer:
                 "reasoning_id": reasoning_id,
                 "content": message,
                 "task_id": task_id,
+            },
+            timestamp=timestamp,
+            task_id=task_id,
+        )
+
+    @classmethod
+    def _create_waiting_for_user_event(
+        cls,
+        message: str,
+        timestamp: datetime,
+        task_id: Optional[str],
+    ) -> UIEvent:
+        """Create a waiting_for_user event."""
+        return UIEvent(
+            type=UIEventType.WAITING_FOR_USER,
+            data={
+                "task_id": task_id or "",
+                "message": message,
             },
             timestamp=timestamp,
             task_id=task_id,

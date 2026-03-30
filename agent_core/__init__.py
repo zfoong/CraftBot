@@ -75,6 +75,7 @@ from agent_core.core.credentials import (
     get_credentials,
     has_embedded_credentials,
     run_oauth_flow,
+    run_oauth_flow_async,
 )
 from agent_core.core.config import (
     ConfigRegistry,
@@ -312,6 +313,7 @@ __all__ = [
     "get_credentials",
     "has_embedded_credentials",
     "run_oauth_flow",
+    "run_oauth_flow_async",
     # Config
     "ConfigRegistry",
     "get_workspace_root",

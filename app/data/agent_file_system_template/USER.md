@@ -7,6 +7,7 @@
 - **Job:** (Ask the users for info)
 
 ## Communication Preferences
+- **Language:** en
 - **Preferred Tone:** (Ask the users for info)
 - **Response Style:** (Ask the users for info)
 

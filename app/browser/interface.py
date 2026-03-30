@@ -46,6 +46,7 @@ class BrowserInterface:
             enable_action_panel=True,  # Browser has action panel
         )
         self._controller = UIController(agent, self._config)
+        agent.ui_controller = self._controller  # Back-reference for event emission
 
         # Create browser adapter
         self._adapter = BrowserAdapter(self._controller)

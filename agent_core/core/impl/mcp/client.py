@@ -249,7 +249,19 @@ class MCPClient:
                 "message": f"MCP server '{server_name}' connection lost",
             }
 
-        return await server.call_tool(tool_name, arguments)
+        result = await server.call_tool(tool_name, arguments)
+
+        # Record MCP tool call for metrics (only if not an error)
+        if result.get("status") != "error":
+            try:
+                from app.ui_layer.metrics.collector import MetricsCollector
+                collector = MetricsCollector.get_instance()
+                if collector:
+                    collector.record_mcp_tool_call(tool_name, server_name)
+            except Exception:
+                pass  # Don't fail tool execution if metrics recording fails
+
+        return result
 
     async def refresh_tools(self, server_name: Optional[str] = None) -> None:
         """

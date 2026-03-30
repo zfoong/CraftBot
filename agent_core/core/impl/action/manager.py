@@ -92,6 +92,33 @@ class ActionManager:
         self._on_action_end = on_action_end
         self._get_parent_id = get_parent_id
 
+    def _generate_unique_session_id(self) -> str:
+        """Generate a unique 6-character session ID.
+
+        Creates a short session ID using the first 6 hex characters of a UUID4.
+        Checks for duplicates against active task IDs from state_manager.
+
+        Returns:
+            A unique 6-character hex string session ID.
+        """
+        max_attempts = 100
+        for _ in range(max_attempts):
+            candidate = uuid.uuid4().hex[:6]
+
+            # Check against active task IDs from state manager
+            try:
+                main_state = self.state_manager.get_main_state()
+                existing_ids = set(main_state.active_task_ids) if main_state else set()
+            except Exception:
+                existing_ids = set()
+
+            if candidate not in existing_ids:
+                return candidate
+
+        # Fallback to full UUID hex if somehow all short IDs are taken
+        logger.warning("Could not generate unique 6-char session ID after 100 attempts, using full UUID")
+        return uuid.uuid4().hex
+
     # ------------------------------------------------------------------
     # Public helpers
     # ------------------------------------------------------------------
@@ -152,17 +179,6 @@ class ActionManager:
         # Resolve parent_id using hook if available
         if not parent_id and self._get_parent_id:
             parent_id = self._get_parent_id()
-
-        # Persist RUNNING status using fast append-only logging
-        await self.db_interface.log_action_start_async(
-            run_id=run_id,
-            session_id=session_id,
-            parent_id=parent_id,
-            name=action.name,
-            action_type=action.action_type,
-            inputs=input_data,
-            started_at=started_at,
-        )
 
         # Call on_action_start hook if provided
         if self._on_action_start:
@@ -303,14 +319,6 @@ class ActionManager:
                 state.get_agent_property("action_count", 0) + 1
             )
 
-        # Persist final status using fast append-only logging
-        await self.db_interface.log_action_end_async(
-            run_id=run_id,
-            outputs=outputs,
-            status=status,
-            ended_at=ended_at,
-        )
-
         # Call on_action_end hook if provided
         if self._on_action_end:
             try:
@@ -397,7 +405,7 @@ class ActionManager:
         for action, input_data in actions:
             if action.name == "task_start":
                 # Generate unique session_id for each task_start to prevent overwriting
-                action_session_id = str(uuid.uuid4())
+                action_session_id = self._generate_unique_session_id()
                 logger.info(f"[PARALLEL] Assigning unique session_id {action_session_id} to task_start")
             else:
                 action_session_id = session_id
@@ -429,34 +437,6 @@ class ActionManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    def _log_action_history(
-        self,
-        *,
-        run_id: str,
-        action: Action,
-        inputs: Optional[Dict],
-        outputs: Optional[Dict],
-        status: str,
-        started_at: Optional[str],
-        ended_at: Optional[str],
-        parent_id: Optional[str],
-        session_id: Optional[str],
-    ) -> None:
-        """Upsert a single history document keyed by *runId*."""
-        self.db_interface.upsert_action_history(
-            run_id,
-            session_id=session_id,
-            parent_id=parent_id,
-            name=action.name,
-            action_type=action.action_type,
-            status=status,
-            inputs=inputs,
-            outputs=outputs,
-            started_at=started_at,
-            ended_at=ended_at,
-        )
-
     def _log_event_stream(
         self,
         is_gui_task: bool,
@@ -611,19 +591,3 @@ class ActionManager:
             attempt += 1
 
         return {"success": False, "message": "Observation failed or timed out."}
-
-    # ------------------------------------------------------------------
-    # Helper
-    # ------------------------------------------------------------------
-
-    def get_action_history(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Retrieve recent action history entries.
-
-        Args:
-            limit: Maximum number of history documents to return.
-
-        Returns:
-            List[Dict[str, Any]]: Collection of run metadata.
-        """
-        return self.db_interface.get_action_history(limit)

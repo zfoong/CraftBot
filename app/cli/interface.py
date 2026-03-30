@@ -46,6 +46,7 @@ class CLIInterface:
             enable_action_panel=False,  # CLI uses inline action display
         )
         self._controller = UIController(agent, self._config)
+        agent.ui_controller = self._controller  # Back-reference for event emission
 
         # Create CLI adapter
         self._adapter = CLIAdapter(self._controller)

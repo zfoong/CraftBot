@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, KeyboardEvent, useCallback, ChangeEvent, useMemo } from 'react'
-import { Send, Paperclip, X, Loader2, File, AlertCircle } from 'lucide-react'
+import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply } from 'lucide-react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useLocation } from 'react-router-dom'
 import { useWebSocket } from '../../contexts/WebSocketContext'
-import { Button, IconButton, StatusIndicator, MarkdownContent, AttachmentDisplay } from '../../components/ui'
+import { Button, IconButton, StatusIndicator } from '../../components/ui'
+import { useDerivedAgentStatus } from '../../hooks'
+import { ChatMessageItem } from './ChatMessage'
 import styles from './ChatPage.module.css'
 
 // Pending attachment type
@@ -18,8 +22,10 @@ const MIN_PANEL_WIDTH = 200
 const MAX_PANEL_WIDTH = 800
 
 // Attachment limits
+// Backend WebSocket has 100MB limit, base64 encoding adds ~33% overhead
+// So raw file limit should be ~70MB to stay safely under the WebSocket limit
 const MAX_ATTACHMENT_COUNT = 10
-const MAX_TOTAL_SIZE_BYTES = 50 * 1024 * 1024 * 1024  // 50GB
+const MAX_TOTAL_SIZE_BYTES = 70 * 1024 * 1024  // 70MB (leaves room for base64 encoding + JSON overhead)
 
 // Format file size for display
 const formatFileSize = (bytes: number): string => {
@@ -31,13 +37,27 @@ const formatFileSize = (bytes: number): string => {
 }
 
 export function ChatPage() {
-  const { messages, actions, status, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder } = useWebSocket()
+  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen, replyTarget, setReplyTarget, clearReplyTarget, loadOlderMessages, hasMoreMessages, loadingOlderMessages } = useWebSocket()
+
+  // Derive agent status from actions and messages
+  const status = useDerivedAgentStatus({
+    actions,
+    messages,
+    connected,
+  })
   const [input, setInput] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Virtualization refs
+  const parentRef = useRef<HTMLDivElement>(null)
+  const hasScrolledRef = useRef(false)
+  const prevMessageCountRef = useRef(0)
+  const prevPathRef = useRef<string | null>(null)
+  const wasNearBottomRef = useRef(true)
+  const location = useLocation()
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
@@ -58,16 +78,100 @@ export function ChatPage() {
     if (totalSize > MAX_TOTAL_SIZE_BYTES) {
       return {
         valid: false,
-        error: `Total size (${formatFileSize(totalSize)}) exceeds 50GB limit. Please remove some files or copy large files directly to the agent workspace.`
+        error: `Total size (${formatFileSize(totalSize)}) exceeds 70MB limit. Please remove some files or copy large files directly to the agent workspace.`
       }
     }
     return { valid: true, error: null }
   }, [pendingAttachments])
 
-  // Auto-scroll to bottom when new messages arrive
+  // Setup virtualizer for efficient message rendering
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 100,
+    overscan: 5,
+  })
+
+  // Find first unread message index, returns -1 if no unread messages
+  const getFirstUnreadIndex = useCallback(() => {
+    if (!lastSeenMessageId) return -1  // No history, no unread tracking
+    const lastSeenIdx = messages.findIndex(m => m.messageId === lastSeenMessageId)
+    if (lastSeenIdx === -1) {
+      return 0  // ID not found (stale) - treat all as unread, start from beginning
+    }
+    if (lastSeenIdx === messages.length - 1) {
+      return -1  // Already at end, no unread
+    }
+    return lastSeenIdx + 1  // First unread is after last seen
+  }, [messages, lastSeenMessageId])
+
+  // Check if user is scrolled near the bottom
+  const isNearBottom = useCallback(() => {
+    const container = parentRef.current
+    if (!container) return true
+    const threshold = 100 // pixels from bottom
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+  }, [])
+
+  // Track scroll position continuously so we know where user was BEFORE new messages arrive
+  // Also detect scroll-to-top to load older messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const container = parentRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      wasNearBottomRef.current = isNearBottom()
+
+      // Load older messages when scrolled near top
+      if (container.scrollTop < 100 && hasMoreMessages && !loadingOlderMessages) {
+        loadOlderMessages()
+      }
+    }
+
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [isNearBottom, hasMoreMessages, loadingOlderMessages, loadOlderMessages])
+
+  // Scroll to unread messages when entering chat page, smooth scroll for new messages only if near bottom
+  useEffect(() => {
+    if (messages.length === 0) return
+
+    const isNavigatingToChat = prevPathRef.current !== null && prevPathRef.current !== '/' && location.pathname === '/'
+    const isFirstLoad = prevPathRef.current === null
+    const isNewMessage = messages.length > prevMessageCountRef.current
+    const shouldScrollToUnread = (isFirstLoad || isNavigatingToChat) && !hasScrolledRef.current
+
+    prevPathRef.current = location.pathname
+    prevMessageCountRef.current = messages.length
+
+    if (shouldScrollToUnread) {
+      hasScrolledRef.current = true
+      const firstUnreadIdx = getFirstUnreadIndex()
+      const hasUnreadMessages = firstUnreadIdx !== -1
+      // Wait for virtualizer to measure elements before scrolling
+      setTimeout(() => {
+        if (hasUnreadMessages) {
+          // Scroll to first unread message at the top
+          virtualizer.scrollToIndex(firstUnreadIdx, { align: 'start', behavior: 'auto' })
+        } else {
+          // All messages seen - scroll to bottom
+          virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'auto' })
+        }
+        markMessagesAsSeen()
+      }, 50)
+    } else if (isNewMessage && location.pathname === '/' && wasNearBottomRef.current) {
+      // Only auto-scroll if user WAS near the bottom before new message arrived
+      virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
+      markMessagesAsSeen()
+    }
+  }, [messages.length, location.pathname, virtualizer, getFirstUnreadIndex, markMessagesAsSeen])
+
+  // Reset scroll flag when navigating away from chat
+  useEffect(() => {
+    if (location.pathname !== '/') {
+      hasScrolledRef.current = false
+    }
+  }, [location.pathname])
 
   // Auto-resize textarea based on content
   const adjustTextareaHeight = useCallback(() => {
@@ -117,15 +221,52 @@ export function ChatPage() {
     }
   }, [isResizing])
 
+  // Handle reply from chat message
+  const handleChatReply = useCallback((
+    sessionId: string | undefined,
+    displayName: string,
+    fullContent: string
+  ) => {
+    setReplyTarget({
+      type: 'chat',
+      sessionId,
+      displayName,
+      originalContent: fullContent,
+    })
+    inputRef.current?.focus()
+  }, [setReplyTarget])
+
+  // Handle reply from task panel
+  const handleTaskReply = useCallback((taskId: string, taskName: string) => {
+    setReplyTarget({
+      type: 'task',
+      sessionId: taskId,
+      displayName: taskName,
+      originalContent: `Task: ${taskName}`,
+    })
+    inputRef.current?.focus()
+  }, [setReplyTarget])
+
   const handleSend = () => {
     // Don't send if there are validation errors
     if (!attachmentValidation.valid) return
 
     if (input.trim() || pendingAttachments.length > 0) {
-      sendMessage(input.trim(), pendingAttachments.length > 0 ? pendingAttachments : undefined)
+      // Include reply context if replying to a message/task
+      const replyContext = replyTarget ? {
+        sessionId: replyTarget.sessionId,
+        originalMessage: replyTarget.originalContent,
+      } : undefined
+
+      sendMessage(
+        input.trim(),
+        pendingAttachments.length > 0 ? pendingAttachments : undefined,
+        replyContext
+      )
       setInput('')
       setPendingAttachments([])
       setAttachmentError(null)
+      clearReplyTarget()  // Clear reply target after sending
       // Reset textarea height after clearing input
       if (inputRef.current) {
         inputRef.current.style.height = 'auto'
@@ -165,14 +306,14 @@ export function ChatPage() {
 
       // Check individual file size (for very large files, recommend manual copy)
       if (file.size > MAX_TOTAL_SIZE_BYTES) {
-        setAttachmentError(`File "${file.name}" (${formatFileSize(file.size)}) exceeds the 50GB limit. For very large files, please copy them directly to the agent workspace folder.`)
+        setAttachmentError(`File "${file.name}" (${formatFileSize(file.size)}) exceeds the 70MB limit. For very large files, please copy them directly to the agent workspace folder.`)
         e.target.value = ''
         return
       }
 
       // Check if adding this file would exceed total size limit
       if (newTotalSize + file.size > MAX_TOTAL_SIZE_BYTES) {
-        setAttachmentError(`Adding "${file.name}" would exceed the 50GB total size limit. Current total: ${formatFileSize(newTotalSize)}. For large files, please copy them directly to the agent workspace folder.`)
+        setAttachmentError(`Adding "${file.name}" would exceed the 70MB total size limit. Current total: ${formatFileSize(newTotalSize)}. For large files, please copy them directly to the agent workspace folder.`)
         e.target.value = ''
         return
       }
@@ -235,7 +376,7 @@ export function ChatPage() {
     <div className={`${styles.chatPage} ${isResizing ? styles.resizing : ''}`} ref={containerRef}>
       {/* Chat Panel - flexible width */}
       <div className={styles.chatPanel}>
-        <div className={styles.messagesContainer}>
+        <div className={styles.messagesContainer} ref={parentRef}>
           {messages.length === 0 ? (
             <div className={styles.emptyState}>
               <div className={styles.emptyIcon}>
@@ -248,41 +389,50 @@ export function ChatPage() {
               <p>Send a message to begin interacting with CraftBot</p>
             </div>
           ) : (
-            messages.map((msg, idx) => (
-              <div
-                key={msg.messageId || idx}
-                className={`${styles.messageWrapper} ${styles[msg.style + 'Wrapper']}`}
-              >
-                <div className={`${styles.message} ${styles[msg.style]}`}>
-                  <div className={styles.messageHeader}>
-                    <span className={styles.sender}>{msg.sender}</span>
-                    <span className={styles.timestamp}>
-                      {new Date(msg.timestamp * 1000).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className={styles.messageContent}>
-                    <MarkdownContent content={msg.content} />
-                  </div>
+            <div
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {loadingOlderMessages && (
+                <div style={{ textAlign: 'center', padding: '8px 0', color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>
+                  <Loader2 size={14} style={{ display: 'inline', animation: 'spin 1s linear infinite' }} /> Loading older messages...
                 </div>
-                {msg.attachments && msg.attachments.length > 0 && (
-                  <div className={styles.messageAttachments}>
-                    <AttachmentDisplay
-                      attachments={msg.attachments}
+              )}
+              {virtualizer.getVirtualItems().map((virtualItem) => {
+                const message = messages[virtualItem.index]
+                return (
+                  <div
+                    key={message.messageId || virtualItem.index}
+                    data-index={virtualItem.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualItem.start}px)`,
+                    }}
+                  >
+                    <ChatMessageItem
+                      message={message}
                       onOpenFile={openFile}
                       onOpenFolder={openFolder}
+                      onReply={handleChatReply}
                     />
                   </div>
-                )}
-              </div>
-            ))
+                )
+              })}
+            </div>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         {/* Status bar */}
         <div className={styles.statusBar}>
-          <StatusIndicator status={connected ? status.state : 'error'} size="sm" variant="dot" />
-          <span>{connected ? status.message : 'Disconnected'}</span>
+          <StatusIndicator status={status.state} size="sm" variant="dot" />
+          <span>{status.message}</span>
         </div>
 
         {/* Input area */}
@@ -315,6 +465,23 @@ export function ChatPage() {
                   title="Dismiss"
                 >
                   <X size={12} />
+                </button>
+              </div>
+            )}
+
+            {/* Reply bar - shows when replying to a message/task */}
+            {replyTarget && (
+              <div className={styles.replyBar}>
+                <Reply size={14} />
+                <span className={styles.replyText}>
+                  Replying to: <em>{replyTarget.displayName}</em>
+                </span>
+                <button
+                  className={styles.replyCancel}
+                  onClick={clearReplyTarget}
+                  title="Cancel reply"
+                >
+                  <X size={14} />
                 </button>
               </div>
             )}
@@ -389,25 +556,38 @@ export function ChatPage() {
                 >
                   <StatusIndicator status={task.status} size="sm" />
                   <span className={styles.taskName}>{task.name}</span>
-                  {task.status === 'running' && (
-                    <IconButton
-                      size="sm"
-                      variant="ghost"
-                      className={styles.taskCancelBtn}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        cancelTask(task.id)
-                      }}
-                      disabled={cancellingTaskId === task.id}
-                      title="Cancel Task"
-                      icon={
-                        cancellingTaskId === task.id ? (
-                          <Loader2 size={12} className={styles.spinning} />
-                        ) : (
-                          <X size={12} />
-                        )
-                      }
-                    />
+                  {(task.status === 'running' || task.status === 'waiting') && (
+                    <>
+                      <IconButton
+                        size="sm"
+                        variant="ghost"
+                        className={styles.taskReplyBtn}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleTaskReply(task.id, task.name)
+                        }}
+                        title="Reply to Task"
+                        icon={<Reply size={12} />}
+                      />
+                      <IconButton
+                        size="sm"
+                        variant="ghost"
+                        className={styles.taskCancelBtn}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          cancelTask(task.id)
+                        }}
+                        disabled={cancellingTaskId === task.id}
+                        title="Cancel Task"
+                        icon={
+                          cancellingTaskId === task.id ? (
+                            <Loader2 size={12} className={styles.spinning} />
+                          ) : (
+                            <X size={12} />
+                          )
+                        }
+                      />
+                    </>
                   )}
                 </div>
                 {selectedTaskId === task.id && (

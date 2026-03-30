@@ -16,8 +16,12 @@ Usage:
 
     # HTTPS (for Slack and other providers requiring https redirect URIs)
     code, error = run_oauth_flow("https://slack.com/oauth/...", use_https=True)
+
+    # Async version with cancellation support (recommended for UI contexts)
+    code, error = await run_oauth_flow_async("https://provider.com/oauth/...")
 """
 
+import asyncio
 import ipaddress
 import logging
 import os
@@ -29,7 +33,7 @@ import webbrowser
 from datetime import datetime, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -104,58 +108,78 @@ def _cleanup_files(*paths: str) -> None:
             pass
 
 
-class _OAuthCallbackHandler(BaseHTTPRequestHandler):
-    """Handler for OAuth callback requests."""
-
-    code: Optional[str] = None
-    state: Optional[str] = None
-    error: Optional[str] = None
-
-    def do_GET(self):
-        """Handle GET request from OAuth callback."""
-        params = parse_qs(urlparse(self.path).query)
-        _OAuthCallbackHandler.code = params.get("code", [None])[0]
-        _OAuthCallbackHandler.state = params.get("state", [None])[0]
-        _OAuthCallbackHandler.error = params.get("error", [None])[0]
-
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html")
-        self.end_headers()
-        if _OAuthCallbackHandler.code:
-            self.wfile.write(
-                b"<h2>Authorization successful!</h2><p>You can close this tab.</p>"
-            )
-        else:
-            self.wfile.write(
-                f"<h2>Failed</h2><p>{_OAuthCallbackHandler.error}</p>".encode()
-            )
-
-    def log_message(self, format, *args):
-        """Suppress default HTTP server logging."""
-        pass
-
-
-def _serve_until_code(server: HTTPServer, deadline: float) -> None:
+def _make_callback_handler(result_holder: Dict[str, Any]):
     """
-    Handle requests in a loop until we capture the OAuth code/error or timeout.
+    Create a callback handler class that stores results in the provided dict.
+
+    This avoids class-level state that would be shared across OAuth flows.
+    """
+    class _OAuthCallbackHandler(BaseHTTPRequestHandler):
+        """Handler for OAuth callback requests."""
+
+        def do_GET(self):
+            """Handle GET request from OAuth callback."""
+            params = parse_qs(urlparse(self.path).query)
+            result_holder["code"] = params.get("code", [None])[0]
+            result_holder["state"] = params.get("state", [None])[0]
+            result_holder["error"] = params.get("error", [None])[0]
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            if result_holder["code"]:
+                self.wfile.write(
+                    b"<h2>Authorization successful!</h2><p>You can close this tab.</p>"
+                )
+            else:
+                self.wfile.write(
+                    f"<h2>Failed</h2><p>{result_holder['error']}</p>".encode()
+                )
+
+        def log_message(self, format, *args):
+            """Suppress default HTTP server logging."""
+            pass
+
+    return _OAuthCallbackHandler
+
+
+def _serve_until_code(
+    server: HTTPServer,
+    deadline: float,
+    result_holder: Dict[str, Any],
+    cancel_event: Optional[threading.Event] = None,
+) -> None:
+    """
+    Handle requests in a loop until we capture the OAuth code/error, timeout, or cancelled.
 
     A single handle_request() can be consumed by TLS handshake failures,
     favicon requests, browser pre-connects, etc. Looping ensures the server
     stays alive for the actual callback.
     """
     while time.time() < deadline:
-        remaining = max(0.5, deadline - time.time())
-        server.timeout = min(remaining, 2.0)
+        # Check for cancellation
+        if cancel_event and cancel_event.is_set():
+            logger.debug("[OAUTH] Cancellation requested, stopping server")
+            break
+
+        remaining = max(0.1, deadline - time.time())
+        # Use shorter timeout (0.5s) for responsive cancellation checking
+        server.timeout = min(remaining, 0.5)
         try:
             server.handle_request()
         except Exception as e:
             logger.debug(f"[OAUTH] handle_request error (will retry): {e}")
-        if _OAuthCallbackHandler.code or _OAuthCallbackHandler.error:
+
+        if result_holder.get("code") or result_holder.get("error"):
             break
 
 
 def run_oauth_flow(
-    auth_url: str, port: int = 8765, timeout: int = 120, use_https: bool = False
+    auth_url: str,
+    port: int = 8765,
+    timeout: int = 120,
+    use_https: bool = False,
+    cancel_event: Optional[threading.Event] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
     """
     Open browser for OAuth, wait for callback.
@@ -167,17 +191,27 @@ def run_oauth_flow(
         use_https: If True, serve HTTPS with a self-signed cert.
                    Required for providers like Slack that reject http:// redirect URIs.
                    Default False (plain HTTP — works with Google, Notion, etc.).
+        cancel_event: Optional threading.Event to signal cancellation.
+                      When set, the OAuth flow will stop and return a cancellation error.
 
     Returns:
         Tuple of (code, error_message):
         - On success: (authorization_code, None)
         - On failure: (None, error_message)
     """
-    _OAuthCallbackHandler.code = None
-    _OAuthCallbackHandler.state = None
-    _OAuthCallbackHandler.error = None
+    # Check for early cancellation
+    if cancel_event and cancel_event.is_set():
+        return None, "OAuth cancelled"
 
-    server = HTTPServer(("127.0.0.1", port), _OAuthCallbackHandler)
+    # Use instance-level result holder instead of class-level state
+    result_holder: Dict[str, Any] = {"code": None, "state": None, "error": None}
+    handler_class = _make_callback_handler(result_holder)
+
+    try:
+        server = HTTPServer(("127.0.0.1", port), handler_class)
+    except OSError as e:
+        # Port already in use
+        return None, f"Failed to start OAuth server: {e}"
 
     if use_https:
         cert_path = key_path = None
@@ -198,9 +232,16 @@ def run_oauth_flow(
 
     deadline = time.time() + timeout
     thread = threading.Thread(
-        target=_serve_until_code, args=(server, deadline), daemon=True
+        target=_serve_until_code,
+        args=(server, deadline, result_holder, cancel_event),
+        daemon=True
     )
     thread.start()
+
+    # Check cancellation before opening browser
+    if cancel_event and cancel_event.is_set():
+        server.server_close()
+        return None, "OAuth cancelled"
 
     try:
         webbrowser.open(auth_url)
@@ -208,11 +249,68 @@ def run_oauth_flow(
         server.server_close()
         return None, f"Could not open browser. Visit manually:\n{auth_url}"
 
-    thread.join(timeout=timeout)
+    # Wait for thread with periodic cancellation checks
+    while thread.is_alive():
+        thread.join(timeout=0.5)
+        if cancel_event and cancel_event.is_set():
+            logger.debug("[OAUTH] Cancellation detected during wait")
+            break
+
     server.server_close()
 
-    if _OAuthCallbackHandler.error:
-        return None, _OAuthCallbackHandler.error
-    if _OAuthCallbackHandler.code:
-        return _OAuthCallbackHandler.code, None
+    # Check cancellation first
+    if cancel_event and cancel_event.is_set():
+        return None, "OAuth cancelled"
+
+    if result_holder.get("error"):
+        return None, result_holder["error"]
+    if result_holder.get("code"):
+        return result_holder["code"], None
     return None, "OAuth timed out."
+
+
+async def run_oauth_flow_async(
+    auth_url: str,
+    port: int = 8765,
+    timeout: int = 120,
+    use_https: bool = False,
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Async version of run_oauth_flow with proper cancellation support.
+
+    This function runs the OAuth flow in a thread executor and properly handles
+    asyncio task cancellation by signaling the OAuth server to stop.
+
+    Args:
+        auth_url: The full OAuth authorization URL to open.
+        port: Local port for callback server (default: 8765).
+        timeout: Seconds to wait for callback (default: 120).
+        use_https: If True, serve HTTPS with a self-signed cert.
+
+    Returns:
+        Tuple of (code, error_message):
+        - On success: (authorization_code, None)
+        - On failure: (None, error_message)
+
+    Raises:
+        asyncio.CancelledError: If the task is cancelled (after signaling OAuth to stop)
+    """
+    cancel_event = threading.Event()
+    loop = asyncio.get_event_loop()
+
+    def run_flow():
+        return run_oauth_flow(
+            auth_url=auth_url,
+            port=port,
+            timeout=timeout,
+            use_https=use_https,
+            cancel_event=cancel_event,
+        )
+
+    try:
+        return await loop.run_in_executor(None, run_flow)
+    except asyncio.CancelledError:
+        # Signal the OAuth server to stop
+        cancel_event.set()
+        logger.debug("[OAUTH] Async task cancelled, signaled OAuth server to stop")
+        raise

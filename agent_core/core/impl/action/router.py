@@ -95,6 +95,15 @@ class ActionRouter:
         # Base conversation mode actions
         base_actions = ["send_message", "task_start", "ignore"]
 
+        # Integration management actions (always available so the agent can
+        # help users connect / disconnect external apps via conversation)
+        integration_actions = [
+            "list_available_integrations",
+            "connect_integration",
+            "disconnect_integration",
+            "check_integration_status",
+        ]
+
         # Dynamically add messaging actions for connected platforms
         try:
             from app.external_comms.integration_discovery import (
@@ -103,10 +112,10 @@ class ActionRouter:
             )
             connected_platforms = get_connected_messaging_platforms()
             messaging_actions = get_messaging_actions_for_platforms(connected_platforms)
-            conversation_mode_actions = base_actions + messaging_actions
+            conversation_mode_actions = base_actions + integration_actions + messaging_actions
         except Exception as e:
             logger.debug(f"[ACTION] Could not discover messaging actions: {e}")
-            conversation_mode_actions = base_actions
+            conversation_mode_actions = base_actions + integration_actions
 
         action_candidates = []
 
@@ -215,6 +224,7 @@ class ActionRouter:
         # Build the instruction prompt for the LLM
         task_state = self.context_engine.get_task_state(session_id=session_id)
         memory_context = self.context_engine.get_memory_context(query, session_id=session_id)
+        event_stream_content = self.context_engine.get_event_stream(session_id=session_id)
         static_prompt = SELECT_ACTION_IN_TASK_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(session_id=session_id),
             task_state=task_state,
@@ -227,7 +237,7 @@ class ActionRouter:
             agent_state=self.context_engine.get_agent_state(session_id=session_id),
             task_state=task_state,
             memory_context=memory_context,
-            event_stream=self.context_engine.get_event_stream(session_id=session_id),
+            event_stream=event_stream_content,
             query=query,
             action_candidates=self._format_candidates(action_candidates),
         )
@@ -320,6 +330,7 @@ class ActionRouter:
         # Build the instruction prompt
         task_state = self.context_engine.get_task_state(session_id=session_id)
         memory_context = self.context_engine.get_memory_context(query, session_id=session_id)
+        event_stream_content = self.context_engine.get_event_stream(session_id=session_id)
         static_prompt = SELECT_ACTION_IN_SIMPLE_TASK_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(session_id=session_id),
             task_state=task_state,
@@ -332,7 +343,7 @@ class ActionRouter:
             agent_state=self.context_engine.get_agent_state(session_id=session_id),
             task_state=task_state,
             memory_context=memory_context,
-            event_stream=self.context_engine.get_event_stream(session_id=session_id),
+            event_stream=event_stream_content,
             query=query,
             action_candidates=self._format_candidates(action_candidates),
         )
@@ -422,6 +433,7 @@ class ActionRouter:
         # Build the instruction prompt for the LLM
         task_state = self.context_engine.get_task_state(session_id=session_id)
         memory_context = self.context_engine.get_memory_context(query, session_id=session_id)
+        event_stream_content = self.context_engine.get_event_stream(session_id=session_id)
         static_prompt = SELECT_ACTION_IN_GUI_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(session_id=session_id),
             task_state=task_state,
@@ -432,7 +444,7 @@ class ActionRouter:
         full_prompt = SELECT_ACTION_IN_GUI_PROMPT.format(
             agent_state=self.context_engine.get_agent_state(session_id=session_id),
             task_state=task_state,
-            event_stream=self.context_engine.get_event_stream(session_id=session_id),
+            event_stream=event_stream_content,
             memory_context=memory_context,
             gui_action_space=GUI_ACTION_SPACE_PROMPT,
         )

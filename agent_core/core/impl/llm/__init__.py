@@ -11,6 +11,7 @@ inject the appropriate hooks for their state management systems.
 
 from agent_core.core.impl.llm.interface import LLMInterface
 from agent_core.core.impl.llm.types import LLMCallType
+from agent_core.core.impl.llm.errors import LLMConsecutiveFailureError
 
 # Cache management components
 from agent_core.core.impl.llm.cache import (
@@ -30,6 +31,8 @@ __all__ = [
     "LLMInterface",
     # Types
     "LLMCallType",
+    # Errors
+    "LLMConsecutiveFailureError",
     # Cache Config
     "CacheConfig",
     "get_cache_config",

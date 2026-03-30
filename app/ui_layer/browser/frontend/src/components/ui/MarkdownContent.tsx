@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -9,7 +9,7 @@ interface MarkdownContentProps {
   className?: string
 }
 
-export function MarkdownContent({ content, className = '' }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({ content, className = '' }: MarkdownContentProps) {
   return (
     <div className={`${styles.markdown} ${className}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
@@ -17,4 +17,4 @@ export function MarkdownContent({ content, className = '' }: MarkdownContentProp
       </ReactMarkdown>
     </div>
   )
-}
+})

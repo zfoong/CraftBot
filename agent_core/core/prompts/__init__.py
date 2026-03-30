@@ -76,6 +76,7 @@ from agent_core.core.prompts.context import (
     USER_PROFILE_PROMPT,
     ENVIRONMENTAL_CONTEXT_PROMPT,
     AGENT_FILE_SYSTEM_CONTEXT_PROMPT,
+    LANGUAGE_INSTRUCTION,
 )
 
 # Routing prompts
@@ -120,6 +121,7 @@ __all__ = [
     "USER_PROFILE_PROMPT",
     "ENVIRONMENTAL_CONTEXT_PROMPT",
     "AGENT_FILE_SYSTEM_CONTEXT_PROMPT",
+    "LANGUAGE_INSTRUCTION",
     # Routing prompts
     "ROUTE_TO_SESSION_PROMPT",
     # GUI prompts

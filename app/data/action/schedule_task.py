@@ -82,10 +82,14 @@ from agent_core import action
         }
     }
 )
-def schedule_task(input_data: dict) -> dict:
+async def schedule_task(input_data: dict) -> dict:
     """Add a new scheduled task or queue an immediate trigger."""
     import app.internal_action_interface as iai
     from datetime import datetime
+    import asyncio
+    import time
+    import uuid
+    from agent_core import Trigger
 
     scheduler = iai.InternalActionInterface.scheduler
     if scheduler is None:
@@ -114,8 +118,7 @@ def schedule_task(input_data: dict) -> dict:
 
         # Handle immediate execution
         if schedule_expr.lower() == "immediate":
-            return _add_immediate_trigger(
-                scheduler=scheduler,
+            return await scheduler.queue_immediate_trigger(
                 name=name,
                 instruction=instruction,
                 priority=priority,
@@ -124,6 +127,47 @@ def schedule_task(input_data: dict) -> dict:
                 skills=skills,
                 payload=payload
             )
+
+            session_id = f"immediate_{uuid.uuid4().hex[:8]}_{int(time.time())}"
+
+            trigger_payload = {
+                "type": "scheduled",
+                "schedule_id": f"immediate_{uuid.uuid4().hex[:8]}",
+                "schedule_name": name,
+                "instruction": instruction,
+                "mode": mode,
+                "action_sets": action_sets,
+                "skills": skills,
+                **payload
+            }
+            
+            # TODO: Should not have to create additional trigger (create using queue_immediate_trigger)
+            # Workaround for now
+            trigger = Trigger(
+                fire_at=time.time(),
+                priority=priority,
+                next_action_description=f"[Immediate] {name}: {instruction}",
+                payload=trigger_payload,
+                session_id=session_id,
+            )
+
+            trigger_queue = scheduler._trigger_queue
+            if trigger_queue is None:
+                return {"status": "error", "error": "Trigger queue not initialized"}
+
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(trigger_queue.put(trigger))
+            except RuntimeError:
+                asyncio.run(trigger_queue.put(trigger))
+
+            return {
+                "status": "ok",
+                "schedule_id": session_id,
+                "name": name,
+                "scheduled_for": "immediate",
+                "message": f"Task '{name}' queued for immediate execution (session: {session_id})"
+            }
 
         # Parse schedule to determine if it's recurring or one-time
         from app.scheduler.parser import ScheduleParser
@@ -165,74 +209,3 @@ def schedule_task(input_data: dict) -> dict:
             "status": "error",
             "error": str(e)
         }
-
-
-def _add_immediate_trigger(
-    scheduler,
-    name: str,
-    instruction: str,
-    priority: int,
-    mode: str,
-    action_sets: list,
-    skills: list,
-    payload: dict
-) -> dict:
-    """
-    Queue a trigger for immediate execution.
-
-    This creates a new session and queues it to the TriggerQueue
-    for immediate processing by the scheduler.
-    """
-    import asyncio
-    import time
-    import uuid
-    from agent_core import Trigger
-
-    # Generate unique session ID
-    session_id = f"immediate_{uuid.uuid4().hex[:8]}_{int(time.time())}"
-
-    # Build trigger payload (matching the format used by _fire_schedule)
-    trigger_payload = {
-        "type": "scheduled",
-        "schedule_id": f"immediate_{uuid.uuid4().hex[:8]}",
-        "schedule_name": name,
-        "instruction": instruction,
-        "mode": mode,
-        "action_sets": action_sets,
-        "skills": skills,
-        **payload
-    }
-
-    # Create trigger
-    trigger = Trigger(
-        fire_at=time.time(),  # Fire immediately
-        priority=priority,
-        next_action_description=f"[Immediate] {name}: {instruction}",
-        payload=trigger_payload,
-        session_id=session_id,
-    )
-
-    # Queue the trigger
-    trigger_queue = scheduler._trigger_queue
-    if trigger_queue is None:
-        return {
-            "status": "error",
-            "error": "Trigger queue not initialized"
-        }
-
-    # Try to queue using running event loop, or create new one
-    try:
-        loop = asyncio.get_running_loop()
-        # We're in an async context, use create_task
-        asyncio.create_task(trigger_queue.put(trigger))
-    except RuntimeError:
-        # No running event loop, use asyncio.run
-        asyncio.run(trigger_queue.put(trigger))
-
-    return {
-        "status": "ok",
-        "schedule_id": session_id,
-        "name": name,
-        "scheduled_for": "immediate",
-        "message": f"Task '{name}' queued for immediate execution (session: {session_id})"
-    }

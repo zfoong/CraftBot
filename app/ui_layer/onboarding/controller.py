@@ -248,9 +248,15 @@ class OnboardingFlowController:
         selected_skills = self._state.collected_data.get("skills", [])
 
         # Save provider configuration to settings.json
-        if provider and api_key:
+        if provider == "remote":
+            # api_key holds the Ollama base URL for the remote provider
+            remote_url = api_key or "http://localhost:11434"
+            from app.tui.settings import save_remote_endpoint
+            save_remote_endpoint(remote_url)
+        elif provider and api_key:
             save_settings_to_json(provider, api_key)
 
+        if provider:
             # Reinitialize the LLM with the new provider settings
             if self._controller and self._controller.agent:
                 try:
@@ -281,6 +287,9 @@ class OnboardingFlowController:
             for skill_name in selected_skills:
                 enable_skill(skill_name)
 
+        # Initialize language from OS locale (first launch only)
+        self._initialize_user_language()
+
         # Mark hard onboarding complete
         onboarding_manager.mark_hard_complete(agent_name=agent_name)
 
@@ -306,6 +315,38 @@ class OnboardingFlowController:
         if task_id:
             from agent_core.utils.logger import logger
             logger.info(f"[ONBOARDING] Soft onboarding triggered after hard onboarding: {task_id}")
+
+    def _initialize_user_language(self) -> None:
+        """
+        Initialize USER.md language from OS locale on first launch.
+
+        Detects the system language, saves it to settings.json as os_language,
+        and updates USER.md with the detected language.
+        """
+        from app.config import detect_and_save_os_language, AGENT_FILE_SYSTEM_PATH
+        import re
+
+        # Detect and save OS language
+        os_lang = detect_and_save_os_language()
+
+        # Update USER.md with the detected language
+        user_md_path = AGENT_FILE_SYSTEM_PATH / "USER.md"
+        if user_md_path.exists():
+            try:
+                content = user_md_path.read_text(encoding="utf-8")
+                # Replace the Language field value
+                # Pattern: - **Language**: <value>
+                updated_content = re.sub(
+                    r'(\*\*Language\*\*:\s*)\S+',
+                    f'\\1{os_lang}',
+                    content
+                )
+                user_md_path.write_text(updated_content, encoding="utf-8")
+                from agent_core.utils.logger import logger
+                logger.info(f"[ONBOARDING] Initialized USER.md language to: {os_lang}")
+            except Exception as e:
+                from agent_core.utils.logger import logger
+                logger.warning(f"[ONBOARDING] Failed to update USER.md language: {e}")
 
     def get_progress_text(self) -> str:
         """

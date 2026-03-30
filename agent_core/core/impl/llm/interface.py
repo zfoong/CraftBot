@@ -29,6 +29,7 @@ from agent_core.core.impl.llm.cache import (
     get_cache_config,
     get_cache_metrics,
 )
+from agent_core.core.impl.llm.errors import LLMConsecutiveFailureError
 from agent_core.core.hooks import (
     GetTokenCountHook,
     SetTokenCountHook,
@@ -126,6 +127,10 @@ class LLMInterface:
         self._report_usage = report_usage
         self._log_to_db = log_to_db
 
+        # Consecutive failure tracking to prevent infinite retry loops
+        self._consecutive_failures = 0
+        self._max_consecutive_failures = 5
+
         # Defer imports to avoid circular dependency
         from app.models.factory import ModelFactory
         from app.models.types import InterfaceType
@@ -152,6 +157,7 @@ class LLMInterface:
 
         # Initialize BytePlus-specific attributes
         self._byteplus_cache_manager: Optional[BytePlusCacheManager] = None
+        self.byteplus_base_url: Optional[str] = None
         # Store system prompts for lazy session creation (instance variable)
         self._session_system_prompts: Dict[str, str] = {}
 
@@ -328,49 +334,82 @@ class LLMInterface:
         if user_prompt is None:
             raise ValueError("`user_prompt` cannot be None.")
 
+        # Check if we've hit the consecutive failure threshold
+        if self._consecutive_failures >= self._max_consecutive_failures:
+            logger.critical(
+                f"[LLM ABORT] Consecutive failure threshold reached "
+                f"({self._consecutive_failures}/{self._max_consecutive_failures}). "
+                f"Aborting to prevent infinite retries."
+            )
+            raise LLMConsecutiveFailureError(self._consecutive_failures)
+
         if log_response:
             logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
-        if self.provider == "openai":
-            response = self._generate_openai(system_prompt, user_prompt)
-        elif self.provider == "remote":
-            response = self._generate_ollama(system_prompt, user_prompt)
-        elif self.provider == "gemini":
-            response = self._generate_gemini(system_prompt, user_prompt)
-        elif self.provider == "byteplus":
-            response = self._generate_byteplus(system_prompt, user_prompt)
-        elif self.provider == "anthropic":
-            response = self._generate_anthropic(system_prompt, user_prompt)
-        else:  # pragma: no cover
-            raise RuntimeError(f"Unknown provider {self.provider!r}")
+        try:
+            if self.provider in ("openai", "minimax", "deepseek", "moonshot"):
+                response = self._generate_openai(system_prompt, user_prompt)
+            elif self.provider == "remote":
+                response = self._generate_ollama(system_prompt, user_prompt)
+            elif self.provider == "gemini":
+                response = self._generate_gemini(system_prompt, user_prompt)
+            elif self.provider == "byteplus":
+                response = self._generate_byteplus(system_prompt, user_prompt)
+            elif self.provider == "anthropic":
+                response = self._generate_anthropic(system_prompt, user_prompt)
+            else:  # pragma: no cover
+                raise RuntimeError(f"Unknown provider {self.provider!r}")
 
-        content = response.get("content", "").strip()
-        
-        # Check if response is empty and provide diagnostics
-        if not content:
-            error_msg = response.get("error", "")
-            if error_msg:
-                error_detail = f"LLM provider returned error: {error_msg}"
-            else:
-                error_detail = (
-                    f"LLM returned empty response. "
-                    f"Provider: {self.provider}, Model: {self.model}. "
-                    f"This may indicate: API authentication failure, invalid API key, rate limiting, "
-                    f"connection timeout, or LLM service unavailability. "
-                    f"Check your credentials and API status."
+            content = response.get("content", "").strip()
+
+            # Check if response is empty and provide diagnostics
+            if not content:
+                error_msg = response.get("error", "")
+                if error_msg:
+                    error_detail = f"LLM provider returned error: {error_msg}"
+                else:
+                    error_detail = (
+                        f"LLM returned empty response. "
+                        f"Provider: {self.provider}, Model: {self.model}. "
+                        f"This may indicate: API authentication failure, invalid API key, rate limiting, "
+                        f"connection timeout, or LLM service unavailability. "
+                        f"Check your credentials and API status."
+                    )
+                logger.error(f"[LLM ERROR] {error_detail}")
+                # Track consecutive failure
+                self._consecutive_failures += 1
+                logger.warning(
+                    f"[LLM CONSECUTIVE FAILURE] Count: {self._consecutive_failures}/{self._max_consecutive_failures}"
                 )
-            logger.error(f"[LLM ERROR] {error_detail}")
-            raise RuntimeError(error_detail)
-        
-        cleaned = re.sub(self._CODE_BLOCK_RE, "", content)
+                if self._consecutive_failures >= self._max_consecutive_failures:
+                    raise LLMConsecutiveFailureError(self._consecutive_failures)
+                raise RuntimeError(error_detail)
 
-        # Update token count via hook
-        current_count = self._get_token_count()
-        self._set_token_count(current_count + response.get("tokens_used", 0))
+            # Success - reset consecutive failure counter
+            self._consecutive_failures = 0
 
-        if log_response:
-            logger.info(f"[LLM RECV] {cleaned}")
-        return cleaned
+            cleaned = re.sub(self._CODE_BLOCK_RE, "", content)
+
+            # Update token count via hook
+            current_count = self._get_token_count()
+            self._set_token_count(current_count + response.get("tokens_used", 0))
+
+            if log_response:
+                logger.info(f"[LLM RECV] {cleaned}")
+            return cleaned
+
+        except LLMConsecutiveFailureError:
+            # Re-raise consecutive failure errors without incrementing counter
+            raise
+        except Exception as e:
+            # Track consecutive failure for any other exception
+            self._consecutive_failures += 1
+            logger.warning(
+                f"[LLM CONSECUTIVE FAILURE] Count: {self._consecutive_failures}/{self._max_consecutive_failures} | Error: {e}"
+            )
+            if self._consecutive_failures >= self._max_consecutive_failures:
+                raise LLMConsecutiveFailureError(self._consecutive_failures, last_error=e) from e
+            raise
 
     @profile("llm_generate_response", OperationCategory.LLM)
     def generate_response(
@@ -396,6 +435,24 @@ class LLMInterface:
             user_prompt,
             log_response,
         )
+
+    def reset_failure_counter(self) -> None:
+        """Reset the consecutive failure counter.
+
+        Call this when starting a new task or when the user manually
+        chooses to retry after fixing configuration issues.
+        """
+        if self._consecutive_failures > 0:
+            logger.info(
+                f"[LLM] Resetting consecutive failure counter "
+                f"(was {self._consecutive_failures})"
+            )
+        self._consecutive_failures = 0
+
+    @property
+    def consecutive_failures(self) -> int:
+        """Get the current consecutive failure count."""
+        return self._consecutive_failures
 
     # ─────────────────── Session/Explicit Cache Methods ───────────────────
 
@@ -425,7 +482,7 @@ class LLMInterface:
         supports_caching = (
             (self.provider == "byteplus" and self._byteplus_cache_manager) or
             (self.provider == "gemini" and self._gemini_cache_manager) or
-            (self.provider == "openai" and self.client) or  # OpenAI uses automatic caching with prompt_cache_key
+            (self.provider in ("openai", "deepseek") and self.client) or  # OpenAI/DeepSeek use automatic caching with prompt_cache_key
             (self.provider == "anthropic" and self._anthropic_client)  # Anthropic uses ephemeral caching with extended TTL
         )
 
@@ -522,7 +579,7 @@ class LLMInterface:
                 return True
             if self.provider == "gemini" and self._gemini_cache_manager:
                 return True
-            if self.provider == "openai" and self.client:
+            if self.provider in ("openai", "deepseek") and self.client:
                 return True
             if self.provider == "anthropic" and self._anthropic_client:
                 return True
@@ -604,8 +661,8 @@ class LLMInterface:
                 logger.info(f"[LLM RECV] {cleaned}")
             return cleaned
 
-        # Handle OpenAI with call_type-based cache routing
-        if self.provider == "openai":
+        # Handle OpenAI/DeepSeek with call_type-based cache routing
+        if self.provider in ("openai", "deepseek"):
             # Get stored system prompt or use provided one
             session_key = f"{task_id}:{call_type}"
             stored_system_prompt = self._session_system_prompts.get(session_key)
