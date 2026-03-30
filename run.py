@@ -492,13 +492,19 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
     try:
         # Start frontend in background
         # Redirect output to DEVNULL to prevent blocking when buffer fills
-        process = subprocess.Popen(
-            cmd,
+        # Redirect stdin to DEVNULL so npm/vite never blocks waiting for input
+        popen_kwargs = dict(
             cwd=FRONTEND_DIR,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             env=os.environ.copy(),
         )
+        if sys.platform == "win32":
+            # CREATE_NO_WINDOW prevents the subprocess from trying to attach to
+            # the parent console, which can cause intermittent hangs on Windows
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        process = subprocess.Popen(cmd, **popen_kwargs)
         _background_processes.append(process)
         return process
     except FileNotFoundError:
