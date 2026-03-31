@@ -9,15 +9,13 @@ import {
   Square,
   Loader2,
   AlertCircle,
-  Send,
-  X,
 } from 'lucide-react'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { Button } from '../../components/ui/Button'
 import { IconButton } from '../../components/ui/IconButton'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
-import { MarkdownContent } from '../../components/ui/MarkdownContent'
-import type { LivingUIProject, ChatMessage } from '../../types'
+import { Chat } from '../../components/Chat'
+import type { LivingUIProject } from '../../types'
 import styles from './LivingUIPage.module.css'
 
 export function LivingUIPage() {
@@ -25,19 +23,15 @@ export function LivingUIPage() {
   const navigate = useNavigate()
   const {
     livingUIProjects,
-    messages,
     launchLivingUI,
     stopLivingUI,
     deleteLivingUI,
-    sendMessage,
     setActiveLivingUI,
   } = useWebSocket()
 
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [chatInput, setChatInput] = useState('')
   const [panelWidth, setPanelWidth] = useState(350)
   const [isResizing, setIsResizing] = useState(false)
-  const chatContainerRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   // Find the current project
@@ -52,17 +46,6 @@ export function LivingUIPage() {
       setActiveLivingUI(null)
     }
   }, [projectId, setActiveLivingUI])
-
-  // Auto-scroll chat to bottom
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
-    }
-  }, [messages])
-
-  // Filter messages for this Living UI context
-  // For now, show all messages - in future, filter by livingUIId
-  const chatMessages = messages
 
   const handleLaunch = () => {
     if (projectId) {
@@ -86,19 +69,6 @@ export function LivingUIPage() {
   const handleRefresh = () => {
     if (iframeRef.current) {
       iframeRef.current.src = iframeRef.current.src
-    }
-  }
-
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return
-    sendMessage(chatInput, undefined, undefined, projectId)
-    setChatInput('')
-  }
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
     }
   }
 
@@ -236,52 +206,11 @@ export function LivingUIPage() {
 
         {/* Chat Panel */}
         <div className={styles.chatPanel} style={{ width: panelWidth }}>
-          <div className={styles.chatHeader}>
-            <h3>Chat</h3>
-            <span className={styles.chatHint}>Talk to agent about this UI</span>
-          </div>
-
-          <div className={styles.chatMessages} ref={chatContainerRef}>
-            {chatMessages.length === 0 ? (
-              <div className={styles.emptyChat}>
-                <p>Ask the agent about what you see, or request changes to the UI.</p>
-              </div>
-            ) : (
-              chatMessages.map((msg, index) => (
-                <div
-                  key={msg.messageId || index}
-                  className={`${styles.messageWrapper} ${styles[msg.style + 'Wrapper']}`}
-                >
-                  <div className={`${styles.message} ${styles[msg.style]}`}>
-                    <div className={styles.messageHeader}>
-                      <span className={styles.messageSender}>{msg.sender}</span>
-                      <span className={styles.messageTimestamp}>
-                        {new Date(msg.timestamp * 1000).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div className={styles.messageContent}>
-                      <MarkdownContent content={msg.content} />
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className={styles.chatInput}>
-            <textarea
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Ask about this Living UI..."
-              rows={2}
-            />
-            <IconButton
-              icon={<Send size={16} />}
-              onClick={handleSendMessage}
-              variant="secondary"
-            />
-          </div>
+          <Chat
+            livingUIId={projectId}
+            placeholder="Ask about this Living UI..."
+            emptyMessage="Chat with the agent"
+          />
         </div>
       </div>
 

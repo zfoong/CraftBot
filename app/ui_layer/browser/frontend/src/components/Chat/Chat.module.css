@@ -1,0 +1,244 @@
+/* Self-contained Chat Component Styles */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.messagesContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.emptyState h3 {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+}
+
+.emptyState p {
+  font-size: var(--text-sm);
+}
+
+.emptyIcon {
+  margin-bottom: var(--space-2);
+}
+
+/* Status Bar */
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Input Area */
+.inputArea {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  min-height: 36px;
+  max-height: 116px;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  line-height: var(--leading-normal);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Hidden file input */
+.hiddenFileInput {
+  display: none;
+}
+
+/* Input wrapper for textarea and pending attachments */
+.inputWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Pending attachments container */
+.pendingAttachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.pendingAttachment {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--color-primary-subtle);
+  border: 1px solid var(--color-primary-light);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.pendingFileName {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pendingFileSize {
+  color: var(--text-muted);
+}
+
+.removeAttachment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+}
+
+.removeAttachment:hover {
+  color: var(--color-error);
+}
+
+/* Attachment error message */
+.attachmentError {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-error-light);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--color-error);
+}
+
+.attachmentError span {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.attachmentError svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.dismissError {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--color-error);
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.dismissError:hover {
+  opacity: 1;
+}
+
+/* Reply bar above input */
+.replyBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.replyText {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyCancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.replyCancel:hover {
+  color: var(--color-error);
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .messagesContainer {
+    padding: var(--space-3);
+  }
+
+  .inputArea {
+    padding: var(--space-2);
+  }
+
+  .statusBar {
+    padding: var(--space-2) var(--space-3);
+  }
+}
