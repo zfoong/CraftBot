@@ -102,6 +102,7 @@ class TriggerData:
     is_self_message: bool = False  # True when the user sent themselves a message
     contact_id: str | None = None  # Sender/chat ID from external platform
     channel_id: str | None = None  # Channel/group ID from external platform
+    living_ui_id: str | None = None  # Living UI project ID if user is on a Living UI page
 
 class AgentBase:
     """
@@ -593,6 +594,7 @@ class AgentBase:
             is_self_message=payload.get("is_self_message", False),
             contact_id=payload.get("contact_id", ""),
             channel_id=payload.get("channel_id", ""),
+            living_ui_id=payload.get("living_ui_id"),
         )
 
     def _extract_user_message_from_trigger(self, trigger: Trigger) -> Optional[str]:
@@ -1493,6 +1495,22 @@ class AgentBase:
 
             lines.append(f"Platform: {platform}")
 
+            # Add Living UI context if the user is on a Living UI page
+            living_ui_id = trigger.payload.get("living_ui_id") if trigger else None
+            if living_ui_id:
+                lines.append(f"Living UI ID: {living_ui_id}")
+                try:
+                    from app.living_ui import get_living_ui_manager
+                    mgr = get_living_ui_manager()
+                    if mgr:
+                        proj = mgr.get_project(living_ui_id)
+                        if proj:
+                            lines.append(f"Living UI Name: {proj.name}")
+                            lines.append(f"Living UI Path: {proj.path}")
+                            lines.append(f"  Read {proj.path}/LIVING_UI.md for app context")
+                except Exception:
+                    pass
+
             sections.append("\n".join(lines))
 
         return "\n\n".join(sections)
@@ -1602,8 +1620,10 @@ class AgentBase:
                 logger.info(f"[CHAT] Direct reply to session {target_session_id}")
 
                 # Fire the target trigger directly, bypassing routing LLM
+                living_ui_id = payload.get("living_ui_id")
                 fired = await self.triggers.fire(
-                    target_session_id, message=chat_content, platform=platform
+                    target_session_id, message=chat_content, platform=platform,
+                    living_ui_id=living_ui_id
                 )
 
                 if fired:
@@ -1681,7 +1701,8 @@ class AgentBase:
                         # and attach the new user message so react() sees it.
                         # This also works for active triggers (being processed).
                         fired = await self.triggers.fire(
-                            matched_session_id, message=chat_content, platform=platform
+                            matched_session_id, message=chat_content, platform=platform,
+                            living_ui_id=payload.get("living_ui_id")
                         )
                         logger.info(
                             f"[CHAT] Routed message to existing session {matched_session_id} "
@@ -1742,6 +1763,26 @@ class AgentBase:
 
             # No existing triggers matched or action == "new" — create a fresh session
             await self.state_manager.start_session(gui_mode)
+
+            # If user is on a Living UI page, prepend context to the message
+            living_ui_id = payload.get("living_ui_id")
+            if living_ui_id:
+                living_ui_context = f"[Living UI: {living_ui_id}]"
+                try:
+                    from app.living_ui import get_living_ui_manager
+                    mgr = get_living_ui_manager()
+                    if mgr:
+                        proj = mgr.get_project(living_ui_id)
+                        if proj:
+                            living_ui_context = (
+                                f"[Living UI: {proj.name} ({living_ui_id}) | "
+                                f"Path: {proj.path} | "
+                                f"Read {proj.path}/LIVING_UI.md for app context]"
+                            )
+                except Exception:
+                    pass
+                chat_content = f"{living_ui_context}\n{chat_content}"
+
             self.state_manager.record_user_message(chat_content, platform=platform)
 
             # skip_merge=True because we already did routing above
@@ -1750,6 +1791,9 @@ class AgentBase:
                 "platform": platform,
                 "user_message": chat_content,  # Original user message for task event stream
             }
+            # Carry Living UI context if user is on a Living UI page
+            if payload.get("living_ui_id"):
+                trigger_payload["living_ui_id"] = payload["living_ui_id"]
             # Carry external message context for platform-aware routing
             if payload.get("external_event"):
                 trigger_payload["is_self_message"] = payload.get("is_self_message", False)

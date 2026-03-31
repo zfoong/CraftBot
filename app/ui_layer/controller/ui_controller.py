@@ -223,7 +223,8 @@ class UIController:
         self,
         message: str,
         adapter_id: str = "",
-        target_session_id: Optional[str] = None
+        target_session_id: Optional[str] = None,
+        living_ui_id: Optional[str] = None
     ) -> None:
         """
         Handle user input from any interface.
@@ -234,6 +235,7 @@ class UIController:
             message: The user's input message
             adapter_id: ID of the adapter that sent the message
             target_session_id: Optional session ID for direct reply (bypasses routing)
+            living_ui_id: Optional Living UI project ID if user is on a Living UI page
         """
         if not message.strip():
             return
@@ -277,6 +279,8 @@ class UIController:
         # Include target session ID for direct reply (bypasses routing LLM)
         if target_session_id:
             payload["target_session_id"] = target_session_id
+        if living_ui_id:
+            payload["living_ui_id"] = living_ui_id
 
         await self._agent._handle_chat_message(payload)
 

@@ -789,7 +789,8 @@ class BrowserAdapter(InterfaceAdapter):
     async def submit_message(
         self,
         message: str,
-        reply_context: Optional[Dict[str, Any]] = None
+        reply_context: Optional[Dict[str, Any]] = None,
+        living_ui_id: Optional[str] = None
     ) -> None:
         """
         Submit a message from the user with optional reply context.
@@ -800,6 +801,7 @@ class BrowserAdapter(InterfaceAdapter):
         Args:
             message: The user's input message
             reply_context: Optional dict with {sessionId?: str, originalMessage: str}
+            living_ui_id: Optional Living UI project ID if user is on a Living UI page
         """
         agent_context = message
 
@@ -813,7 +815,8 @@ class BrowserAdapter(InterfaceAdapter):
         await self._controller.submit_message(
             agent_context,
             self._adapter_id,
-            target_session_id=target_session_id
+            target_session_id=target_session_id,
+            living_ui_id=living_ui_id
         )
 
     def _handle_task_start(self, event: UIEvent) -> None:
@@ -1048,13 +1051,18 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             content = data.get("content", "")
             attachments = data.get("attachments", [])
             reply_context = data.get("replyContext")  # {sessionId?: str, originalMessage: str}
+            living_ui_id = data.get("livingUIId")  # Set when user is on a Living UI page
+            if living_ui_id:
+                logger.info(f"[BROWSER ADAPTER] Message from Living UI page: {living_ui_id}")
+            else:
+                logger.debug(f"[BROWSER ADAPTER] Message keys: {list(data.keys())}")
 
             if attachments:
                 # Message with attachments - use custom handler
-                await self._handle_chat_message_with_attachments(content, attachments, reply_context)
+                await self._handle_chat_message_with_attachments(content, attachments, reply_context, living_ui_id)
             elif content:
                 # Regular message without attachments - use normal flow
-                await self.submit_message(content, reply_context)
+                await self.submit_message(content, reply_context, living_ui_id)
 
         elif msg_type == "chat_attachment_upload":
             # Upload attachment for chat message
@@ -4589,7 +4597,8 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         self,
         content: str,
         attachments: List[Dict[str, Any]],
-        reply_context: Optional[Dict[str, Any]] = None
+        reply_context: Optional[Dict[str, Any]] = None,
+        living_ui_id: Optional[str] = None
     ) -> None:
         """Handle user chat message with attachments and optional reply context."""
         import uuid
@@ -4689,6 +4698,8 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             # Include target session ID if replying to a specific session
             if reply_context and reply_context.get("sessionId"):
                 payload["target_session_id"] = reply_context["sessionId"]
+            if living_ui_id:
+                payload["living_ui_id"] = living_ui_id
 
             await self._controller._agent._handle_chat_message(payload)
 
