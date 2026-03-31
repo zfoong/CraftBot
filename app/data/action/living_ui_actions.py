@@ -6,9 +6,10 @@ from agent_core import action
 @action(
     name="living_ui_notify_ready",
     description=(
-        "Notify the browser that a Living UI project is ready and running. "
-        "Call this after successfully building and launching the Living UI. "
-        "The browser will then display the Living UI to the user."
+        "Launch, verify, and serve a Living UI project. "
+        "Call this after building the Living UI code. "
+        "This action installs dependencies, runs tests, starts the backend and frontend, "
+        "and notifies the browser. Returns test errors if anything fails."
     ),
     default=False,
     mode="CLI",
@@ -20,93 +21,79 @@ from agent_core import action
             "example": "abc12345",
             "description": "The Living UI project ID (provided in task instruction).",
         },
-        "url": {
-            "type": "string",
-            "example": "http://localhost:3100",
-            "description": "The URL where the Living UI is accessible.",
-        },
-        "port": {
-            "type": "integer",
-            "example": 3100,
-            "description": "The port number the Living UI is running on.",
-        },
     },
     output_schema={
         "status": {
             "type": "string",
             "example": "success",
-            "description": "Result of the notification.",
+            "description": "Result: 'success' or 'error'.",
         },
         "message": {
             "type": "string",
-            "example": "Living UI is now ready",
+            "example": "Living UI abc12345 is now ready at http://localhost:3100",
             "description": "Status message.",
+        },
+        "test_errors": {
+            "type": "array",
+            "example": ["[import] Failed to import routes: ..."],
+            "description": "List of test errors if launch failed. Fix these and call again.",
         },
     },
     test_payload={
         "project_id": "test123",
-        "url": "http://localhost:3100",
-        "port": 3100,
         "simulated_mode": True,
     },
 )
-def living_ui_notify_ready(input_data: dict) -> dict:
-    """Notify browser that a Living UI is ready to display."""
-    import asyncio
-
+async def living_ui_notify_ready(input_data: dict) -> dict:
+    """Launch, verify, and notify browser that a Living UI is ready."""
     project_id = input_data.get("project_id", "")
-    url = input_data.get("url", "")
-    port = input_data.get("port", 0)
     simulated_mode = input_data.get("simulated_mode", False)
 
     if not project_id:
-        return {
-            "status": "error",
-            "message": "project_id is required",
-        }
-
-    if not url or not port:
-        return {
-            "status": "error",
-            "message": "url and port are required",
-        }
+        return {"status": "error", "message": "project_id is required"}
 
     if simulated_mode:
-        return {
-            "status": "success",
-            "message": f"Living UI {project_id} is now ready at {url}",
-        }
+        return {"status": "success", "message": f"Living UI {project_id} is now ready at http://localhost:3100"}
 
     try:
-        # Use the callback system to broadcast the notification
-        from app.living_ui import broadcast_living_ui_ready
+        from app.living_ui import get_living_ui_manager, broadcast_living_ui_ready
 
-        # Run the async broadcast function
-        success = asyncio.run(broadcast_living_ui_ready(project_id, url, port))
+        manager = get_living_ui_manager()
+        if not manager:
+            return {"status": "error", "message": "Living UI manager not initialized. Browser adapter may not be running."}
 
-        if success:
+        # Run the full pipeline: install → test → launch → verify
+        result = await manager.launch_and_verify(project_id)
+
+        if result["status"] == "success":
+            # Notify browser that the UI is ready
+            url = result.get("url", "")
+            port = result.get("port", 0)
+            await broadcast_living_ui_ready(project_id, url, port)
             return {
                 "status": "success",
                 "message": f"Living UI {project_id} is now ready at {url}",
             }
         else:
+            # Return errors directly so the agent can fix them
+            errors = result.get("errors", [])
+            errors_str = "\n".join(errors[:10])
             return {
                 "status": "error",
-                "message": "Broadcast callback not registered. Browser adapter may not be initialized.",
+                "message": f"Launch failed at step: {result.get('step', 'unknown')}",
+                "test_errors": errors[:10],
+                "details": f"Fix these errors and call living_ui_notify_ready again:\n{errors_str}",
             }
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to notify: {str(e)}",
-        }
+        return {"status": "error", "message": f"Failed to launch: {str(e)}"}
 
 
 @action(
     name="living_ui_restart",
     description=(
-        "Restart a running Living UI project (backend + frontend). "
+        "Restart a Living UI project (backend + frontend). "
         "Use this after modifying backend or frontend code so changes take effect. "
-        "Stops the entire project and relaunches it on the same ports."
+        "Runs the full launch pipeline: install, test, build, start. Returns errors if any step fails."
     ),
     default=False,
     mode="CLI",
@@ -123,22 +110,17 @@ def living_ui_notify_ready(input_data: dict) -> dict:
         "status": {
             "type": "string",
             "example": "success",
-            "description": "Result of the restart operation.",
+            "description": "Result: 'success' or 'error'.",
         },
         "message": {
             "type": "string",
             "example": "Living UI '5a58a160' restarted",
             "description": "Status message.",
         },
-        "url": {
-            "type": "string",
-            "example": "http://localhost:3100",
-            "description": "The frontend URL after restart.",
-        },
-        "backend_url": {
-            "type": "string",
-            "example": "http://localhost:3101",
-            "description": "The backend URL after restart.",
+        "test_errors": {
+            "type": "array",
+            "example": ["[import] Failed to import routes: ..."],
+            "description": "List of errors if restart failed. Fix these and call again.",
         },
     },
     test_payload={
@@ -146,10 +128,8 @@ def living_ui_notify_ready(input_data: dict) -> dict:
         "simulated_mode": True,
     },
 )
-def living_ui_restart(input_data: dict) -> dict:
+async def living_ui_restart(input_data: dict) -> dict:
     """Restart a running Living UI project."""
-    import asyncio
-
     project_id = input_data.get("project_id", "")
     simulated_mode = input_data.get("simulated_mode", False)
 
@@ -170,7 +150,7 @@ def living_ui_restart(input_data: dict) -> dict:
     try:
         from app.living_ui import restart_living_ui
 
-        result = asyncio.run(restart_living_ui(project_id))
+        result = await restart_living_ui(project_id)
         return result
     except Exception as e:
         return {
@@ -230,10 +210,8 @@ def living_ui_restart(input_data: dict) -> dict:
         "simulated_mode": True,
     },
 )
-def living_ui_report_progress(input_data: dict) -> dict:
+async def living_ui_report_progress(input_data: dict) -> dict:
     """Report Living UI creation progress to browser."""
-    import asyncio
-
     project_id = input_data.get("project_id", "")
     phase = input_data.get("phase", "")
     progress = input_data.get("progress", 0)
@@ -250,13 +228,11 @@ def living_ui_report_progress(input_data: dict) -> dict:
         return {"status": "success"}
 
     try:
-        # Use the callback system to broadcast progress
         from app.living_ui import broadcast_living_ui_progress
 
-        # Run the async broadcast function
-        success = asyncio.run(broadcast_living_ui_progress(
+        success = await broadcast_living_ui_progress(
             project_id, phase, progress, message
-        ))
+        )
 
         if success:
             return {"status": "success"}

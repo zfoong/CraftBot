@@ -153,23 +153,16 @@ class YourModel(Base):
 
 #### 4c. Restart the Backend
 
-After modifying backend code, **first verify your changes compile**:
-
-```bash
-cd {project.path}/backend && python -c "from models import *; from routes import *; print('OK')"
-```
-
-If the import check fails, fix the errors before restarting.
-
-Then use the `living_ui_restart` action:
+After modifying backend code, use the `living_ui_restart` action:
 
 ```
 living_ui_restart(project_id="{project.id}")
 ```
 
-This action stops the entire project (backend + frontend) and relaunches both on the same ports. It handles process cleanup and health checks automatically.
+This action stops the entire project (backend + frontend), runs the launch pipeline (install, tests, build, health checks), and relaunches both on the same ports. If there are import errors or test failures, it will report them.
 
-**DO NOT** use `living_ui_notify_ready` for restart — it skips projects that are already running.
+**DO NOT** run `python -c "from models import *"` or `npm run build` manually — the pipeline handles verification.
+**DO NOT** use `living_ui_notify_ready` for restart — it's for initial launch only.
 
 #### 4d. Call the New Endpoint
 

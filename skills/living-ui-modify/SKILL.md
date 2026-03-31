@@ -150,19 +150,14 @@ import { Button, Card, Badge, Modal } from './components/ui'
 - Wire new components into the main view
 - Connect event handlers to controller methods
 
-### Phase 5: Verify
+### Phase 5: Review Code
 
-**CRITICAL: Verify before restarting.**
+Review your changes for correctness before restarting:
+- Backend routes use **absolute imports** (`from models import ...` NOT `from . import ...`)
+- Backend `routes.py` does NOT add `/api` prefix to route paths
+- All `to_dict()` methods return all fields
 
-```bash
-# 1. Check backend compiles
-cd {project.path}/backend && python -c "from models import *; from routes import *; print('OK')"
-
-# 2. Build frontend
-cd {project.path} && npm run build
-```
-
-**Both must succeed.** If build fails, read the error, fix it, and retry. Do NOT proceed with a broken build.
+**DO NOT** run `npm run build`, `python -c "from models import *"`, or start servers manually.
 
 ### Phase 6: Restart
 
@@ -172,9 +167,9 @@ Use the `living_ui_restart` action to apply changes:
 living_ui_restart(project_id="{project.id}")
 ```
 
-This stops and relaunches both backend and frontend on the same ports.
+This stops both backend and frontend, runs the launch pipeline (install dependencies, run tests, build frontend, health checks), and relaunches on the same ports. If there are errors, it reports them.
 
-**DO NOT** use `living_ui_notify_ready` - it skips projects that are already running.
+**DO NOT** use `living_ui_notify_ready` — it's for initial launch only.
 **DO NOT** start uvicorn or npm preview manually.
 
 ### Phase 7: Update Documentation
@@ -215,10 +210,10 @@ Update the relevant sections:
 ## FORBIDDEN Actions
 
 - NEVER use `metadata` as a SQLAlchemy column name
-- NEVER leave `npm run dev` or `npm run preview` running
+- NEVER use relative imports in backend code (`from . import` or `from .models import`)
+- NEVER add `/api` prefix to route paths in `routes.py` (the router prefix handles this)
+- NEVER run `npm run dev`, `npm run build`, `npm run preview`, or `uvicorn` manually
 - NEVER store important state only in React (use backend)
-- NEVER start servers manually - use `living_ui_restart` action
-- NEVER skip build verification before restarting
 - NEVER edit `frontend/components/ui/index.tsx` (preset components)
 - NEVER use `send_message` - this is a background task
 
@@ -226,13 +221,13 @@ Update the relevant sections:
 
 Before calling `living_ui_restart`:
 
-- [ ] Backend imports pass: `python -c "from models import *; from routes import *"`
-- [ ] Frontend builds: `npm run build` exits with code 0
-- [ ] No TypeScript errors
+- [ ] Backend uses absolute imports (`from models import ...`)
+- [ ] Route paths don't have `/api` prefix (e.g., `@router.get("/items")`)
 - [ ] New endpoints handle errors (404 for not found, etc.)
 - [ ] `to_dict()` updated if model fields changed
 - [ ] Types in `types.ts` match backend output
 - [ ] LIVING_UI.md updated with changes
+- [ ] (Pipeline handles build/test verification automatically)
 
 ## References
 

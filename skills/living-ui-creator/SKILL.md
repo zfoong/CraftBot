@@ -218,28 +218,17 @@ Add methods to call your backend APIs.
 
 Wire up UI to use the controller.
 
-### Phase 8: Verify and Build
+### Phase 8: Review Code
 
-**CRITICAL: Read [VERIFY.md](references/VERIFY.md) and complete the verification checklist.**
+Review your code for correctness before proceeding:
+- Backend routes use **absolute imports** (`from models import ...` NOT `from . import ...`)
+- Backend `routes.py` does NOT add `/api` prefix to route paths (the `main.py` router prefix handles this)
+- All `to_dict()` methods return all fields
+- TypeScript types in `types.ts` match backend model output
+- Components import correctly from relative paths
 
-You must verify:
-1. **Build succeeds** - `npm run build` exits with code 0
-2. **Backend works** - Models import without errors
-3. **State persists** - Data survives page refresh
-4. **UI quality** - Looks good, consistent, no visual bugs
-5. **Features complete** - All user requirements met
-6. **No errors** - Console is clean
-
-```bash
-# Verify backend
-cd backend && python -c "from models import *; from routes import *; print('OK')"
-
-# Build frontend
-npm run build
-```
-
-**DO NOT run:** `npm run dev`.
-**DO NOT proceed if build fails.** Fix all errors first.
+**DO NOT run:** `npm run dev`, `npm run build`, `npm run preview`, or `uvicorn` manually.
+The launch pipeline handles all building, testing, and serving automatically.
 
 ### Phase 9: Update Documentation
 
@@ -247,9 +236,19 @@ npm run build
 
 Fill in all sections with implementation details.
 
-### Phase 10: Notify Ready (MANDATORY)
+### Phase 10: Launch (MANDATORY)
 
 **YOU MUST call `living_ui_notify_ready` to complete the task.**
+
+This action runs the full launch pipeline automatically:
+- Installs backend dependencies (`pip install -r requirements.txt`)
+- Runs import validation, unit tests, and frontend-backend compatibility checks
+- Starts the backend server and verifies health
+- Runs external smoke tests against the running backend
+- Installs frontend dependencies and builds (`npm install && npm run build`)
+- Starts the frontend server
+
+If any step fails, the action returns the specific errors. Fix them and call again.
 
 **CRITICAL - project_id Parameter:**
 - The `project_id` is in your **task instruction** (e.g., "Project ID: abc12345")
@@ -257,14 +256,14 @@ Fill in all sections with implementation details.
 - The project_id is a short hex string like `c8cda731`
 
 ```
-living_ui_notify_ready(
-  project_id="<PROJECT_ID from task instruction>",
-  url="http://localhost:<port from manifest.json>",
-  port=<port from manifest.json>
-)
+living_ui_notify_ready(project_id="<PROJECT_ID from task instruction>")
 ```
 
 ## Common Mistakes
+
+- **Relative imports** — NEVER use `from . import models` or `from .models import ...` in backend code. Use absolute imports: `from models import ...`
+- **Double /api prefix** — Routes in `routes.py` should NOT have `/api` prefix (e.g., use `@router.get("/items")` not `@router.get("/api/items")`). The prefix is added by `main.py`'s `include_router`.
+- **Running servers manually** — NEVER start uvicorn, npm run dev, or npm run preview. The pipeline handles this.
 
 See [TROUBLESHOOTING.md](references/TROUBLESHOOTING.md) for more debugging help.
 
@@ -303,27 +302,25 @@ See [STANDARDS.md](references/STANDARDS.md) for complete quality checklist.
 
 Before calling `living_ui_notify_ready`:
 
-- [ ] Backend models defined in `backend/models.py`
-- [ ] Backend routes added in `backend/routes.py`
+- [ ] Backend models defined in `backend/models.py` (absolute imports only)
+- [ ] Backend routes added in `backend/routes.py` (no `/api` prefix on route paths)
 - [ ] Frontend types defined in `frontend/types.ts`
 - [ ] UI components built in `frontend/components/`
 - [ ] Controller methods connect UI to backend
-- [ ] **[VERIFY.md](references/VERIFY.md) checklist completed**
-- [ ] `npm run build` **succeeds with exit code 0**
 - [ ] `LIVING_UI.md` documentation updated
 - [ ] **Verified project_id from task instruction** (NOT task session ID)
-- [ ] **CALLED `living_ui_notify_ready` action**
+- [ ] **CALLED `living_ui_notify_ready` action** (pipeline handles build/test/launch)
 
 ## FORBIDDEN Actions
 
 - NEVER use `metadata` as a column name in SQLAlchemy
-- NEVER leave `npm run dev` or `npm run preview` running
+- NEVER use relative imports in backend code (`from . import` or `from .models import`)
+- NEVER add `/api` prefix to route paths in `routes.py` (the router prefix handles this)
+- NEVER run `npm run dev`, `npm run build`, `npm run preview`, or `uvicorn` manually
 - NEVER store important state only in React (use backend)
-- NEVER start the production server yourself
 - NEVER use `send_message` - this is a background task
 - NEVER skip calling `living_ui_notify_ready`
 - NEVER use the task session ID as the project_id parameter
-- NEVER call `living_ui_notify_ready` if `npm run build` failed
 
 ## References
 

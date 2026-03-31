@@ -79,14 +79,14 @@ async def restart_living_ui(project_id: str) -> dict:
     """
     Restart a running Living UI project (backend + frontend).
 
-    Stops the entire project and relaunches it.
-    Used after modifying backend or frontend code.
+    Stops the entire project and relaunches via the pipeline.
+    Returns detailed errors if any step fails.
 
     Args:
         project_id: The Living UI project ID
 
     Returns:
-        Dict with status, message, url, and backend_url on success.
+        Dict with status, message, url/backend_url on success, or errors on failure.
     """
     if not _manager:
         return {"status": "error", "message": "Living UI manager not initialized"}
@@ -98,21 +98,24 @@ async def restart_living_ui(project_id: str) -> dict:
     # Stop the entire project (backend + frontend)
     await _manager.stop_project(project_id)
 
-    # Relaunch (backend first, then frontend)
-    success = await _manager.launch_project(project_id)
+    # Relaunch via the full pipeline
+    result = await _manager.launch_and_verify(project_id)
 
-    if success:
-        project = _manager.get_project(project_id)
+    if result["status"] == "success":
         return {
             "status": "success",
             "message": f"Living UI '{project_id}' restarted",
-            "url": project.url if project else None,
-            "backend_url": project.backend_url if project else None,
+            "url": result.get("url"),
+            "backend_url": result.get("backend_url"),
         }
     else:
+        errors = result.get("errors", [])
+        errors_str = "\n".join(errors[:10])
         return {
             "status": "error",
-            "message": f"Failed to restart Living UI '{project_id}'",
+            "message": f"Restart failed at step: {result.get('step', 'unknown')}",
+            "test_errors": errors[:10],
+            "details": f"Fix these errors and call living_ui_restart again:\n{errors_str}",
         }
 
 

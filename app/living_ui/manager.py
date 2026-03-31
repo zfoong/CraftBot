@@ -653,6 +653,478 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             await asyncio.sleep(0.5)
         return False
 
+    async def _run_backend_tests(self, project_id: str, mode: str, port: int = 0) -> bool:
+        """
+        Run backend tests using test_runner.py.
+
+        Args:
+            project_id: Project ID to test
+            mode: "internal" (pre-server) or "external" (post-server HTTP tests)
+            port: Backend port (required for external mode)
+
+        Returns:
+            True if all tests pass, False otherwise
+        """
+        project = self.projects.get(project_id)
+        if not project:
+            return False
+
+        backend_path = Path(project.path) / 'backend'
+        test_runner = backend_path / 'test_runner.py'
+        if not test_runner.exists():
+            logger.warning(f"[LIVING_UI] No test_runner.py for {project_id}, skipping {mode} tests")
+            return True  # No tests = pass (backwards compat with older projects)
+
+        logger.info(f"[LIVING_UI] Running {mode} tests for {project.name} ({project_id})...")
+
+        cmd = ['python', str(test_runner), f'--{mode}']
+        if mode == 'external' and port:
+            cmd.extend(['--port', str(port)])
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(backend_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+
+            stdout_str = stdout.decode('utf-8', errors='replace').strip()
+            stderr_str = stderr.decode('utf-8', errors='replace').strip()
+
+            if stderr_str:
+                # stderr contains the test runner's logging output
+                for line in stderr_str.split('\n')[-20:]:  # Last 20 lines
+                    logger.debug(f"[LIVING_UI:TEST] {line}")
+
+            if proc.returncode == 0:
+                logger.info(f"[LIVING_UI] {mode.capitalize()} tests passed for {project_id}")
+                return True
+            else:
+                # Read the detailed results file
+                if mode == 'internal':
+                    results_file = backend_path / 'logs' / 'test_discovery.json'
+                else:
+                    results_file = backend_path / 'logs' / 'test_results.json'
+
+                error_details = ''
+                if results_file.exists():
+                    try:
+                        results = json.loads(results_file.read_text(encoding='utf-8'))
+                        errors = results.get('errors', [])
+                        error_details = '; '.join(
+                            f"[{e.get('test', '?')}] {e.get('error', '?')}" for e in errors[:5]
+                        )
+                    except Exception:
+                        pass
+
+                logger.error(
+                    f"[LIVING_UI] {mode.capitalize()} tests failed for {project_id}: {error_details or stderr_str[-500:]}"
+                )
+                return False
+
+        except asyncio.TimeoutError:
+            logger.error(f"[LIVING_UI] {mode.capitalize()} tests timed out for {project_id}")
+            return False
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Failed to run {mode} tests for {project_id}: {e}")
+            return False
+
+    # ========================================================================
+    # Manifest-driven launch pipeline
+    # ========================================================================
+
+    async def launch_and_verify(self, project_id: str) -> dict:
+        """
+        Launch and verify a Living UI project using its manifest pipeline.
+
+        Runs backend and frontend tracks in parallel to collect all errors at once.
+        Only starts servers if all pre-start checks pass.
+
+        Dependency graph:
+            pip install ──→ internal tests ──→ unit + compatibility tests (parallel)
+            npm install ──→ npm run build
+            Both tracks run in parallel. If ANY errors, return all without starting servers.
+            If clean: start backend → health check → external tests → start frontend.
+
+        Returns:
+            {"status": "success", "url": "...", "backend_url": "...", "port": N}
+            {"status": "error", "step": "validation", "errors": [...all errors...]}
+        """
+        project = self.projects.get(project_id)
+        if not project:
+            return {"status": "error", "step": "setup", "errors": [f"Project not found: {project_id}"]}
+
+        project_path = Path(project.path)
+        if not project_path.exists():
+            return {"status": "error", "step": "setup", "errors": [f"Project path not found: {project.path}"]}
+
+        # Load manifest
+        manifest_path = project_path / 'config' / 'manifest.json'
+        if not manifest_path.exists():
+            return {"status": "error", "step": "setup", "errors": ["config/manifest.json not found"]}
+
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        except Exception as e:
+            return {"status": "error", "step": "setup", "errors": [f"Failed to parse manifest: {e}"]}
+
+        pipeline = manifest.get('pipeline', {})
+        if not pipeline:
+            return {"status": "error", "step": "setup", "errors": ["No pipeline defined in manifest"]}
+
+        logger.info(f"[LIVING_UI:PIPELINE] Starting launch pipeline for {project.name} ({project_id})")
+
+        # ================================================================
+        # PHASE 1: Parallel validation (collect ALL errors before starting)
+        # ================================================================
+
+        backend_cfg = pipeline.get('backend')
+        frontend_cfg = pipeline.get('frontend')
+
+        # Run backend and frontend validation tracks in parallel
+        backend_task = None
+        frontend_task = None
+
+        if backend_cfg:
+            backend_cwd = project_path / backend_cfg.get('cwd', 'backend')
+            backend_task = asyncio.create_task(
+                self._validate_backend_track(project_id, project_path, backend_cfg, backend_cwd)
+            )
+
+        if frontend_cfg:
+            frontend_cwd = project_path / frontend_cfg.get('cwd', '.')
+            if str(frontend_cwd) == '.':
+                frontend_cwd = project_path
+            frontend_task = asyncio.create_task(
+                self._validate_frontend_track(project_id, frontend_cfg, frontend_cwd)
+            )
+
+        # Wait for both tracks to complete
+        all_errors: List[str] = []
+
+        if backend_task:
+            backend_errors = await backend_task
+            all_errors.extend(backend_errors)
+
+        if frontend_task:
+            frontend_errors = await frontend_task
+            all_errors.extend(frontend_errors)
+
+        # If ANY errors from either track, return them all at once
+        if all_errors:
+            logger.error(f"[LIVING_UI:PIPELINE] Validation failed with {len(all_errors)} error(s)")
+            for err in all_errors[:10]:
+                logger.error(f"[LIVING_UI:PIPELINE]   {err}")
+            project.status = 'error'
+            project.error = f'{len(all_errors)} validation error(s)'
+            self._save_projects()
+            return {"status": "error", "step": "validation", "errors": all_errors}
+
+        logger.info(f"[LIVING_UI:PIPELINE] All validation passed, starting servers...")
+
+        # ================================================================
+        # PHASE 2: Start servers (sequential — needs running processes)
+        # ================================================================
+
+        # --- Start backend ---
+        if backend_cfg:
+            backend_cwd = project_path / backend_cfg.get('cwd', 'backend')
+            backend_port = project.backend_port
+            if not backend_port:
+                backend_port = self._allocate_port()
+                project.backend_port = backend_port
+
+            if not await self._ensure_port_available(backend_port):
+                return {"status": "error", "step": "backend.port", "errors": [f"Port {backend_port} is occupied and could not be freed"]}
+
+            start_cmd = backend_cfg.get('start', '')
+            if not start_cmd:
+                return {"status": "error", "step": "backend.start", "errors": ["No start command in manifest"]}
+
+            logs_dir = backend_cwd / 'logs'
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_file = logs_dir / 'subprocess_output.log'
+
+            backend_process = self._start_process(backend_cwd, start_cmd, log_file, port=backend_port)
+            project.backend_process = backend_process
+            logger.info(f"[LIVING_UI:PIPELINE] Backend starting on port {backend_port}")
+
+            # Health check
+            health_url = backend_cfg.get('health')
+            if health_url:
+                healthy = await self._wait_for_health_check(health_url, timeout=20)
+                if not healthy:
+                    log_tail = self._read_log_tail(log_file, 1000)
+                    if backend_process.poll() is not None:
+                        err = f"Backend process exited with code {backend_process.returncode}"
+                    else:
+                        err = f"Backend not responding at {health_url}"
+                        backend_process.terminate()
+                    project.backend_process = None
+                    return {"status": "error", "step": "backend.health", "errors": [err, log_tail]}
+
+            project.backend_url = f"http://localhost:{backend_port}"
+            logger.info(f"[LIVING_UI:PIPELINE] Backend healthy on port {backend_port}")
+
+            # Post-start tests (external smoke tests)
+            for test in backend_cfg.get('post_start_tests', []):
+                result = await self._run_pipeline_command(
+                    backend_cwd, test['command'], step_name=f"backend.post_start.{test['name']}"
+                )
+                if result["status"] == "error" and test.get('required', True):
+                    errors = self._collect_test_errors(project_path, test['name']) or result["errors"]
+                    await self.stop_backend(project_id)
+                    return {"status": "error", "step": f"backend.post_start.{test['name']}", "errors": errors}
+
+        # --- Start frontend ---
+        if frontend_cfg:
+            frontend_cwd = project_path / frontend_cfg.get('cwd', '.')
+            if str(frontend_cwd) == '.':
+                frontend_cwd = project_path
+
+            frontend_port = project.port
+            if not frontend_port:
+                frontend_port = self._allocate_port()
+                project.port = frontend_port
+
+            if not await self._ensure_port_available(frontend_port):
+                await self.stop_backend(project_id)
+                return {"status": "error", "step": "frontend.port", "errors": [f"Port {frontend_port} is occupied and could not be freed"]}
+
+            start_cmd = frontend_cfg.get('start', '')
+            if not start_cmd:
+                await self.stop_backend(project_id)
+                return {"status": "error", "step": "frontend.start", "errors": ["No start command in manifest"]}
+
+            frontend_logs_dir = project_path / 'logs'
+            frontend_logs_dir.mkdir(parents=True, exist_ok=True)
+            frontend_log = frontend_logs_dir / 'frontend_output.log'
+
+            frontend_process = self._start_process(frontend_cwd, start_cmd, frontend_log, port=frontend_port)
+            project.process = frontend_process
+            project.port = frontend_port
+            logger.info(f"[LIVING_UI:PIPELINE] Frontend starting on port {frontend_port}")
+
+            server_ready = await self._wait_for_server(frontend_port, timeout=15)
+            if not server_ready:
+                log_tail = self._read_log_tail(frontend_log, 1000)
+                if frontend_process.poll() is not None:
+                    err = f"Frontend process exited with code {frontend_process.returncode}"
+                else:
+                    err = f"Frontend not responding on port {frontend_port}"
+                    frontend_process.terminate()
+                project.process = None
+                await self.stop_backend(project_id)
+                return {"status": "error", "step": "frontend.health", "errors": [err, log_tail]}
+
+            project.url = f"http://localhost:{frontend_port}"
+            logger.info(f"[LIVING_UI:PIPELINE] Frontend ready on port {frontend_port}")
+
+        # === SUCCESS ===
+        project.status = 'running'
+        project.error = None
+        self._save_projects()
+
+        logger.info(f"[LIVING_UI:PIPELINE] Launch complete for {project.name} ({project_id})")
+        if project.url:
+            logger.info(f"[LIVING_UI:PIPELINE]   Frontend: {project.url}")
+        if project.backend_url:
+            logger.info(f"[LIVING_UI:PIPELINE]   Backend: {project.backend_url}")
+
+        return {
+            "status": "success",
+            "url": project.url,
+            "backend_url": project.backend_url,
+            "port": project.port,
+        }
+
+    async def _validate_backend_track(
+        self, project_id: str, project_path: Path, backend_cfg: dict, backend_cwd: Path
+    ) -> List[str]:
+        """
+        Run backend validation: install → internal tests → unit + compatibility tests (parallel).
+        Returns list of error strings (empty = all passed).
+        """
+        errors: List[str] = []
+
+        # 1. Install
+        install_cmd = backend_cfg.get('install')
+        if install_cmd and backend_cwd.exists():
+            result = await self._run_pipeline_command(backend_cwd, install_cmd, step_name="backend.install")
+            if result["status"] == "error":
+                errors.append(f"[backend.install] {result['errors'][0] if result.get('errors') else 'install failed'}")
+                return errors  # Can't test without dependencies
+
+        # 2. Internal tests (must run first — generates test_discovery.json)
+        tests = backend_cfg.get('tests', [])
+        internal_tests = [t for t in tests if t['name'] == 'internal']
+        other_tests = [t for t in tests if t['name'] != 'internal']
+
+        for test in internal_tests:
+            result = await self._run_pipeline_command(
+                backend_cwd, test['command'], step_name=f"backend.tests.{test['name']}"
+            )
+            if result["status"] == "error" and test.get('required', True):
+                detailed = self._collect_test_errors(project_path, test['name'])
+                errors.extend(detailed or result.get("errors", []))
+
+        # 3. Remaining tests in parallel (unit + compatibility)
+        if other_tests:
+            parallel_tasks = []
+            for test in other_tests:
+                parallel_tasks.append(
+                    self._run_pipeline_command(
+                        backend_cwd, test['command'], step_name=f"backend.tests.{test['name']}"
+                    )
+                )
+            results = await asyncio.gather(*parallel_tasks)
+
+            for test, result in zip(other_tests, results):
+                if result["status"] == "error" and test.get('required', True):
+                    detailed = self._collect_test_errors(project_path, test['name'])
+                    errors.extend(detailed or result.get("errors", []))
+
+        return errors
+
+    async def _validate_frontend_track(
+        self, project_id: str, frontend_cfg: dict, frontend_cwd: Path
+    ) -> List[str]:
+        """
+        Run frontend validation: install → build.
+        Returns list of error strings (empty = all passed).
+        """
+        errors: List[str] = []
+
+        # 1. Install
+        install_cmd = frontend_cfg.get('install')
+        if install_cmd:
+            needs_install = not (frontend_cwd / 'node_modules').exists()
+            if needs_install:
+                result = await self._run_pipeline_command(frontend_cwd, install_cmd, step_name="frontend.install")
+                if result["status"] == "error":
+                    errors.append(f"[frontend.install] {result['errors'][0] if result.get('errors') else 'install failed'}")
+                    return errors  # Can't build without dependencies
+
+        # 2. Build
+        build_cmd = frontend_cfg.get('build')
+        if build_cmd:
+            result = await self._run_pipeline_command(frontend_cwd, build_cmd, step_name="frontend.build", timeout=120)
+            if result["status"] == "error":
+                build_errors = result.get("errors", ["build failed"])
+                for err in build_errors:
+                    errors.append(f"[frontend.build] {err}")
+
+        return errors
+
+    async def _run_pipeline_command(
+        self, cwd: Path, command: str, step_name: str, timeout: int = 60
+    ) -> dict:
+        """Run a single pipeline command. Returns {"status": "success"} or {"status": "error", ...}."""
+        logger.info(f"[LIVING_UI:PIPELINE] [{step_name}] Running: {command}")
+
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                cwd=str(cwd),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            stdout_str = stdout.decode('utf-8', errors='replace').strip()
+            stderr_str = stderr.decode('utf-8', errors='replace').strip()
+
+            if proc.returncode == 0:
+                logger.info(f"[LIVING_UI:PIPELINE] [{step_name}] OK")
+                return {"status": "success"}
+            else:
+                # Combine stdout and stderr for error context
+                output = (stderr_str or stdout_str)[-1000:]
+                logger.error(f"[LIVING_UI:PIPELINE] [{step_name}] FAILED (exit code {proc.returncode})")
+                return {
+                    "status": "error",
+                    "step": step_name,
+                    "errors": [output] if output else [f"Command failed with exit code {proc.returncode}"],
+                }
+        except asyncio.TimeoutError:
+            logger.error(f"[LIVING_UI:PIPELINE] [{step_name}] TIMEOUT ({timeout}s)")
+            return {"status": "error", "step": step_name, "errors": [f"Command timed out after {timeout}s"]}
+        except Exception as e:
+            logger.error(f"[LIVING_UI:PIPELINE] [{step_name}] ERROR: {e}")
+            return {"status": "error", "step": step_name, "errors": [str(e)]}
+
+    async def _ensure_port_available(self, port: int) -> bool:
+        """Ensure a port is available, killing orphan processes if needed."""
+        if not self._is_port_in_use(port):
+            return True
+
+        logger.warning(f"[LIVING_UI:PIPELINE] Port {port} in use, attempting to free")
+        self._kill_process_on_port(port)
+        await asyncio.sleep(1)
+
+        if self._is_port_in_use(port):
+            logger.error(f"[LIVING_UI:PIPELINE] Could not free port {port}")
+            return False
+        return True
+
+    def _start_process(
+        self, cwd: Path, command: str, log_file: Path, port: int = 0
+    ) -> subprocess.Popen:
+        """Start a background process with output redirected to a log file."""
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = open(log_file, 'a', encoding='utf-8')
+        log_handle.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] Starting: {command}\n{'='*60}\n")
+        log_handle.flush()
+
+        if os.name == 'nt':
+            process = subprocess.Popen(
+                command,
+                cwd=str(cwd),
+                stdout=log_handle,
+                stderr=log_handle,
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+            )
+        else:
+            process = subprocess.Popen(
+                command,
+                cwd=str(cwd),
+                stdout=log_handle,
+                stderr=log_handle,
+                shell=True,
+            )
+        return process
+
+    def _collect_test_errors(self, project_path: Path, test_name: str) -> List[str]:
+        """Read test result JSON files and extract error messages."""
+        errors = []
+        # Map test names to result files
+        file_map = {
+            "internal": "test_discovery.json",
+            "unit": "test_unit.json",
+            "compatibility": "test_compatibility.json",
+            "external": "test_results.json",
+        }
+        result_file = project_path / 'backend' / 'logs' / file_map.get(test_name, f"test_{test_name}.json")
+        if result_file.exists():
+            try:
+                data = json.loads(result_file.read_text(encoding='utf-8'))
+                for err in data.get('errors', []):
+                    errors.append(f"[{err.get('test', '?')}] {err.get('error', '?')}")
+            except Exception:
+                pass
+        return errors
+
+    @staticmethod
+    def _read_log_tail(log_file: Path, chars: int = 1000) -> str:
+        """Read the last N characters of a log file."""
+        try:
+            content = log_file.read_text(encoding='utf-8')
+            return content[-chars:] if len(content) > chars else content
+        except Exception:
+            return '(could not read log)'
+
     async def launch_backend(self, project_id: str) -> bool:
         """
         Launch the backend (FastAPI) server for a Living UI project.
@@ -1115,16 +1587,11 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
 
     async def launch_project(self, project_id: str) -> bool:
         """
-        Launch a Living UI project (backend + frontend).
+        Launch a Living UI project.
 
-        Launches the backend first (FastAPI for state persistence),
-        then the frontend (Vite preview server).
-
-        Args:
-            project_id: Project ID to launch
-
-        Returns:
-            True if launch was successful
+        Thin wrapper around launch_and_verify() that returns bool for
+        backwards compatibility (watchdog, auto_launch_projects, restart).
+        Includes stale status detection.
         """
         project = self.projects.get(project_id)
         if not project:
@@ -1145,8 +1612,6 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
                 project.backend_process = None
                 actually_alive = False
 
-            # Also check if ports are still responding (catches cases where
-            # process handles were lost, e.g. after serialization)
             if actually_alive and project.port and not self._is_port_in_use(project.port):
                 logger.warning(f"[LIVING_UI] Frontend port {project.port} not responding for {project_id}")
                 actually_alive = False
@@ -1161,124 +1626,8 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
             project.url = None
             project.backend_url = None
 
-        project_path = Path(project.path)
-        if not project_path.exists():
-            logger.error(f"[LIVING_UI] Project path not found: {project.path}")
-            project.status = 'error'
-            project.error = 'Project directory not found'
-            return False
-
-        try:
-            # Step 1: Launch backend first (for state persistence)
-            backend_path = project_path / 'backend'
-            if backend_path.exists():
-                logger.info(f"[LIVING_UI] Launching backend for {project_id}...")
-                backend_success = await self.launch_backend(project_id)
-                if not backend_success:
-                    logger.error(f"[LIVING_UI] Backend failed to start for {project_id}, aborting launch")
-                    project.status = 'error'
-                    project.error = 'Backend failed to start'
-                    self._save_projects()
-                    return False
-
-            # Step 2: Check if npm dependencies are installed
-            node_modules = project_path / 'node_modules'
-            if not node_modules.exists():
-                logger.info(f"[LIVING_UI] Installing dependencies for {project_id}")
-                install_process = await asyncio.create_subprocess_exec(
-                    'npm', 'install',
-                    cwd=str(project_path),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                await install_process.wait()
-
-            # Step 3: Get the frontend port (use assigned port or allocate new one)
-            port = project.port or self._allocate_port()
-
-            # Check if port is already in use and try to free it
-            if self._is_port_in_use(port):
-                logger.warning(f"[LIVING_UI] Port {port} already in use, attempting to free it")
-                self._kill_process_on_port(port)
-                await asyncio.sleep(1)  # Wait for port to be released
-
-                # Double check it's free now
-                if self._is_port_in_use(port):
-                    logger.error(f"[LIVING_UI] Could not free port {port}")
-                    project.status = 'error'
-                    project.error = f'Port {port} is occupied by another process'
-                    self._save_projects()
-                    return False
-
-            # Step 4: Start the frontend preview server
-            logger.info(f"[LIVING_UI] Starting frontend for {project_id} on port {port}")
-
-            # Log frontend subprocess output to file
-            frontend_logs_dir = project_path / 'logs'
-            frontend_logs_dir.mkdir(parents=True, exist_ok=True)
-            frontend_log = frontend_logs_dir / 'frontend_output.log'
-            frontend_log_handle = open(frontend_log, 'a', encoding='utf-8')
-            frontend_log_handle.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] Starting frontend on port {port}\n{'='*60}\n")
-            frontend_log_handle.flush()
-
-            process = subprocess.Popen(
-                ['npm', 'run', 'preview', '--', '--port', str(port)],
-                cwd=str(project_path),
-                stdout=frontend_log_handle,
-                stderr=frontend_log_handle,
-                shell=True if os.name == 'nt' else False,
-            )
-
-            project.process = process
-            project.port = port
-
-            # Wait for server to actually start and verify it's responding
-            logger.info(f"[LIVING_UI] Waiting for frontend to start on port {port}...")
-            server_ready = await self._wait_for_server(port, timeout=15)
-
-            if not server_ready:
-                # Server didn't start - read log for diagnostics
-                frontend_log_handle.flush()
-                try:
-                    recent_output = frontend_log.read_text(encoding='utf-8')[-1000:]
-                except Exception:
-                    recent_output = '(could not read frontend log)'
-                if process.poll() is not None:
-                    # Process exited
-                    logger.error(f"[LIVING_UI] Frontend process exited with code {process.returncode}. Log tail:\n{recent_output}")
-                    project.status = 'error'
-                    project.error = f'Frontend failed to start (exit code {process.returncode})'
-                else:
-                    # Process running but not responding
-                    logger.error(f"[LIVING_UI] Frontend not responding on port {port}. Log tail:\n{recent_output}")
-                    process.terminate()
-                    project.status = 'error'
-                    project.error = f'Frontend started but not responding on port {port}'
-                project.process = None
-                frontend_log_handle.close()
-                # Also stop backend if frontend failed
-                await self.stop_backend(project_id)
-                self._save_projects()
-                return False
-
-            # Success - both backend and frontend are running
-            project.url = f"http://localhost:{port}"
-            project.status = 'running'
-            project.error = None
-
-            self._save_projects()
-            logger.info(f"[LIVING_UI] Successfully launched project {project_id}")
-            logger.info(f"[LIVING_UI]   Frontend: {project.url}")
-            if project.backend_url:
-                logger.info(f"[LIVING_UI]   Backend: {project.backend_url}")
-            return True
-
-        except Exception as e:
-            logger.error(f"[LIVING_UI] Failed to launch project {project_id}: {e}")
-            project.status = 'error'
-            project.error = str(e)
-            self._save_projects()
-            return False
+        result = await self.launch_and_verify(project_id)
+        return result["status"] == "success"
 
     async def stop_project(self, project_id: str, stop_backend: bool = True) -> bool:
         """
