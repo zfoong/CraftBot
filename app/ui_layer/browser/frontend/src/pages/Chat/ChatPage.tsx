@@ -49,6 +49,11 @@ export function ChatPage() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Input history (terminal-style up/down arrow navigation)
+  const inputHistoryRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
+  const draftRef = useRef('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Virtualization refs
@@ -252,6 +257,13 @@ export function ChatPage() {
     if (!attachmentValidation.valid) return
 
     if (input.trim() || pendingAttachments.length > 0) {
+      // Save to input history
+      if (input.trim()) {
+        inputHistoryRef.current.push(input.trim())
+      }
+      historyIndexRef.current = -1
+      draftRef.current = ''
+
       // Include reply context if replying to a message/task
       const replyContext = replyTarget ? {
         sessionId: replyTarget.sessionId,
@@ -279,6 +291,32 @@ export function ChatPage() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const history = inputHistoryRef.current
+      // Only navigate history when input is empty (or already navigating history)
+      if (history.length === 0) return
+      if (historyIndexRef.current === -1 && input.trim() !== '') return
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) {
+          historyIndexRef.current = history.length - 1
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current--
+        }
+        setInput(history[historyIndexRef.current])
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) return
+        if (historyIndexRef.current < history.length - 1) {
+          historyIndexRef.current++
+          setInput(history[historyIndexRef.current])
+        } else {
+          // Back to empty
+          historyIndexRef.current = -1
+          setInput('')
+        }
+      }
     }
   }
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import List
 
 from app.ui_layer.commands.base import Command, CommandResult
@@ -35,13 +36,29 @@ Note: This does not affect saved settings or credentials."""
         adapter_id: str = "",
     ) -> CommandResult:
         """Execute the reset command."""
-        # Reset UI state
-        self._controller.state_store.reset()
+        # Show immediate feedback, then perform reset in background
+        self.emit_message("Resetting agent state...", "system")
 
-        # Reset agent state
-        await self._controller.agent.reset_agent_state()
+        asyncio.create_task(self._perform_reset())
 
-        return CommandResult(
-            success=True,
-            message="Agent state has been reset.",
-        )
+        return CommandResult(success=True)
+
+    async def _perform_reset(self) -> None:
+        """Perform the actual reset in the background."""
+        try:
+            # Reset UI state
+            self._controller.state_store.reset()
+
+            # Reset agent state
+            await self._controller.agent.reset_agent_state()
+
+            # Clear chat and action panel in the UI
+            adapter = self._controller.active_adapter
+            if adapter:
+                await adapter.chat_component.clear()
+                if adapter.action_panel:
+                    await adapter.action_panel.clear()
+
+            self.emit_message("Agent state has been reset.", "system")
+        except Exception as e:
+            self.emit_message(f"Failed to reset agent state: {e}", "error")

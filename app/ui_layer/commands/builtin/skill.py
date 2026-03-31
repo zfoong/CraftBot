@@ -66,13 +66,13 @@ Examples:
     ) -> CommandResult:
         """Execute the skill command."""
         if not args:
-            return await self._list_skills()
+            return CommandResult(success=True, message=self.help_text)
 
         subcommand = args[0].lower()
         sub_args = args[1:]
 
         handlers = {
-            "list": self._list_skills,
+            "list": lambda: self._list_skills(sub_args),
             "info": lambda: self._skill_info(sub_args),
             "enable": lambda: self._enable_skill(sub_args),
             "disable": lambda: self._disable_skill(sub_args),
@@ -89,11 +89,12 @@ Examples:
 
         return CommandResult(
             success=False,
-            message=f"Unknown subcommand: {subcommand}\nUse /help skill for usage.",
+            message=f"Unknown subcommand: {subcommand}\nUse /skill for usage.",
         )
 
-    async def _list_skills(self) -> CommandResult:
-        """List all discovered skills."""
+    async def _list_skills(self, args: List[str] = None) -> CommandResult:
+        """List skills. Shows only enabled skills unless --all is passed."""
+        show_all = args and "--all" in args
         skills = list_skills()
         if not skills:
             return CommandResult(
@@ -101,12 +102,29 @@ Examples:
                 message="No skills discovered. Use /skill dirs to see search paths.",
             )
 
-        lines = ["Discovered skills:", ""]
+        if not show_all:
+            skills = [s for s in skills if s.get("enabled", True)]
+
+        if not skills:
+            return CommandResult(
+                success=True,
+                message="No enabled skills. Use /skill list --all to see all skills.",
+            )
+
+        label = "All skills:" if show_all else "Enabled skills:"
+        lines = [label, ""]
         for skill in skills:
-            status = "enabled" if skill.get("enabled", True) else "disabled"
             name = skill.get("name", "unknown")
             desc = skill.get("description", "")[:50]
-            lines.append(f"  {name} [{status}] - {desc}")
+            if show_all:
+                status = "enabled" if skill.get("enabled", True) else "disabled"
+                lines.append(f"  {name} [{status}] - {desc}")
+            else:
+                lines.append(f"  {name} - {desc}")
+
+        if not show_all:
+            lines.append("")
+            lines.append("Use /skill list --all to include disabled skills.")
 
         return CommandResult(success=True, message="\n".join(lines))
 
@@ -154,16 +172,8 @@ Examples:
             )
 
         name = args[0]
-        result = enable_skill(name)
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Enabled skill: {name}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to enable skill: {name}"),
-        )
+        success, message = enable_skill(name)
+        return CommandResult(success=success, message=message)
 
     async def _disable_skill(self, args: List[str]) -> CommandResult:
         """Disable a skill."""
@@ -174,16 +184,8 @@ Examples:
             )
 
         name = args[0]
-        result = disable_skill(name)
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Disabled skill: {name}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to disable skill: {name}"),
-        )
+        success, message = disable_skill(name)
+        return CommandResult(success=success, message=message)
 
     async def _install_skill(self, args: List[str]) -> CommandResult:
         """Install a skill from path or git URL."""
@@ -197,19 +199,11 @@ Examples:
 
         # Check if it's a git URL
         if source.startswith("http") or source.startswith("git@"):
-            result = install_skill_from_git(source)
+            success, message = install_skill_from_git(source)
         else:
-            result = install_skill_from_path(source)
+            success, message = install_skill_from_path(source)
 
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Installed skill from: {source}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to install skill from: {source}"),
-        )
+        return CommandResult(success=success, message=message)
 
     async def _create_skill(self, args: List[str]) -> CommandResult:
         """Create a new skill scaffold."""
@@ -222,17 +216,8 @@ Examples:
         name = args[0]
         description = " ".join(args[1:]) if len(args) > 1 else ""
 
-        result = create_skill_scaffold(name, description)
-        if result.get("success"):
-            path = result.get("path", "")
-            return CommandResult(
-                success=True,
-                message=f"Created skill scaffold: {name}\nPath: {path}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to create skill: {name}"),
-        )
+        success, message = create_skill_scaffold(name, description)
+        return CommandResult(success=success, message=message)
 
     async def _remove_skill(self, args: List[str]) -> CommandResult:
         """Remove a skill."""
@@ -243,30 +228,13 @@ Examples:
             )
 
         name = args[0]
-        result = remove_skill(name)
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Removed skill: {name}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to remove skill: {name}"),
-        )
+        success, message = remove_skill(name)
+        return CommandResult(success=success, message=message)
 
     async def _reload_skills(self) -> CommandResult:
         """Reload skills from disk."""
-        result = reload_skills()
-        if result.get("success"):
-            count = result.get("count", 0)
-            return CommandResult(
-                success=True,
-                message=f"Reloaded {count} skills from disk.",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", "Failed to reload skills"),
-        )
+        success, message = reload_skills()
+        return CommandResult(success=success, message=message)
 
     async def _show_dirs(self) -> CommandResult:
         """Show skill search directories."""

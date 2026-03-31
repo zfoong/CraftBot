@@ -289,16 +289,7 @@ class AgentBase:
     # =====================================
 
     def _register_builtin_commands(self) -> None:
-        self.register_command(
-            "/reset",
-            "Reset the agent state, clearing tasks, triggers, and session data.",
-            self.reset_agent_state,
-        )
-        self.register_command(
-            "/onboarding",
-            "Re-run the user profile interview to update your preferences.",
-            self._handle_onboarding_command,
-        )
+        pass
 
     def register_command(
         self,
