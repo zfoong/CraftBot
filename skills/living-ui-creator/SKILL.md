@@ -1,7 +1,6 @@
 ---
 name: living-ui-creator
 description: Create custom Living UI applications with backend-first architecture. Scaffolds, develops, tests, and launches dynamic web apps with persistent state.
-user-invocable: false
 action-sets:
   - file_operations
   - code_execution
@@ -174,6 +173,8 @@ Read the project description and identify:
 - User actions (create, update, delete, etc.)
 - UI layout
 
+**IMPORTANT:** document requirement in LIVING_UI.md.
+
 ### Phase 2: Define Backend Models
 
 **Edit: `backend/models.py`**
@@ -237,6 +238,7 @@ cd backend && python -c "from models import *; from routes import *; print('OK')
 npm run build
 ```
 
+**DO NOT run:** `npm run dev`.
 **DO NOT proceed if build fails.** Fix all errors first.
 
 ### Phase 9: Update Documentation

@@ -886,6 +886,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           content,
           attachments: attachments || [],
           replyContext: replyContext || null,
+          livingUIId: livingUIId || null,
         }
         const payloadStr = JSON.stringify(payload)
         console.log('[WebSocket] Sending message, payload size:', payloadStr.length, 'bytes, attachments:', attachments?.length || 0)
@@ -896,15 +897,6 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
     } else {
       console.warn('[WebSocket] Cannot send message - WebSocket not open, state:', wsRef.current?.readyState)
-  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext, livingUIId?: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'message',
-        content,
-        attachments: attachments || [],
-        replyContext: replyContext || null,
-        livingUIId: livingUIId || null,
-      }))
     }
   }, [])
 
@@ -1145,6 +1137,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   )
 }
 
+
 export function useWebSocket() {
   const context = useContext(WebSocketContext)
   if (!context) {
@@ -1152,3 +1145,4 @@ export function useWebSocket() {
   }
   return context
 }
+  

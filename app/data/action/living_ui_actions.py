@@ -102,6 +102,84 @@ def living_ui_notify_ready(input_data: dict) -> dict:
 
 
 @action(
+    name="living_ui_restart",
+    description=(
+        "Restart a running Living UI project (backend + frontend). "
+        "Use this after modifying backend or frontend code so changes take effect. "
+        "Stops the entire project and relaunches it on the same ports."
+    ),
+    default=False,
+    mode="CLI",
+    action_sets=["living_ui"],
+    parallelizable=False,
+    input_schema={
+        "project_id": {
+            "type": "string",
+            "example": "5a58a160",
+            "description": "The Living UI project ID (from living_ui_projects.json).",
+        },
+    },
+    output_schema={
+        "status": {
+            "type": "string",
+            "example": "success",
+            "description": "Result of the restart operation.",
+        },
+        "message": {
+            "type": "string",
+            "example": "Living UI '5a58a160' restarted",
+            "description": "Status message.",
+        },
+        "url": {
+            "type": "string",
+            "example": "http://localhost:3100",
+            "description": "The frontend URL after restart.",
+        },
+        "backend_url": {
+            "type": "string",
+            "example": "http://localhost:3101",
+            "description": "The backend URL after restart.",
+        },
+    },
+    test_payload={
+        "project_id": "test123",
+        "simulated_mode": True,
+    },
+)
+def living_ui_restart(input_data: dict) -> dict:
+    """Restart a running Living UI project."""
+    import asyncio
+
+    project_id = input_data.get("project_id", "")
+    simulated_mode = input_data.get("simulated_mode", False)
+
+    if not project_id:
+        return {
+            "status": "error",
+            "message": "project_id is required",
+        }
+
+    if simulated_mode:
+        return {
+            "status": "success",
+            "message": f"Living UI '{project_id}' restarted",
+            "url": "http://localhost:3100",
+            "backend_url": "http://localhost:3101",
+        }
+
+    try:
+        from app.living_ui import restart_living_ui
+
+        result = asyncio.run(restart_living_ui(project_id))
+        return result
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to restart: {str(e)}",
+        }
+
+
+@action(
     name="living_ui_report_progress",
     description=(
         "Report progress during Living UI creation. "

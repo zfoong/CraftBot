@@ -6,7 +6,9 @@
     "playwright-mcp",
     "pptx",
     "xlsx",
-    "living-ui-creator"
+    "living-ui-creator",
+    "living-ui-manager",
+    "living-ui-modify"
   ],
   "disabled_skills": [
     "agentmail",

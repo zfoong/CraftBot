@@ -11,6 +11,7 @@ __all__ = [
     'register_broadcast_callbacks',
     'broadcast_living_ui_ready',
     'broadcast_living_ui_progress',
+    'restart_living_ui',
 ]
 
 # Module-level singleton for global access
@@ -63,6 +64,47 @@ async def broadcast_living_ui_ready(project_id: str, url: str, port: int) -> boo
     if _broadcast_ready_callback:
         return await _broadcast_ready_callback(project_id, url, port)
     return False
+
+
+async def restart_living_ui(project_id: str) -> dict:
+    """
+    Restart a running Living UI project (backend + frontend).
+
+    Stops the entire project and relaunches it.
+    Used after modifying backend or frontend code.
+
+    Args:
+        project_id: The Living UI project ID
+
+    Returns:
+        Dict with status, message, url, and backend_url on success.
+    """
+    if not _manager:
+        return {"status": "error", "message": "Living UI manager not initialized"}
+
+    project = _manager.get_project(project_id)
+    if not project:
+        return {"status": "error", "message": f"Project '{project_id}' not found"}
+
+    # Stop the entire project (backend + frontend)
+    await _manager.stop_project(project_id)
+
+    # Relaunch (backend first, then frontend)
+    success = await _manager.launch_project(project_id)
+
+    if success:
+        project = _manager.get_project(project_id)
+        return {
+            "status": "success",
+            "message": f"Living UI '{project_id}' restarted",
+            "url": project.url if project else None,
+            "backend_url": project.backend_url if project else None,
+        }
+    else:
+        return {
+            "status": "error",
+            "message": f"Failed to restart Living UI '{project_id}'",
+        }
 
 
 async def broadcast_living_ui_progress(
