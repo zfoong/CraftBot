@@ -801,7 +801,6 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         break
       }
 
-
       case 'living_ui_state_update': {
         const update = msg.data as unknown as LivingUIStateUpdate
         setState(prev => ({
@@ -878,7 +877,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }))
   }, [state.hasMoreActions, state.loadingOlderActions, state.actions])
 
-  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
+  // const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
+  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext, livingUIId?: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       try {
         const payload = {
