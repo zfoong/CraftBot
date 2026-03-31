@@ -22,13 +22,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set, TYPE_CHECKING
-import logging
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.task.task_manager import TaskManager
     from app.trigger import TriggerQueue
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -93,6 +95,10 @@ class LivingUIManager:
         self._task_manager: Optional["TaskManager"] = None
         self._trigger_queue: Optional["TriggerQueue"] = None
 
+        # Watchdog state
+        self._watchdog_task: Optional[asyncio.Task] = None
+        self._watchdog_running: bool = False
+
         # Ensure workspace directory exists
         self.living_ui_dir = self.workspace_root / 'living_ui'
         self.living_ui_dir.mkdir(parents=True, exist_ok=True)
@@ -115,6 +121,329 @@ class LivingUIManager:
         self._task_manager = task_manager
         self._trigger_queue = trigger_queue
         logger.info("[LIVING_UI] Task manager and trigger queue bound")
+
+    # ========================================================================
+    # Watchdog - monitors running projects and restarts crashed processes
+    # ========================================================================
+
+    WATCHDOG_INTERVAL = 30  # seconds between checks
+    WATCHDOG_RETRY_DELAYS = [5, 15, 30]  # seconds to wait between restart attempts
+
+    def start_watchdog(self) -> None:
+        """Start the background watchdog that monitors running projects."""
+        if self._watchdog_running:
+            logger.warning("[LIVING_UI:WATCHDOG] Already running")
+            return
+
+        self._watchdog_running = True
+        self._watchdog_task = asyncio.create_task(self._watchdog_loop())
+        logger.info("[LIVING_UI:WATCHDOG] Started")
+
+    async def stop_watchdog(self) -> None:
+        """Stop the background watchdog."""
+        if not self._watchdog_running:
+            return
+
+        self._watchdog_running = False
+        if self._watchdog_task:
+            self._watchdog_task.cancel()
+            try:
+                await self._watchdog_task
+            except asyncio.CancelledError:
+                pass
+            self._watchdog_task = None
+        logger.info("[LIVING_UI:WATCHDOG] Stopped")
+
+    async def _watchdog_loop(self) -> None:
+        """
+        Background loop that checks all running projects for dead processes.
+
+        On detecting a crash:
+        1. Attempts silent restart (up to 3 retries with increasing delays)
+        2. If all retries fail, sets status to 'error' and creates an agent
+           task to investigate and fix the issue
+        """
+        retry_counts: Dict[str, int] = {}  # project_id -> consecutive failures
+
+        # Initial delay to let everything settle after startup
+        await asyncio.sleep(10)
+
+        while self._watchdog_running:
+            try:
+                await asyncio.sleep(self.WATCHDOG_INTERVAL)
+
+                for project_id, project in list(self.projects.items()):
+                    if project.status != 'running':
+                        # Clear retry count if project is no longer running
+                        retry_counts.pop(project_id, None)
+                        continue
+
+                    backend_dead = (
+                        project.backend_process is not None
+                        and project.backend_process.poll() is not None
+                    )
+                    frontend_dead = (
+                        project.process is not None
+                        and project.process.poll() is not None
+                    )
+
+                    # Also check via port if process handles are None
+                    # (can happen if manager was reloaded but processes survived)
+                    if not backend_dead and project.backend_port:
+                        if project.backend_process is None and not self._is_port_in_use(project.backend_port):
+                            backend_dead = True
+                    if not frontend_dead and project.port:
+                        if project.process is None and not self._is_port_in_use(project.port):
+                            frontend_dead = True
+
+                    if not backend_dead and not frontend_dead:
+                        # Everything healthy, reset retry counter
+                        if project_id in retry_counts:
+                            logger.info(f"[LIVING_UI:WATCHDOG] {project.name} ({project_id}) recovered")
+                            retry_counts.pop(project_id)
+                        continue
+
+                    # Something is dead
+                    retries = retry_counts.get(project_id, 0)
+                    crash_target = []
+                    if backend_dead:
+                        crash_target.append("backend")
+                    if frontend_dead:
+                        crash_target.append("frontend")
+                    crash_str = " + ".join(crash_target)
+
+                    if retries >= len(self.WATCHDOG_RETRY_DELAYS):
+                        # Exhausted retries — escalate to agent
+                        logger.error(
+                            f"[LIVING_UI:WATCHDOG] {project.name} ({project_id}) "
+                            f"{crash_str} crashed, all {retries} restart attempts failed. Escalating to agent."
+                        )
+                        await self._escalate_crash(project_id, crash_target)
+                        retry_counts.pop(project_id, None)
+                        continue
+
+                    delay = self.WATCHDOG_RETRY_DELAYS[retries]
+                    retry_counts[project_id] = retries + 1
+                    logger.warning(
+                        f"[LIVING_UI:WATCHDOG] {project.name} ({project_id}) "
+                        f"{crash_str} crashed. Restart attempt {retries + 1}/{len(self.WATCHDOG_RETRY_DELAYS)} "
+                        f"in {delay}s..."
+                    )
+
+                    await asyncio.sleep(delay)
+
+                    # Attempt restart
+                    restart_ok = True
+                    if backend_dead:
+                        project.backend_process = None
+                        success = await self.launch_backend(project_id)
+                        if not success:
+                            logger.error(f"[LIVING_UI:WATCHDOG] Backend restart failed for {project_id}")
+                            restart_ok = False
+
+                    if frontend_dead:
+                        project.process = None
+                        success = await self._relaunch_frontend(project_id)
+                        if not success:
+                            logger.error(f"[LIVING_UI:WATCHDOG] Frontend restart failed for {project_id}")
+                            restart_ok = False
+
+                    if restart_ok:
+                        logger.info(f"[LIVING_UI:WATCHDOG] {project.name} ({project_id}) restarted successfully")
+                        retry_counts.pop(project_id, None)
+                        self._save_projects()
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[LIVING_UI:WATCHDOG] Unexpected error: {e}")
+                await asyncio.sleep(self.WATCHDOG_INTERVAL)
+
+    async def _relaunch_frontend(self, project_id: str) -> bool:
+        """
+        Relaunch just the frontend process for a project.
+
+        Lightweight alternative to launch_project — reuses existing port,
+        skips npm install, doesn't touch backend.
+        """
+        project = self.projects.get(project_id)
+        if not project:
+            return False
+
+        project_path = Path(project.path)
+        port = project.port
+        if not port:
+            return False
+
+        # Kill anything on the port first
+        if self._is_port_in_use(port):
+            self._kill_process_on_port(port)
+            await asyncio.sleep(1)
+
+        try:
+            # Open log file for subprocess output
+            frontend_logs_dir = project_path / 'logs'
+            frontend_logs_dir.mkdir(parents=True, exist_ok=True)
+            frontend_log = frontend_logs_dir / 'frontend_output.log'
+            frontend_log_handle = open(frontend_log, 'a', encoding='utf-8')
+            frontend_log_handle.write(
+                f"\n{'='*60}\n[{datetime.now().isoformat()}] "
+                f"Relaunching frontend on port {port}\n{'='*60}\n"
+            )
+            frontend_log_handle.flush()
+
+            process = subprocess.Popen(
+                ['npm', 'run', 'preview', '--', '--port', str(port)],
+                cwd=str(project_path),
+                stdout=frontend_log_handle,
+                stderr=frontend_log_handle,
+                shell=True if os.name == 'nt' else False,
+            )
+
+            project.process = process
+
+            server_ready = await self._wait_for_server(port, timeout=15)
+            if not server_ready:
+                frontend_log_handle.flush()
+                try:
+                    recent = frontend_log.read_text(encoding='utf-8')[-500:]
+                except Exception:
+                    recent = ''
+                logger.error(f"[LIVING_UI] Frontend relaunch failed for {project_id}. Log tail:\n{recent}")
+                if process.poll() is None:
+                    process.terminate()
+                project.process = None
+                frontend_log_handle.close()
+                return False
+
+            project.url = f"http://localhost:{port}"
+            logger.info(f"[LIVING_UI] Frontend relaunched for {project_id} on port {port}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Frontend relaunch error for {project_id}: {e}")
+            return False
+
+    async def _escalate_crash(self, project_id: str, crash_targets: List[str]) -> None:
+        """
+        Escalate a crash to the agent by creating a fix task.
+
+        Called after all silent restart attempts have failed.
+        Reads crash logs and creates an agent task with full context.
+        """
+        project = self.projects.get(project_id)
+        if not project:
+            return
+
+        # Collect crash log tails
+        project_path = Path(project.path)
+        log_snippets = []
+
+        # Backend logs
+        backend_subprocess_log = project_path / 'backend' / 'logs' / 'subprocess_output.log'
+        if backend_subprocess_log.exists():
+            try:
+                content = backend_subprocess_log.read_text(encoding='utf-8')
+                log_snippets.append(f"=== Backend subprocess log (last 1000 chars) ===\n{content[-1000:]}")
+            except Exception:
+                pass
+
+        # Backend app-level logs (most recent session)
+        backend_logs_dir = project_path / 'backend' / 'logs'
+        if backend_logs_dir.exists():
+            session_logs = sorted(backend_logs_dir.glob("backend_*.log"), reverse=True)
+            if session_logs:
+                try:
+                    content = session_logs[0].read_text(encoding='utf-8')
+                    log_snippets.append(f"=== Backend session log (last 1000 chars) ===\n{content[-1000:]}")
+                except Exception:
+                    pass
+
+        # Health status
+        health_status_file = project_path / 'backend' / 'logs' / 'health_status.json'
+        if health_status_file.exists():
+            try:
+                log_snippets.append(f"=== Health status ===\n{health_status_file.read_text(encoding='utf-8')}")
+            except Exception:
+                pass
+
+        # Frontend logs
+        frontend_log = project_path / 'logs' / 'frontend_output.log'
+        if frontend_log.exists():
+            try:
+                content = frontend_log.read_text(encoding='utf-8')
+                log_snippets.append(f"=== Frontend log (last 1000 chars) ===\n{content[-1000:]}")
+            except Exception:
+                pass
+
+        crash_str = " and ".join(crash_targets)
+        all_logs = "\n\n".join(log_snippets) if log_snippets else "(no logs found)"
+
+        # Update project status
+        project.status = 'error'
+        project.error = f'{crash_str} crashed after {len(self.WATCHDOG_RETRY_DELAYS)} restart attempts'
+        project.process = None
+        project.backend_process = None
+        self._save_projects()
+
+        # Create agent task to investigate and fix
+        if not self._task_manager or not self._trigger_queue:
+            logger.error("[LIVING_UI:WATCHDOG] Cannot escalate — task manager or trigger queue not bound")
+            return
+
+        from app.trigger import Trigger
+
+        task_instruction = f"""Fix a crashed Living UI application.
+
+Project ID: {project.id}
+Project Name: {project.name}
+Project Path: {project.path}
+Crashed components: {crash_str}
+
+The Living UI {crash_str} process(es) crashed and {len(self.WATCHDOG_RETRY_DELAYS)} automatic restart attempts all failed.
+This means the code likely has a bug that prevents the server from running.
+
+CRASH LOGS:
+{all_logs}
+
+STEPS:
+1. Read the crash logs above to identify the root cause
+2. Navigate to the project path and fix the code
+3. Use living_ui_restart with project_id="{project.id}" to restart the project
+4. Verify the project is running by checking that the restart succeeded
+
+Follow the living-ui-creator skill instructions for the project structure.
+The backend is a FastAPI app at {project.path}/backend/main.py
+The frontend is a Vite+React app at {project.path}/frontend/"""
+
+        try:
+            task_id = self._task_manager.create_task(
+                task_name=f"Fix crashed Living UI: {project.name}",
+                task_instruction=task_instruction,
+                mode="complex",
+                action_sets=["file_operations", "code_execution", "living_ui"],
+                selected_skills=["living-ui-creator"],
+            )
+
+            trigger = Trigger(
+                fire_at=time.time(),
+                priority=30,  # Higher priority than normal creation tasks
+                next_action_description=f"[Living UI] Fix crash: {project.name}",
+                session_id=task_id,
+                payload={
+                    "type": "living_ui_crash_fix",
+                    "project_id": project_id,
+                },
+            )
+            await self._trigger_queue.put(trigger)
+
+            project.task_id = task_id
+            self._save_projects()
+            logger.info(
+                f"[LIVING_UI:WATCHDOG] Created fix task {task_id} for {project.name} ({project_id})"
+            )
+        except Exception as e:
+            logger.error(f"[LIVING_UI:WATCHDOG] Failed to create fix task: {e}")
 
     def _load_projects(self) -> None:
         """Load projects from persistent storage."""
@@ -373,14 +702,24 @@ class LivingUIManager:
             # Start the FastAPI backend using uvicorn
             logger.info(f"[LIVING_UI] Starting backend for {project_id} on port {backend_port}")
 
+            # Backend has its own file-based logger (logger.py in template),
+            # but also capture subprocess stdout/stderr to a fallback log file
+            # so we can diagnose startup crashes before the app logger initializes
+            logs_dir = backend_path / 'logs'
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            subprocess_log = logs_dir / 'subprocess_output.log'
+            subprocess_log_handle = open(subprocess_log, 'a', encoding='utf-8')
+            subprocess_log_handle.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] Starting uvicorn on port {backend_port}\n{'='*60}\n")
+            subprocess_log_handle.flush()
+
             # Use python -m uvicorn to run the backend
             if os.name == 'nt':
                 # Windows
                 backend_process = subprocess.Popen(
                     ['python', '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
                     cwd=str(backend_path),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stdout=subprocess_log_handle,
+                    stderr=subprocess_log_handle,
                     shell=True,
                     creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
                 )
@@ -389,8 +728,8 @@ class LivingUIManager:
                 backend_process = subprocess.Popen(
                     ['python', '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
                     cwd=str(backend_path),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stdout=subprocess_log_handle,
+                    stderr=subprocess_log_handle,
                 )
 
             project.backend_process = backend_process
@@ -401,14 +740,19 @@ class LivingUIManager:
             backend_ready = await self._wait_for_health_check(health_url, timeout=20)
 
             if not backend_ready:
-                # Backend didn't start
+                # Backend didn't start - read the subprocess log for diagnostics
+                subprocess_log_handle.flush()
+                try:
+                    recent_output = subprocess_log.read_text(encoding='utf-8')[-1000:]
+                except Exception:
+                    recent_output = '(could not read subprocess log)'
                 if backend_process.poll() is not None:
-                    stderr = backend_process.stderr.read().decode() if backend_process.stderr else ''
-                    logger.error(f"[LIVING_UI] Backend process exited: {stderr[:500]}")
+                    logger.error(f"[LIVING_UI] Backend process exited with code {backend_process.returncode}. Log tail:\n{recent_output}")
                 else:
-                    logger.error(f"[LIVING_UI] Backend not responding on port {backend_port}")
+                    logger.error(f"[LIVING_UI] Backend not responding on port {backend_port}. Log tail:\n{recent_output}")
                     backend_process.terminate()
                 project.backend_process = None
+                subprocess_log_handle.close()
                 return False
 
             project.backend_url = f"http://localhost:{backend_port}"
@@ -788,8 +1132,34 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
             return False
 
         if project.status == 'running':
-            logger.info(f"[LIVING_UI] Project already running: {project_id}")
-            return True
+            # Verify processes are actually alive before trusting the stored status
+            actually_alive = True
+
+            if project.process is not None and project.process.poll() is not None:
+                logger.warning(f"[LIVING_UI] Frontend process dead for {project_id} (stale status)")
+                project.process = None
+                actually_alive = False
+
+            if project.backend_process is not None and project.backend_process.poll() is not None:
+                logger.warning(f"[LIVING_UI] Backend process dead for {project_id} (stale status)")
+                project.backend_process = None
+                actually_alive = False
+
+            # Also check if ports are still responding (catches cases where
+            # process handles were lost, e.g. after serialization)
+            if actually_alive and project.port and not self._is_port_in_use(project.port):
+                logger.warning(f"[LIVING_UI] Frontend port {project.port} not responding for {project_id}")
+                actually_alive = False
+
+            if actually_alive:
+                logger.info(f"[LIVING_UI] Project already running: {project_id}")
+                return True
+
+            # Status was stale — reset and fall through to full launch
+            logger.info(f"[LIVING_UI] Project {project_id} status was stale, relaunching...")
+            project.status = 'stopped'
+            project.url = None
+            project.backend_url = None
 
         project_path = Path(project.path)
         if not project_path.exists():
@@ -805,8 +1175,11 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
                 logger.info(f"[LIVING_UI] Launching backend for {project_id}...")
                 backend_success = await self.launch_backend(project_id)
                 if not backend_success:
-                    logger.warning(f"[LIVING_UI] Backend failed to start for {project_id}, continuing with frontend only")
-                    # Don't fail - frontend can still work (with localStorage fallback)
+                    logger.error(f"[LIVING_UI] Backend failed to start for {project_id}, aborting launch")
+                    project.status = 'error'
+                    project.error = 'Backend failed to start'
+                    self._save_projects()
+                    return False
 
             # Step 2: Check if npm dependencies are installed
             node_modules = project_path / 'node_modules'
@@ -839,11 +1212,20 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
 
             # Step 4: Start the frontend preview server
             logger.info(f"[LIVING_UI] Starting frontend for {project_id} on port {port}")
+
+            # Log frontend subprocess output to file
+            frontend_logs_dir = project_path / 'logs'
+            frontend_logs_dir.mkdir(parents=True, exist_ok=True)
+            frontend_log = frontend_logs_dir / 'frontend_output.log'
+            frontend_log_handle = open(frontend_log, 'a', encoding='utf-8')
+            frontend_log_handle.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] Starting frontend on port {port}\n{'='*60}\n")
+            frontend_log_handle.flush()
+
             process = subprocess.Popen(
                 ['npm', 'run', 'preview', '--', '--port', str(port)],
                 cwd=str(project_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=frontend_log_handle,
+                stderr=frontend_log_handle,
                 shell=True if os.name == 'nt' else False,
             )
 
@@ -855,20 +1237,25 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
             server_ready = await self._wait_for_server(port, timeout=15)
 
             if not server_ready:
-                # Server didn't start - check if process died
+                # Server didn't start - read log for diagnostics
+                frontend_log_handle.flush()
+                try:
+                    recent_output = frontend_log.read_text(encoding='utf-8')[-1000:]
+                except Exception:
+                    recent_output = '(could not read frontend log)'
                 if process.poll() is not None:
                     # Process exited
-                    stderr = process.stderr.read().decode() if process.stderr else ''
-                    logger.error(f"[LIVING_UI] Frontend process exited: {stderr[:500]}")
+                    logger.error(f"[LIVING_UI] Frontend process exited with code {process.returncode}. Log tail:\n{recent_output}")
                     project.status = 'error'
-                    project.error = f'Frontend failed to start: {stderr[:200]}'
+                    project.error = f'Frontend failed to start (exit code {process.returncode})'
                 else:
                     # Process running but not responding
-                    logger.error(f"[LIVING_UI] Frontend not responding on port {port}")
+                    logger.error(f"[LIVING_UI] Frontend not responding on port {port}. Log tail:\n{recent_output}")
                     process.terminate()
                     project.status = 'error'
                     project.error = f'Frontend started but not responding on port {port}'
                 project.process = None
+                frontend_log_handle.close()
                 # Also stop backend if frontend failed
                 await self.stop_backend(project_id)
                 self._save_projects()

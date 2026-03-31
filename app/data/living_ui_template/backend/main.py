@@ -13,19 +13,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from routes import router
 from database import init_db
+from logger import setup_logging, cleanup_old_logs
 import logging
 
-logging.basicConfig(level=logging.INFO)
+# Initialize persistent file-based logging before anything else
+setup_logging()
+cleanup_old_logs(keep=20)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
+    """Initialize database on startup, start health checker."""
+    from health_checker import start_health_checker, stop_health_checker
+
     logger.info("[Backend] Initializing database...")
     await init_db()
     logger.info("[Backend] Database initialized")
+    start_health_checker(port={{BACKEND_PORT}})
+    logger.info("[Backend] Health checker started")
     yield
+    stop_health_checker()
     logger.info("[Backend] Shutting down...")
 
 

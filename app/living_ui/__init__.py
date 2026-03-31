@@ -1,6 +1,13 @@
 """Living UI module for managing dynamic agent-aware user interfaces."""
 
 from typing import Optional, Callable, Awaitable
+
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
 from .manager import LivingUIManager, LivingUIProject
 
 __all__ = [
@@ -50,6 +57,7 @@ def register_broadcast_callbacks(
     global _broadcast_ready_callback, _broadcast_progress_callback
     _broadcast_ready_callback = broadcast_ready
     _broadcast_progress_callback = broadcast_progress
+    logger.info("[LIVING_UI] Broadcast callbacks registered")
 
 
 async def broadcast_living_ui_ready(project_id: str, url: str, port: int) -> bool:
@@ -63,6 +71,7 @@ async def broadcast_living_ui_ready(project_id: str, url: str, port: int) -> boo
     """
     if _broadcast_ready_callback:
         return await _broadcast_ready_callback(project_id, url, port)
+    logger.warning(f"[LIVING_UI] broadcast_living_ui_ready called but callback is None (manager={_manager is not None})")
     return False
 
 

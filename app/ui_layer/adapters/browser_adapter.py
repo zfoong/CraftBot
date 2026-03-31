@@ -751,6 +751,9 @@ class BrowserAdapter(InterfaceAdapter):
         # Clean up orphan processes and folders from previous sessions
         self._living_ui_manager.cleanup_on_startup()
 
+        # Start watchdog to monitor running Living UI processes
+        self._living_ui_manager.start_watchdog()
+
         # Register global accessor and callbacks for Living UI actions
         set_living_ui_manager(self._living_ui_manager)
         register_broadcast_callbacks(
