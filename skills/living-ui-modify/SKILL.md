@@ -137,12 +137,17 @@ async archiveTodo(id: number): Promise<void> {
 | **Forms** | `Input`, `Textarea`, `Select`, `Checkbox`, `Toggle` |
 | **Buttons** | `Button` (variants: primary, secondary, danger, ghost) |
 | **Layout** | `Card`, `Container`, `Divider` |
-| **Feedback** | `Alert`, `Badge`, `EmptyState` |
+| **Feedback** | `Alert`, `Badge`, `EmptyState`, `toast` (react-toastify) |
 | **Data** | `Table`, `List`, `ListItem` |
 | **Overlays** | `Modal`, `Tabs`, `TabList`, `Tab`, `TabPanel` |
 
 ```tsx
 import { Button, Card, Badge, Modal } from './components/ui'
+import { toast } from 'react-toastify'
+
+// Use toast for user feedback on actions
+toast.success('Item updated')
+toast.error('Failed to delete')
 ```
 
 **Edit: `frontend/components/MainView.tsx`**
@@ -216,6 +221,20 @@ Update the relevant sections:
 - NEVER store important state only in React (use backend)
 - NEVER edit `frontend/components/ui/index.tsx` (preset components)
 - NEVER use `send_message` - this is a background task
+
+## Debugging & Logs
+
+When something goes wrong, check these log files in the project directory:
+
+| Log File | Contains |
+|----------|----------|
+| `backend/logs/subprocess_output.log` | Uvicorn startup output, crashes, stack traces |
+| `backend/logs/backend_*.log` | Backend app-level logs (requests, errors, SQL) |
+| `backend/logs/frontend_console.log` | Frontend console errors, warnings, app logs, and network requests (fetch method, URL, status, request/response bodies) |
+| `backend/logs/health_status.json` | Health checker status (last check, failures) |
+| `logs/frontend_output.log` | Vite preview server output |
+
+**Read these logs first** when debugging issues after modifications.
 
 ## Quality Checklist
 

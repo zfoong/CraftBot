@@ -421,7 +421,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                 task_name=f"Fix crashed Living UI: {project.name}",
                 task_instruction=task_instruction,
                 mode="complex",
-                action_sets=["file_operations", "code_execution", "living_ui"],
+                action_sets=["file_operations", "code_execution", "living_ui", "core"],
                 selected_skills=["living-ui-creator"],
             )
 
@@ -776,6 +776,20 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
         logger.info(f"[LIVING_UI:PIPELINE] Starting launch pipeline for {project.name} ({project_id})")
 
+        # Stop any existing processes from previous launch attempts
+        # This prevents orphan uvicorn/vite processes accumulating on repeated calls
+        if project.backend_process and project.backend_process.poll() is None:
+            logger.info(f"[LIVING_UI:PIPELINE] Killing existing backend process before relaunch")
+            project.backend_process.terminate()
+            project.backend_process = None
+        if project.process and project.process.poll() is None:
+            logger.info(f"[LIVING_UI:PIPELINE] Killing existing frontend process before relaunch")
+            project.process.terminate()
+            project.process = None
+
+        # Clean up old log files so each launch starts fresh
+        self._cleanup_project_logs(project_path)
+
         # ================================================================
         # PHASE 1: Parallel validation (collect ALL errors before starting)
         # ================================================================
@@ -1115,6 +1129,28 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             except Exception:
                 pass
         return errors
+
+    @staticmethod
+    def _cleanup_project_logs(project_path: Path) -> None:
+        """Clean up old log files so each launch/restart starts fresh."""
+        log_files_to_clean = [
+            project_path / 'backend' / 'logs' / 'subprocess_output.log',
+            project_path / 'backend' / 'logs' / 'frontend_console.log',
+            project_path / 'backend' / 'logs' / 'test_discovery.json',
+            project_path / 'backend' / 'logs' / 'test_unit.json',
+            project_path / 'backend' / 'logs' / 'test_compatibility.json',
+            project_path / 'backend' / 'logs' / 'test_results.json',
+            project_path / 'backend' / 'logs' / 'health_status.json',
+            project_path / 'logs' / 'frontend_output.log',
+        ]
+        for log_file in log_files_to_clean:
+            try:
+                if log_file.exists():
+                    log_file.unlink()
+            except Exception:
+                pass
+        # Keep backend session logs (backend_*.log) — they're already timestamped per session
+        logger.debug(f"[LIVING_UI:PIPELINE] Cleaned up old log files")
 
     @staticmethod
     def _read_log_tail(log_file: Path, chars: int = 1000) -> str:
@@ -1544,7 +1580,11 @@ Features: {features_str}
 Theme: {project.theme}
 Project Path: {project.path}
 
-Follow the living-ui-creator skill instructions to scaffold, develop, test, and launch this UI.
+IMPORTANT: Start with Phase 0 (Requirement Gathering) from the living-ui-creator skill.
+Ask the user 2-3 batches of design and feature questions before coding.
+Reference: Read the QUESTIONNAIRE.md in the skill references for question ideas.
+
+Follow the living-ui-creator skill instructions to gather requirements, then scaffold, develop, test, and launch this UI.
 When complete, use the living_ui_notify_ready action to notify the browser."""
 
         try:
@@ -1554,7 +1594,7 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
                 task_name=f"Create Living UI: {project.name}",
                 task_instruction=task_instruction,
                 mode="complex",
-                action_sets=["file_operations", "code_execution", "living_ui"],
+                action_sets=["file_operations", "code_execution", "living_ui", "core"],
                 selected_skills=["living-ui-creator"],
             )
 

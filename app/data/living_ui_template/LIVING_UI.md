@@ -6,6 +6,22 @@
 
 <!-- Agent: Briefly explain what this app does and who it's for -->
 
+## Requirements
+
+<!-- Agent: Document gathered requirements from Phase 0 here -->
+
+### Entities & Data Model
+<!-- What are the main entities? What fields does each have? How do they relate? -->
+
+### Layout & Design
+<!-- Layout style, color scheme, theme preference, visual style -->
+
+### Features
+<!-- CRUD operations, search/filter, media support, drag-and-drop, detail views, etc. -->
+
+### Assumptions
+<!-- What did you assume? List assumptions made for areas not explicitly discussed -->
+
 ## Data Model
 
 ### Backend Models (backend/models.py)

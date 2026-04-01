@@ -85,9 +85,11 @@ project_root/
 └── LIVING_UI.md                # Project documentation - UPDATE THIS
 ```
 
-## UI Component Presets (USE THESE)
+## UI Component Presets (MANDATORY)
 
-Living UI includes **pre-built components** matching CraftBot design. **Use these by default** instead of creating custom styles.
+**CRITICAL:** Living UI includes pre-built components with professional styling. You MUST use these for ALL standard UI elements. Do NOT create custom buttons, inputs, cards, modals, or alerts. Do NOT write custom CSS for elements that have a preset component. The preset components use CraftBot's design tokens and ensure visual consistency.
+
+**If you need a button, use `<Button>`. If you need a card, use `<Card>`. If you need an input, use `<Input>`. No exceptions.**
 
 ### Import
 ```typescript
@@ -138,16 +140,48 @@ import { Button, Card, Input, Alert, Table, Modal } from './components/ui'
 ### Best Practices
 
 **DO:**
-- Use preset components for all standard UI needs
-- Customize via props, not custom CSS
-- Combine components for complex layouts
+- Use preset components for ALL standard UI needs — buttons, inputs, cards, modals, alerts, tables
+- Customize via props (variant, size, etc.), not custom CSS
+- Combine preset components for complex layouts
+- Use `global.css` design tokens (e.g., `var(--color-primary)`) for any custom styling needed
 
-**DON'T:**
-- Create custom buttons, inputs, or cards
-- Add inline styles for basic styling
-- Build custom modal or alert systems
+**DON'T — these will result in an ugly, inconsistent UI:**
+- Create custom buttons, inputs, cards, or modals (use the presets)
+- Write inline styles or custom CSS for standard elements
+- Use raw HTML elements like `<button>` or `<input>` (use `<Button>` and `<Input>`)
+- Pick arbitrary colors (use design tokens from `global.css`)
+- Build your own alert, notification, or modal system (use presets + react-toastify)
 
 See [COMPONENTS.md](references/COMPONENTS.md) for full component reference.
+
+### Toast Notifications (react-toastify)
+
+Use `react-toastify` for user feedback — it's pre-installed and the `<ToastContainer />` is already in `App.tsx`.
+
+```tsx
+import { toast } from 'react-toastify'
+
+// Success — auto-dismisses after 3 seconds
+toast.success('Item created successfully')
+
+// Error — auto-dismisses after 3 seconds
+toast.error('Failed to save changes')
+
+// Info
+toast.info('Changes saved')
+
+// Warning
+toast.warn('This action cannot be undone')
+```
+
+**Always use toasts for:**
+- CRUD operation feedback (created, updated, deleted)
+- Error messages from failed API calls
+- Important state changes the user should know about
+
+**Don't use toasts for:**
+- Validation errors (show inline next to the field instead)
+- Loading states (use spinners/skeletons)
 
 ## Agent API (Built-in)
 
@@ -166,14 +200,67 @@ Frontend auto-captures UI state on meaningful events (page load, state changes, 
 
 Follow these phases in order. Use TodoWrite to track progress.
 
-### Phase 1: Understand Requirements
+### Phase 0: Requirement Gathering (MANDATORY — minimum 2 batches)
 
-Read the project description and identify:
-- Data entities needed (boards, cards, items, etc.)
+Before coding, gather requirements from the user through a conversational interview.
+Use `send_message` with `wait_for_user_reply=True` to ask questions and wait for answers.
+
+**Reference:** Read [QUESTIONNAIRE.md](references/QUESTIONNAIRE.md) for question categories and examples.
+
+**CRITICAL RULES:**
+- You MUST ask at least 2 batches of questions. Never skip to coding after just 1 batch.
+- Batch 1 MUST cover data/features. Batch 2 MUST cover design/visual preferences.
+- If the user gives short or vague answers, DO NOT skip Batch 2. Instead, offer specific choices (e.g., "Would you prefer a card grid or a kanban column layout?").
+- If the user explicitly says "just build it" or "skip the questions" — then and ONLY then can you stop early. A short answer to one question is NOT "skip."
+
+**Process:**
+
+1. **Analyze the project description** — identify what's clear and what's ambiguous
+2. **Batch 1: Data & Features (REQUIRED)** — ask 2-4 questions:
+   - Open with a warm acknowledgment of the project idea
+   - Focus on: what entities/items exist, how they relate, what operations are needed
+   - Use `send_message` with `wait_for_user_reply=True`
+3. **Batch 2: Design & Layout (REQUIRED)** — always ask this, even if Batch 1 answers were short:
+   - Acknowledge Batch 1 answers briefly
+   - Focus on: layout style (grid/kanban/list/freeform), visual style, color preferences, detail views vs modals
+   - Offer concrete choices rather than open-ended questions (e.g., "Card grid like Pinterest, or columns like Trello?")
+   - Use `send_message` with `wait_for_user_reply=True`
+4. **Batch 3 (optional)** — only if significant gaps remain after Batch 2
+5. **Fill gaps with assumptions** — after gathering answers:
+   - State your assumptions explicitly to the user
+   - See "Safe Assumptions" in QUESTIONNAIRE.md for defaults
+6. **Document in LIVING_UI.md** — write the Requirements section:
+   - Fill in: Entities & Data Model, Layout & Design, Features, Assumptions
+   - This becomes the source of truth for all subsequent phases
+
+**When to stop asking:**
+- After Batch 2, unless there are major gaps (then do Batch 3)
+- If user explicitly says "just build it" or "skip" — stop and assume the rest
+- Never ask more than 3 batches total
+
+**Tone:** Warm and conversational. Offer concrete choices, not just open-ended questions. Acknowledge answers before asking more.
+
+**Example Batch 1 (Data & Features):**
+> "Love the idea! Before I start building, a few quick questions about what goes on the board:
+> 1. What kinds of items will you add? (notes, images, videos, links, docs — all of these?)
+> 2. What info should each item have? (just the content, or also title, description, tags, status?)
+> 3. Do you need to organize items into categories or groups?"
+
+**Example Batch 2 (Design & Layout):**
+> "Thanks! Now a couple questions about how it should look:
+> 1. Layout preference — card grid (like Pinterest), columns (like Trello), or a list view?
+> 2. When you click an item, should it open in a detail panel on the side, a full modal, or expand in place?
+> 3. Any color/visual preference? (dark theme, light, colorful, minimal — or I'll use a clean modern default)"
+
+### Phase 1: Plan Implementation
+
+Read the requirements documented in LIVING_UI.md (from Phase 0) and plan:
+- Data entities needed (models, fields, relationships)
 - User actions (create, update, delete, etc.)
-- UI layout
+- UI layout and component structure
 
-**IMPORTANT:** document requirement in LIVING_UI.md.
+If Phase 0 was skipped (e.g., requirements are already very detailed in the description),
+document them in LIVING_UI.md now before proceeding.
 
 ### Phase 2: Define Backend Models
 
@@ -259,6 +346,22 @@ If any step fails, the action returns the specific errors. Fix them and call aga
 living_ui_notify_ready(project_id="<PROJECT_ID from task instruction>")
 ```
 
+## Debugging & Logs
+
+When something goes wrong, check these log files in the project directory:
+
+| Log File | Contains |
+|----------|----------|
+| `backend/logs/subprocess_output.log` | Uvicorn startup output, crashes, stack traces |
+| `backend/logs/backend_*.log` | Backend app-level logs (requests, errors, SQL) |
+| `backend/logs/frontend_console.log` | Frontend console errors, warnings, app logs, and network requests (fetch method, URL, status, request/response bodies) |
+| `backend/logs/health_status.json` | Health checker status (last check, failures) |
+| `backend/logs/test_discovery.json` | Pre-launch test results (imports, routes, models) |
+| `backend/logs/test_results.json` | External smoke test results |
+| `logs/frontend_output.log` | Vite preview server output |
+
+**Read these logs first** when debugging launch failures or runtime issues.
+
 ## Common Mistakes
 
 - **Relative imports** — NEVER use `from . import models` or `from .models import ...` in backend code. Use absolute imports: `from models import ...`
@@ -318,12 +421,20 @@ Before calling `living_ui_notify_ready`:
 - NEVER add `/api` prefix to route paths in `routes.py` (the router prefix handles this)
 - NEVER run `npm run dev`, `npm run build`, `npm run preview`, or `uvicorn` manually
 - NEVER store important state only in React (use backend)
-- NEVER use `send_message` - this is a background task
+- NEVER use raw HTML elements (`<button>`, `<input>`, `<select>`) — use preset components (`<Button>`, `<Input>`, `<Select>`)
+- NEVER write custom CSS for buttons, cards, inputs, modals, or alerts — use the preset component props
+- NEVER pick arbitrary colors — use design tokens from `global.css` (e.g., `var(--color-primary)`)
+- NEVER skip Phase 0 Batch 2 (design questions) — minimum 2 batches required
+- ONLY use `send_message` during Phase 0 (Requirement Gathering) with `wait_for_user_reply=True`. NEVER use it during development phases (Phase 1-10).
+- NEVER edit `config/manifest.json` (managed by the system, contains pipeline config)
+- NEVER edit `backend/main.py` (managed by the system, contains server setup)
+- NEVER edit `frontend/main.tsx` (managed by the system, contains service initialization)
 - NEVER skip calling `living_ui_notify_ready`
 - NEVER use the task session ID as the project_id parameter
 
 ## References
 
+- [Requirement Questionnaire](references/QUESTIONNAIRE.md) - Reference questions for Phase 0
 - [MVC-A Architecture](references/MVC-A.md) - When to use each layer, agent data access methods
 - [Quality Standards](references/STANDARDS.md) - Professional standards for Living UIs
 - [Code Examples](references/EXAMPLES.md) - Complete code examples for each phase

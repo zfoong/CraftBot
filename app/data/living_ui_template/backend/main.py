@@ -63,6 +63,39 @@ async def health_check():
     return {"status": "healthy", "project": "{{PROJECT_ID}}"}
 
 
+# ============================================================================
+# Frontend Console Log Capture (registered on app directly, not on router,
+# so it survives agent rewrites of routes.py)
+# ============================================================================
+from pydantic import BaseModel
+from typing import List, Optional
+from pathlib import Path
+from datetime import datetime
+
+_FRONTEND_LOG_PATH = Path(__file__).parent / "logs" / "frontend_console.log"
+
+
+class _FrontendLogEntry(BaseModel):
+    level: str
+    message: str
+    timestamp: Optional[str] = None
+
+
+class _FrontendLogBatch(BaseModel):
+    entries: List[_FrontendLogEntry]
+
+
+@app.post("/api/logs")
+async def capture_frontend_logs(data: _FrontendLogBatch):
+    """Capture frontend console logs for agent debugging."""
+    _FRONTEND_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_FRONTEND_LOG_PATH, "a", encoding="utf-8") as f:
+        for entry in data.entries:
+            ts = entry.timestamp or datetime.utcnow().isoformat()
+            f.write(f"{ts} | {entry.level.upper():<5} | {entry.message}\n")
+    return {"status": "ok", "count": len(data.entries)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port={{BACKEND_PORT}})
