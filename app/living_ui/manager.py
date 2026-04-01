@@ -1149,7 +1149,16 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                     log_file.unlink()
             except Exception:
                 pass
-        # Keep backend session logs (backend_*.log) — they're already timestamped per session
+        # Clean up old backend session logs — keep only the 3 most recent
+        backend_logs_dir = project_path / 'backend' / 'logs'
+        if backend_logs_dir.exists():
+            session_logs = sorted(backend_logs_dir.glob("backend_*.log"), reverse=True)
+            for old_log in session_logs[3:]:
+                try:
+                    old_log.unlink()
+                except Exception:
+                    pass
+
         logger.debug(f"[LIVING_UI:PIPELINE] Cleaned up old log files")
 
     @staticmethod
