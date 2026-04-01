@@ -538,7 +538,7 @@ class ActionRouter:
             # agent_info is included for all modes to provide consistent agent context
             system_prompt, _ = self.context_engine.make_prompt(
                 user_flags={"query": False, "expected_output": False},
-                system_flags={"agent_info": True, "policy": False},
+                system_flags={"agent_info": True},
             )
 
             raw_response = None
