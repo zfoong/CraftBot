@@ -181,15 +181,16 @@ This stops both backend and frontend, runs the launch pipeline (install dependen
 **DO NOT** use `living_ui_notify_ready` — it's for initial launch only.
 **DO NOT** start uvicorn or npm preview manually.
 
-### Phase 7: Update Documentation
+### Phase 7: Update Documentation (MANDATORY)
 
-**Edit: `{project.path}/LIVING_UI.md`**
+**Edit: `{project.path}/LIVING_UI.md`** — you MUST update all affected sections:
 
-Update the relevant sections:
-- **Data Model** table if models changed
-- **API Endpoints** table if routes changed
+- **Data Model** table if models changed (add/remove/modify rows)
+- **API Endpoints** table if routes changed (add/remove/modify rows)
 - **Frontend Components** table if components added/removed
 - **Key Files** table if new files created
+- Remove any remaining HTML comments (`<!-- ... -->`) or placeholder data
+- **DO NOT call `living_ui_restart` until LIVING_UI.md is updated**
 
 ## Directory Structure
 

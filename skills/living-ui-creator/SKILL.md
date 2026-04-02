@@ -233,9 +233,12 @@ Use `send_message` with `wait_for_user_reply=True` to ask questions and wait for
 5. **Fill gaps with assumptions** — after gathering answers:
    - State your assumptions explicitly to the user
    - See "Safe Assumptions" in QUESTIONNAIRE.md for defaults
-6. **Document in LIVING_UI.md** — write the Requirements section:
-   - Fill in: Entities & Data Model, Layout & Design, Features, Assumptions
+6. **Document in LIVING_UI.md (MANDATORY)** — you MUST fill in the Requirements section NOW, before moving to Phase 1:
+   - Fill in ALL subsections: Entities & Data Model, Layout & Design, Features, Assumptions
+   - Replace ALL HTML comments (`<!-- ... -->`) with actual content
+   - Replace ALL example/placeholder data with real data
    - This becomes the source of truth for all subsequent phases
+   - **DO NOT proceed to Phase 1 until LIVING_UI.md has real content**
 
 **When to stop asking:**
 - After Batch 2, unless there are major gaps (then do Batch 3)
@@ -321,11 +324,17 @@ Review your code for correctness before proceeding:
 **DO NOT run:** `npm run dev`, `npm run build`, `npm run preview`, or `uvicorn` manually.
 The launch pipeline handles all building, testing, and serving automatically.
 
-### Phase 9: Update Documentation
+### Phase 9: Update Documentation (MANDATORY)
 
-**Edit: `LIVING_UI.md`**
+**Edit: `LIVING_UI.md`** — you MUST update ALL sections with real implementation details:
 
-Fill in all sections with implementation details.
+- **Overview**: What the app does, who it's for
+- **Data Model table**: List every SQLAlchemy model with purpose and key fields (replace example rows)
+- **API Endpoints table**: List every custom route with method, path, description (replace example rows)
+- **Frontend Components table**: List every component with purpose
+- **Key Files table**: Update if you added new files
+- Remove ALL HTML comments (`<!-- ... -->`) and placeholder/example data
+- **DO NOT proceed to Phase 10 if LIVING_UI.md still has placeholder content**
 
 ### Phase 10: Launch (MANDATORY)
 
@@ -433,6 +442,7 @@ Before calling `living_ui_notify_ready`:
 - NEVER edit `config/manifest.json` (managed by the system, contains pipeline config)
 - NEVER edit `backend/main.py` (managed by the system, contains server setup)
 - NEVER edit `frontend/main.tsx` (managed by the system, contains service initialization)
+- NEVER leave LIVING_UI.md with placeholder content, HTML comments, or example data
 - NEVER skip calling `living_ui_notify_ready`
 - NEVER use the task session ID as the project_id parameter
 

@@ -30,9 +30,6 @@ def setup_logging() -> logging.Logger:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"backend_{timestamp}.log"
 
-    # Also maintain a "latest" symlink/copy for convenience
-    latest_log = LOG_DIR / "latest.log"
-
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
@@ -62,23 +59,11 @@ def setup_logging() -> logging.Logger:
         uvi_logger.addHandler(stream_handler)
         uvi_logger.propagate = False
 
-    # Write a "latest.log" pointer file (not a symlink - works on Windows)
-    try:
-        latest_log.write_text(log_file.name, encoding="utf-8")
-    except Exception:
-        pass  # Non-critical
-
     root_logger.info(f"[Logger] Session log started: {log_file}")
     root_logger.info(f"[Logger] Python {sys.version}")
     root_logger.info(f"[Logger] CWD: {os.getcwd()}")
 
     return root_logger
-
-
-def get_latest_log_path() -> Path | None:
-    """Return the path of the most recent log file, if any."""
-    log_files = sorted(LOG_DIR.glob("backend_*.log"), reverse=True)
-    return log_files[0] if log_files else None
 
 
 def cleanup_old_logs(keep: int = 20):

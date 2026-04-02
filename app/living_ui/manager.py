@@ -285,10 +285,8 @@ class LivingUIManager:
             await asyncio.sleep(1)
 
         try:
-            # Open log file for subprocess output
-            frontend_logs_dir = project_path / 'logs'
-            frontend_logs_dir.mkdir(parents=True, exist_ok=True)
-            frontend_log = frontend_logs_dir / 'frontend_output.log'
+            # Open timestamped log file for subprocess output
+            frontend_log = self._create_frontend_log(project_path)
             frontend_log_handle = open(frontend_log, 'a', encoding='utf-8')
             frontend_log_handle.write(
                 f"\n{'='*60}\n[{datetime.now().isoformat()}] "
@@ -371,14 +369,16 @@ class LivingUIManager:
             except Exception:
                 pass
 
-        # Frontend logs
-        frontend_log = project_path / 'logs' / 'frontend_output.log'
-        if frontend_log.exists():
-            try:
-                content = frontend_log.read_text(encoding='utf-8')
-                log_snippets.append(f"=== Frontend log (last 1000 chars) ===\n{content[-1000:]}")
-            except Exception:
-                pass
+        # Frontend logs (most recent session)
+        frontend_logs_dir = project_path / 'logs'
+        if frontend_logs_dir.exists():
+            frontend_logs = sorted(frontend_logs_dir.glob("frontend_*.log"), reverse=True)
+            if frontend_logs:
+                try:
+                    content = frontend_logs[0].read_text(encoding='utf-8')
+                    log_snippets.append(f"=== Frontend log (last 1000 chars) ===\n{content[-1000:]}")
+                except Exception:
+                    pass
 
         crash_str = " and ".join(crash_targets)
         all_logs = "\n\n".join(log_snippets) if log_snippets else "(no logs found)"
@@ -919,9 +919,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                 await self.stop_backend(project_id)
                 return {"status": "error", "step": "frontend.start", "errors": ["No start command in manifest"]}
 
-            frontend_logs_dir = project_path / 'logs'
-            frontend_logs_dir.mkdir(parents=True, exist_ok=True)
-            frontend_log = frontend_logs_dir / 'frontend_output.log'
+            frontend_log = self._create_frontend_log(project_path)
 
             frontend_process = self._start_process(frontend_cwd, start_cmd, frontend_log, port=frontend_port)
             project.process = frontend_process
@@ -1148,7 +1146,8 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             project_path / 'backend' / 'logs' / 'test_compatibility.json',
             project_path / 'backend' / 'logs' / 'test_results.json',
             project_path / 'backend' / 'logs' / 'health_status.json',
-            project_path / 'logs' / 'frontend_output.log',
+            project_path / 'logs' / 'frontend_output.log',  # Legacy non-timestamped
+            project_path / 'backend' / 'logs' / 'latest.log',  # Legacy pointer file
         ]
         for log_file in log_files_to_clean:
             try:
@@ -1156,17 +1155,33 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                     log_file.unlink()
             except Exception:
                 pass
-        # Clean up old backend session logs — keep only the 3 most recent
+        # Clean up old session logs — keep only the 5 most recent of each type
         backend_logs_dir = project_path / 'backend' / 'logs'
         if backend_logs_dir.exists():
             session_logs = sorted(backend_logs_dir.glob("backend_*.log"), reverse=True)
-            for old_log in session_logs[3:]:
+            for old_log in session_logs[5:]:
+                try:
+                    old_log.unlink()
+                except Exception:
+                    pass
+        frontend_logs_dir = project_path / 'logs'
+        if frontend_logs_dir.exists():
+            session_logs = sorted(frontend_logs_dir.glob("frontend_*.log"), reverse=True)
+            for old_log in session_logs[5:]:
                 try:
                     old_log.unlink()
                 except Exception:
                     pass
 
         logger.debug(f"[LIVING_UI:PIPELINE] Cleaned up old log files")
+
+    @staticmethod
+    def _create_frontend_log(project_path: Path) -> Path:
+        """Create a timestamped frontend log file path."""
+        logs_dir = project_path / 'logs'
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return logs_dir / f"frontend_{timestamp}.log"
 
     @staticmethod
     def _read_log_tail(log_file: Path, chars: int = 1000) -> str:

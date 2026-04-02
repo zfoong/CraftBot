@@ -153,7 +153,7 @@ class YourModel(Base):
         return {"id": self.id, "name": self.name}
 ```
 
-3. **Update `LIVING_UI.md`** - add the new endpoints to the API Endpoints table so future interactions have context.
+3. **Update `LIVING_UI.md` (MANDATORY)** — add the new endpoints to the API Endpoints table and update Data Model table if models changed. Remove any HTML comments or placeholder data. Future interactions depend on this being accurate.
 
 #### 4c. Restart the Backend
 
