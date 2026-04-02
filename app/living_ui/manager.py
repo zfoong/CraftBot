@@ -50,6 +50,8 @@ class LivingUIProject:
     theme: str = 'system'
     error: Optional[str] = None
     task_id: Optional[str] = None
+    auto_launch: bool = False  # Auto-launch on CraftBot startup
+    log_cleanup: bool = True  # Clean logs on restart
     process: Optional[subprocess.Popen] = None  # Frontend process
     backend_process: Optional[subprocess.Popen] = None  # Backend process
 
@@ -69,6 +71,8 @@ class LivingUIProject:
             'features': self.features,
             'theme': self.theme,
             'error': self.error,
+            'autoLaunch': self.auto_launch,
+            'logCleanup': self.log_cleanup,
         }
 
 
@@ -463,6 +467,8 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                             created_at=project_data.get('createdAt', datetime.now().timestamp()) / 1000,
                             features=project_data.get('features', []),
                             theme=project_data.get('theme', 'system'),
+                            auto_launch=project_data.get('autoLaunch', False),
+                            log_cleanup=project_data.get('logCleanup', True),
                         )
                         # Reset status to stopped for all loaded projects
                         project.status = 'stopped' if project.status == 'running' else project.status
@@ -787,8 +793,9 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             project.process.terminate()
             project.process = None
 
-        # Clean up old log files so each launch starts fresh
-        self._cleanup_project_logs(project_path)
+        # Clean up old log files so each launch starts fresh (if enabled)
+        if project.log_cleanup:
+            self._cleanup_project_logs(project_path)
 
         # ================================================================
         # PHASE 1: Parallel validation (collect ALL errors before starting)
@@ -1774,10 +1781,18 @@ When complete, use the living_ui_notify_ready action to notify the browser."""
             return project.url
         return None
 
-    async def auto_launch_projects(self, project_ids: List[str]) -> None:
-        """Auto-launch specified projects on startup."""
+    async def auto_launch_projects(self, project_ids: List[str] = None) -> None:
+        """Auto-launch projects on startup.
+
+        If project_ids provided, launches those. Otherwise launches all
+        projects with auto_launch=True.
+        """
+        if project_ids is None:
+            # Launch all projects with auto_launch enabled
+            project_ids = [p.id for p in self.projects.values() if p.auto_launch]
+
         for project_id in project_ids:
             project = self.projects.get(project_id)
             if project and project.status != 'error':
-                logger.info(f"[LIVING_UI] Auto-launching: {project_id}")
+                logger.info(f"[LIVING_UI] Auto-launching: {project.name} ({project_id})")
                 await self.launch_project(project_id)

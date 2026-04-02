@@ -1054,8 +1054,6 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             living_ui_id = data.get("livingUIId")  # Set when user is on a Living UI page
             if living_ui_id:
                 logger.info(f"[BROWSER ADAPTER] Message from Living UI page: {living_ui_id}")
-            else:
-                logger.debug(f"[BROWSER ADAPTER] Message keys: {list(data.keys())}")
 
             if attachments:
                 # Message with attachments - use custom handler
@@ -1390,6 +1388,21 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             watch_tag = data.get("watch_tag")
             watch_repos = data.get("watch_repos")
             await self._handle_github_update_settings(watch_tag=watch_tag, watch_repos=watch_repos)
+
+        # Living UI settings handlers
+        elif msg_type == "living_ui_settings_get":
+            await self._handle_living_ui_settings_get()
+
+        elif msg_type == "living_ui_project_action":
+            project_id = data.get("projectId", "")
+            action = data.get("action", "")
+            await self._handle_living_ui_project_action(project_id, action)
+
+        elif msg_type == "living_ui_project_setting_update":
+            project_id = data.get("projectId", "")
+            setting = data.get("setting", "")
+            value = data.get("value")
+            await self._handle_living_ui_project_setting_update(project_id, setting, value)
 
         # WhatsApp QR code flow handlers
         elif msg_type == "whatsapp_start_qr":
@@ -3926,6 +3939,28 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             })
         except Exception as e:
             await self._broadcast({"type": "github_settings_result", "data": {"success": False, "error": str(e)}})
+
+    # ==========================
+    # Living UI Settings Handlers
+    # ==========================
+
+    async def _handle_living_ui_settings_get(self) -> None:
+        """Get all Living UI projects with their settings."""
+        from app.ui_layer.settings.living_ui_settings import get_living_ui_projects
+        result = get_living_ui_projects()
+        await self._broadcast({"type": "living_ui_settings_get", "data": result})
+
+    async def _handle_living_ui_project_action(self, project_id: str, action: str) -> None:
+        """Execute a project action (launch/stop/delete)."""
+        from app.ui_layer.settings.living_ui_settings import living_ui_project_action
+        result = await living_ui_project_action(project_id, action)
+        await self._broadcast({"type": "living_ui_project_action", "data": result})
+
+    async def _handle_living_ui_project_setting_update(self, project_id: str, setting: str, value) -> None:
+        """Update a per-project setting."""
+        from app.ui_layer.settings.living_ui_settings import update_project_setting
+        result = update_project_setting(project_id, setting, value)
+        await self._broadcast({"type": "living_ui_project_setting_update", "data": result})
 
     # =====================
     # WhatsApp QR Code Flow

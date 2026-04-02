@@ -9,6 +9,7 @@ import { ModelSettings } from './ModelSettings'
 import { MCPSettings } from './MCPSettings'
 import { SkillsSettings } from './SkillsSettings'
 import { IntegrationsSettings } from './IntegrationsSettings'
+import { LivingUISettings } from './LivingUISettings'
 
 export function SettingsPage() {
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general')
@@ -29,6 +30,8 @@ export function SettingsPage() {
         return <SkillsSettings />
       case 'integrations':
         return <IntegrationsSettings />
+      case 'living_ui':
+        return <LivingUISettings />
       default:
         return null
     }
