@@ -200,6 +200,10 @@ Frontend auto-captures UI state on meaningful events (page load, state changes, 
 
 Follow these phases in order. Use TodoWrite to track progress.
 
+### Before You Start: Read Global Config
+
+Read `agent_file_system/GLOBAL_LIVING_UI.md` for global design preferences and rules that apply to ALL Living UI projects. Apply all enabled rules (`[x]`) as requirements. Per-project requirements from Phase 0 Q&A override global settings when they conflict.
+
 ### Phase 0: Requirement Gathering (MANDATORY — minimum 2 batches)
 
 Before coding, gather requirements from the user through a conversational interview.

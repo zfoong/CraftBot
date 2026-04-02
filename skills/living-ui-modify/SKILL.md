@@ -15,6 +15,10 @@ Make changes to existing Living UI applications: add features, fix bugs, update 
 
 Follow these phases in order. Use TodoWrite to track progress.
 
+### Before You Start: Read Global Config
+
+Read `agent_file_system/GLOBAL_LIVING_UI.md` for global design preferences and rules. Apply all enabled rules (`[x]`). Per-project requirements from the project's `LIVING_UI.md` override global settings.
+
 ### Phase 1: Identify the Living UI
 
 Read the project registry:
