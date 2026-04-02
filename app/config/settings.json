@@ -19,7 +19,8 @@
     "openai": "",
     "anthropic": "",
     "google": "",
-    "byteplus": ""
+    "byteplus": "",
+    "deepseek": "sk-680c33e184184d9cb27a6ecdc2123910"
   },
   "endpoints": {
     "remote_model_url": "",
