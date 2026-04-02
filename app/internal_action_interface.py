@@ -952,7 +952,7 @@ class InternalActionInterface:
             if cls.context_engine:
                 system_prompt, _ = cls.context_engine.make_prompt(
                     user_flags={"query": False, "expected_output": False},
-                    system_flags={"policy": False},
+                    system_flags={},
                 )
                 for call_type in [LLMCallType.ACTION_SELECTION, LLMCallType.GUI_ACTION_SELECTION]:
                     cache_id = cls.llm_interface.create_session_cache(task_id, call_type, system_prompt)

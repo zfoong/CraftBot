@@ -328,7 +328,7 @@ class TaskManager:
         try:
             system_prompt, _ = self.context_engine.make_prompt(
                 user_flags={"query": False, "expected_output": False},
-                system_flags={"policy": False},
+                system_flags={},
             )
             for call_type in [
                 LLMCallType.REASONING,
