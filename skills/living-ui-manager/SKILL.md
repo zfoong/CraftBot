@@ -16,9 +16,13 @@ Interact with existing Living UI applications: read data, write data, update sta
 
 Follow these steps **in order** for every Living UI interaction.
 
-### Before You Start: Read Global Config
+### Before You Start: Read and Apply Global Config
 
-Read `agent_file_system/GLOBAL_LIVING_UI.md` for global design preferences and rules. Apply all enabled rules (`[x]`). Per-project requirements from the project's `LIVING_UI.md` override global settings.
+Read `agent_file_system/GLOBAL_LIVING_UI.md` for global design preferences and rules. You MUST follow:
+- **Colors**: Use the defined Primary/Secondary/Accent hex values for any new UI elements or endpoints.
+- **Enabled rules `[x]`**: Treat as hard requirements.
+- **Always Enforced rules**: Non-negotiable.
+- Per-project requirements from the project's `LIVING_UI.md` override global settings.
 
 ### Step 1: Identify the Living UI
 

@@ -1602,21 +1602,15 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
         # Build the task instruction
         features_str = ', '.join(project.features) if project.features else 'None specified'
-        task_instruction = f"""Create a Living UI application.
-
-Project ID: {project.id}
-Project Name: {project.name}
-Description: {project.description}
-Features: {features_str}
-Theme: {project.theme}
-Project Path: {project.path}
-
-IMPORTANT: Start with Phase 0 (Requirement Gathering) from the living-ui-creator skill.
-Ask the user 2-3 batches of design and feature questions before coding.
-Reference: Read the QUESTIONNAIRE.md in the skill references for question ideas.
-
-Follow the living-ui-creator skill instructions to gather requirements, then scaffold, develop, test, and launch this UI.
-When complete, use the living_ui_notify_ready action to notify the browser."""
+        from agent_core.core.prompts.application import LIVING_UI_TASK_INSTRUCTION
+        task_instruction = LIVING_UI_TASK_INSTRUCTION.format(
+            project_id=project.id,
+            project_name=project.name,
+            description=project.description,
+            features=features_str,
+            theme=project.theme,
+            project_path=project.path,
+        )
 
         try:
             # Create the task (synchronous method)

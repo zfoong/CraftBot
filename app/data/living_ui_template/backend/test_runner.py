@@ -239,8 +239,97 @@ def run_internal_tests() -> Dict[str, Any]:
         result["errors"].append({"test": "models", "error": str(e), "traceback": traceback.format_exc()})
         result["status"] = "fail"
 
+    # Test 4: System file integrity — verify critical system features weren't removed
+    system_checks = _check_system_files()
+    for check in system_checks:
+        if check["status"] == "fail":
+            result["errors"].append({"test": "system_integrity", "error": check["error"]})
+            result["status"] = "fail"
+            logger.error(f"[SYSTEM] {check['error']}")
+        else:
+            logger.info(f"[SYSTEM] {check['name']} — OK")
+
     _write_result(result, "test_discovery.json")
     return result
+
+
+def _check_system_files() -> List[Dict[str, Any]]:
+    """Check that critical system features haven't been removed from template files."""
+    checks = []
+    backend_dir = Path(__file__).parent.parent / "backend" if (Path(__file__).parent.parent / "backend").exists() else Path(__file__).parent
+    project_root = Path(__file__).parent.parent
+
+    # Check main.py has /health endpoint
+    main_py = backend_dir / "main.py"
+    if main_py.exists():
+        content = main_py.read_text(encoding="utf-8")
+        if "/health" not in content:
+            checks.append({
+                "name": "health_endpoint",
+                "status": "fail",
+                "error": "main.py is missing /health endpoint. Add: @app.get('/health') async def health_check(): return {'status': 'healthy'}",
+            })
+        else:
+            checks.append({"name": "health_endpoint", "status": "pass"})
+
+        if "/api/logs" not in content:
+            checks.append({
+                "name": "logs_endpoint",
+                "status": "fail",
+                "error": "main.py is missing POST /api/logs endpoint for frontend console capture. Restore it from the template or add: @app.post('/api/logs') that accepts {entries: [{level, message, timestamp}]} and writes to logs/frontend_console.log",
+            })
+        else:
+            checks.append({"name": "logs_endpoint", "status": "pass"})
+
+        if "setup_logging" not in content:
+            checks.append({
+                "name": "logging_setup",
+                "status": "fail",
+                "error": "main.py is missing setup_logging() call. Add: from logger import setup_logging, cleanup_old_logs; setup_logging(); cleanup_old_logs(keep=20)",
+            })
+        else:
+            checks.append({"name": "logging_setup", "status": "pass"})
+
+        if "health_checker" not in content and "start_health_checker" not in content:
+            checks.append({
+                "name": "health_checker",
+                "status": "fail",
+                "error": "main.py is missing health checker. Add: from health_checker import start_health_checker, stop_health_checker and call them in the lifespan handler",
+            })
+        else:
+            checks.append({"name": "health_checker", "status": "pass"})
+    else:
+        checks.append({"name": "main_py", "status": "fail", "error": "main.py not found"})
+
+    # Check index.html has console capture script
+    index_html = project_root / "index.html"
+    if index_html.exists():
+        content = index_html.read_text(encoding="utf-8")
+        if "ConsoleCapture" not in content and "/api/logs" not in content:
+            checks.append({
+                "name": "console_capture",
+                "status": "fail",
+                "error": "index.html is missing the ConsoleCapture script. Restore it from the template — it should be an inline <script> before the main.tsx module script",
+            })
+        else:
+            checks.append({"name": "console_capture", "status": "pass"})
+    else:
+        checks.append({"name": "index_html", "status": "fail", "error": "index.html not found"})
+
+    # Check conftest.py uses correct imports (not package-style)
+    conftest = backend_dir / "tests" / "conftest.py"
+    if conftest.exists():
+        content = conftest.read_text(encoding="utf-8")
+        if "from backend." in content or "from backend import" in content:
+            checks.append({
+                "name": "conftest_imports",
+                "status": "fail",
+                "error": "tests/conftest.py has wrong imports. Use 'from models import Base', 'from database import get_db', 'from main import app' — NOT 'from backend.models' or 'from backend.main'. The conftest.py adds the backend dir to sys.path so absolute imports work.",
+            })
+        else:
+            checks.append({"name": "conftest_imports", "status": "pass"})
+
+    return checks
 
 
 # ============================================================================

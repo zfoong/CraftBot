@@ -15,9 +15,13 @@ Make changes to existing Living UI applications: add features, fix bugs, update 
 
 Follow these phases in order. Use TodoWrite to track progress.
 
-### Before You Start: Read Global Config
+### Before You Start: Read and Apply Global Config
 
-Read `agent_file_system/GLOBAL_LIVING_UI.md` for global design preferences and rules. Apply all enabled rules (`[x]`). Per-project requirements from the project's `LIVING_UI.md` override global settings.
+Read `agent_file_system/GLOBAL_LIVING_UI.md` for global design preferences and rules. You MUST follow:
+- **Colors**: Use the defined Primary/Secondary/Accent hex values for new UI elements.
+- **Enabled rules `[x]`**: Treat as hard requirements.
+- **Always Enforced rules**: Non-negotiable.
+- Per-project requirements from the project's `LIVING_UI.md` override global settings.
 
 ### Phase 1: Identify the Living UI
 
@@ -102,6 +106,24 @@ def archive_todo(todo_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
     todo.archived = True
     db.commit()
     return todo.to_dict()
+```
+
+#### Update/Add Backend Tests
+
+**Edit: `backend/tests/`**
+
+- Update existing tests if you changed models or routes
+- Add new tests for any new endpoints or business logic
+- Tests use a temp in-memory DB (`conftest.py` handles this)
+- The launch pipeline runs `pytest tests/` and blocks if tests fail
+
+```python
+def test_archive_todo(client):
+    """Archive endpoint should set archived=True."""
+    todo = client.post("/api/todos", json={"title": "My Todo"}).json()
+    response = client.post(f"/api/todos/{todo['id']}/archive")
+    assert response.status_code == 200
+    assert response.json()["archived"] == True
 ```
 
 #### Frontend Changes

@@ -200,9 +200,18 @@ Frontend auto-captures UI state on meaningful events (page load, state changes, 
 
 Follow these phases in order. Use TodoWrite to track progress.
 
-### Before You Start: Read Global Config
+### Before You Start: Read and Apply Global Config
 
-Read `agent_file_system/GLOBAL_LIVING_UI.md` for global design preferences and rules that apply to ALL Living UI projects. Apply all enabled rules (`[x]`) as requirements. Per-project requirements from Phase 0 Q&A override global settings when they conflict.
+Read `agent_file_system/GLOBAL_LIVING_UI.md` for global design preferences and rules.
+
+**You MUST apply these settings in your code:**
+
+- **Primary/Secondary/Accent Colors**: Use these hex values in your CSS and component styles. Set them as CSS custom properties in `frontend/styles/global.css` or use them directly in components. Example: if Primary Color is `#6366f1`, use it for primary buttons, active states, links, and accent elements.
+- **Font Family**: Apply as the `font-family` in `global.css` body styles.
+- **Enabled rules `[x]`**: Treat as hard requirements — your code must implement them.
+- **Disabled rules `[ ]`**: Skip these features.
+- **Always Enforced rules**: These are non-negotiable — always follow them.
+- Per-project requirements from Phase 0 Q&A override global settings when they conflict.
 
 ### Phase 0: Requirement Gathering (MANDATORY — minimum 2 batches)
 
@@ -259,67 +268,118 @@ Use `send_message` with `wait_for_user_reply=True` to ask questions and wait for
 > 2. When you click an item, should it open in a detail panel on the side, a full modal, or expand in place?
 > 3. Any color/visual preference? (dark theme, light, colorful, minimal — or I'll use a clean modern default)"
 
-### Phase 1: Plan Implementation
+### Phase 1: Plan Features
 
-Read the requirements documented in LIVING_UI.md (from Phase 0) and plan:
-- Data entities needed (models, fields, relationships)
-- User actions (create, update, delete, etc.)
-- UI layout and component structure
+Read the requirements from LIVING_UI.md (Phase 0) and break the app into **features**.
+A feature is a complete user-facing capability (e.g., "Board Items", "Media Attachments", "Search/Filter").
 
-If Phase 0 was skipped (e.g., requirements are already very detailed in the description),
+Create a feature list in your todo list. Order by dependency (core data first, then enhancements).
+
+Example feature breakdown for a research board:
+1. Board Items (create, view, edit, delete items with title/description)
+2. Categories/Sections (organize items into groups)
+3. Media Attachments (images, videos, links on items)
+4. Search & Filter (find items by text, category, tags)
+5. Drag & Drop (reorder items)
+
+If Phase 0 was skipped (requirements are very detailed in the description),
 document them in LIVING_UI.md now before proceeding.
 
-### Phase 2: Define Backend Models
+### Phase 2-7: Build Features (repeat for each feature)
 
-**Edit: `backend/models.py`**
+Build one feature at a time, fully completing each before moving to the next.
+For each feature, follow this cycle:
 
-- Define SQLAlchemy models for your data
+#### Step A: Write Tests First
+
+**Edit: `backend/tests/test_{feature}.py`**
+
+Write tests that describe the expected API behavior BEFORE writing routes.
+The template provides `conftest.py` with a test client and temporary in-memory database.
+These tests will FAIL initially — that's expected.
+
+```python
+# Example: tests/test_items.py
+def test_create_item(client):
+    """Should create a new item."""
+    response = client.post("/api/items", json={
+        "title": "Test Item",
+        "description": "A test item",
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Test Item"
+    assert "id" in data
+
+def test_get_items(client):
+    """Should return all items."""
+    client.post("/api/items", json={"title": "Item 1"})
+    client.post("/api/items", json={"title": "Item 2"})
+    response = client.get("/api/items")
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+def test_delete_item(client):
+    """Should delete an item and return 404 on re-fetch."""
+    item = client.post("/api/items", json={"title": "To Delete"}).json()
+    response = client.delete(f"/api/items/{item['id']}")
+    assert response.status_code == 200
+    assert client.get(f"/api/items/{item['id']}").status_code == 404
+```
+
+**What to test:**
+- CRUD operations (create, read, update, delete)
+- Business logic (e.g., deleting a section deletes its cards)
+- Edge cases (e.g., non-existent item returns 404)
+- Relationships (e.g., item belongs to section)
+
+**The `client` and `db` fixtures** are provided by `conftest.py`.
+**Delete `tests/test_example.py`** after creating your first test file.
+
+#### Step B: Create Backend (model + routes)
+
+**Edit: `backend/models.py`** — add the model for this feature:
 - NEVER use `metadata` as column name (reserved by SQLAlchemy)
 - Always include `to_dict()` method for JSON serialization
-- Use `extra_data` for flexible JSON columns
+- If model name conflicts with Python built-ins, use alias: `from models import List as ListModel`
 
-### Phase 3: Define Backend Routes
+**Edit: `backend/routes.py`** — add routes to make your tests pass:
+- Write routes that satisfy each test assertion
+- Use absolute imports only
 
-**Edit: `backend/routes.py`**
+#### Step C: Verify Backend
 
-- Add API endpoints for CRUD operations
-- If model name conflicts with Python built-ins, use alias:
-  ```python
-  from models import List as ListModel  # Avoid shadowing typing.List
-  ```
+Run tests to verify your backend works:
+```bash
+cd backend && python -m pytest tests/ -v --tb=short
+```
 
-### Phase 4: Define Frontend Types
+**Fix any failures before proceeding.** Do NOT move to frontend until all tests pass.
 
-**Edit: `frontend/types.ts`**
+#### Step D: Create Frontend for This Feature
 
-Define TypeScript interfaces matching backend models.
+**Edit: `frontend/types.ts`** — add TypeScript interfaces for this feature's models
+**Edit: `frontend/AppController.ts`** — add methods to call this feature's API endpoints
+**Edit: `frontend/components/`** — create React components for this feature
+**Edit: `frontend/components/MainView.tsx`** — wire the new components into the main view
 
-### Phase 5: Build UI Components
+Use preset UI components (Button, Card, Input, Modal, etc.) — see the UI Component Presets section.
+Apply colors from GLOBAL_LIVING_UI.md.
 
-**Edit: `frontend/components/`**
+#### Step E: Move to Next Feature
 
-Create React components. Main entry point is `MainView.tsx`.
+Update your todo list — mark this feature complete, start the next one.
+Repeat Steps A-D for each feature.
 
-### Phase 6: Connect Frontend to Backend
+### Phase 8: Final Review
 
-**Edit: `frontend/AppController.ts`**
-
-Add methods to call your backend APIs.
-
-### Phase 7: Update MainView
-
-**Edit: `frontend/components/MainView.tsx`**
-
-Wire up UI to use the controller.
-
-### Phase 8: Review Code
-
-Review your code for correctness before proceeding:
+After all features are built, review your code:
 - Backend routes use **absolute imports** (`from models import ...` NOT `from . import ...`)
-- Backend `routes.py` does NOT add `/api` prefix to route paths (the `main.py` router prefix handles this)
+- Backend `routes.py` does NOT add `/api` prefix to route paths
 - All `to_dict()` methods return all fields
-- TypeScript types in `types.ts` match backend model output
+- TypeScript types match backend model output
 - Components import correctly from relative paths
+- All tests pass: `cd backend && python -m pytest tests/ -v`
 
 **DO NOT run:** `npm run dev`, `npm run build`, `npm run preview`, or `uvicorn` manually.
 The launch pipeline handles all building, testing, and serving automatically.
