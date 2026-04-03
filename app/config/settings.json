@@ -10,10 +10,12 @@
     "enabled": true
   },
   "model": {
-    "llm_provider": "deepseek",
-    "vlm_provider": "deepseek",
-    "llm_model": "DeepSeek-V3.2. ",
-    "vlm_model": "DeepSeek-V3.2. "
+    "llm_provider": "anthropic",
+    "vlm_provider": "anthropic",
+    "llm_model": "claude-sonnet-4-5",
+    "vlm_model": "claude-sonnet-4-5",
+    "slow_mode": true,
+    "slow_mode_tpm_limit": 25000
   },
   "api_keys": {
     "openai": "",

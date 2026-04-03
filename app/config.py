@@ -45,6 +45,8 @@ def _get_default_settings() -> Dict[str, Any]:
             "vlm_provider": "anthropic",
             "llm_model": None,
             "vlm_model": None,
+            "slow_mode": False,
+            "slow_mode_tpm_limit": 30000,
         },
         "api_keys": {
             "openai": "",
@@ -185,6 +187,18 @@ def get_web_search_cse_id() -> str:
 def reload_settings() -> Dict[str, Any]:
     """Force reload settings from disk."""
     return get_settings(reload=True)
+
+
+def is_slow_mode_enabled() -> bool:
+    """Check if slow mode (rate limiting) is enabled."""
+    settings = get_settings()
+    return settings.get("model", {}).get("slow_mode", False)
+
+
+def get_slow_mode_tpm_limit() -> int:
+    """Get the tokens-per-minute limit for slow mode."""
+    settings = get_settings()
+    return settings.get("model", {}).get("slow_mode_tpm_limit", 30000)
 
 
 def save_settings(settings: Dict[str, Any]) -> None:

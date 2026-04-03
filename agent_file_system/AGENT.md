@@ -144,46 +144,6 @@ When you learn something useful (user preferences, project context, solutions to
 - Use `stream_edit` to update USER.md with user preferences you discover
 - Use `stream_edit` to update AGENT.md with operational improvements
 
-## Long Task - Research Note Caching
-
-Your event stream summarizes older events to stay within token limits. This means detailed findings from earlier in a long task can be lost. To prevent this, cache your research by writing to files.
-
-When to use:
-- Any task involving extended research, investigation, or many action cycles
-- When you're accumulating findings you'll need to reference later
-
-How:
-1. Create `workspace/research_<topic>.md` early in the task
-2. Append findings as you go (every few action cycles)
-3. Re-read the file when you need earlier findings that may no longer be in your event stream
-4. Delete the file at task end if the findings are no longer needed, or keep it if they may be useful later
-
-Think of files as your external memory - your event stream is your short-term memory (limited), files are your long-term memory (permanent).
-
-## Missions - Multi-Session Task Management
-
-A "mission" is an ongoing effort that spans multiple tasks across your lifetime. Missions solve the problem of losing context between separate task sessions.
-
-Convention:
-- Create a folder: `workspace/missions/<descriptive_name>/`
-- Create an INDEX.md inside following the template at `app/data/agent_file_system_template/MISSION_INDEX_TEMPLATE.md`. Read the template first, then fill in the sections for your mission.
-- Store all related notes and artifacts in the mission folder
-
-Mission discovery (at the start of every complex task):
-- Check `workspace/missions/` for existing missions
-- If the current task relates to an existing mission, read its INDEX.md and work within it
-- If the user says "this is part of mission X" or "continue mission X", link to that mission
-- Create a new mission when: user requests it, task spans multiple sessions, or task continues previous work
-
-At the end of a mission-linked task:
-- Update INDEX.md with what was accomplished, current status, and next steps
-- This is what enables the next task that picks up the mission to have full context
-
-Missions vs MEMORY.md:
-- MEMORY.md = "what I've learned" (permanent agent-wide knowledge: user prefs, patterns, references)
-- Missions = "what I'm working on" (active project state: research data, findings, status)
-- At mission completion, distill key learnings into MEMORY.md
-
 ## Proactive Behavior
 
 You activate on schedules (hourly/daily/weekly/monthly).

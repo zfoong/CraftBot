@@ -1234,6 +1234,12 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             base_url = data.get("baseUrl")
             await self._handle_ollama_models_get(base_url)
 
+        elif msg_type == "slow_mode_get":
+            await self._handle_slow_mode_get()
+
+        elif msg_type == "slow_mode_set":
+            await self._handle_slow_mode_set(data)
+
         # MCP settings operations
         elif msg_type == "mcp_list":
             await self._handle_mcp_list()
@@ -2835,6 +2841,36 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             await self._broadcast({
                 "type": "ollama_models_get",
                 "data": {"success": False, "models": [], "error": str(e)},
+            })
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Slow Mode Handlers
+    # ─────────────────────────────────────────────────────────────────────
+
+    async def _handle_slow_mode_get(self) -> None:
+        """Get slow mode settings."""
+        try:
+            from app.ui_layer.settings.model_settings import get_slow_mode_settings
+            result = get_slow_mode_settings()
+            await self._broadcast({"type": "slow_mode_get", "data": result})
+        except Exception as e:
+            await self._broadcast({
+                "type": "slow_mode_get",
+                "data": {"success": False, "error": str(e)},
+            })
+
+    async def _handle_slow_mode_set(self, data: Dict[str, Any]) -> None:
+        """Set slow mode on or off."""
+        try:
+            from app.ui_layer.settings.model_settings import set_slow_mode
+            enabled = data.get("enabled", False)
+            tpm_limit = data.get("tpmLimit")
+            result = set_slow_mode(enabled, tpm_limit)
+            await self._broadcast({"type": "slow_mode_set", "data": result})
+        except Exception as e:
+            await self._broadcast({
+                "type": "slow_mode_set",
+                "data": {"success": False, "error": str(e)},
             })
 
     # ─────────────────────────────────────────────────────────────────────

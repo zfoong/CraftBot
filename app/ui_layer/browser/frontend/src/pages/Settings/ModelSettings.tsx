@@ -61,6 +61,10 @@ export function ModelSettings() {
   const [newLlmModel, setNewLlmModel] = useState('')
   const [newVlmModel, setNewVlmModel] = useState('')
 
+  // Slow mode state
+  const [slowModeEnabled, setSlowModeEnabled] = useState(false)
+  const [isLoadingSlowMode, setIsLoadingSlowMode] = useState(true)
+
   // UI state
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -207,6 +211,22 @@ export function ModelSettings() {
           showToast('error', d.error || 'Model download failed')
         }
       }),
+      onMessage('slow_mode_get', (data: unknown) => {
+        const d = data as { success: boolean; enabled: boolean; tpm_limit: number }
+        setIsLoadingSlowMode(false)
+        if (d.success) {
+          setSlowModeEnabled(d.enabled)
+        }
+      }),
+      onMessage('slow_mode_set', (data: unknown) => {
+        const d = data as { success: boolean; enabled: boolean; error?: string }
+        if (d.success) {
+          setSlowModeEnabled(d.enabled)
+          showToast('success', `Slow mode ${d.enabled ? 'enabled' : 'disabled'}`)
+        } else {
+          showToast('error', d.error || 'Failed to update slow mode')
+        }
+      }),
     ]
 
     return () => cleanups.forEach(cleanup => cleanup())
@@ -218,6 +238,7 @@ export function ModelSettings() {
 
     send('model_providers_get')
     send('model_settings_get')
+    send('slow_mode_get')
   }, [isConnected, send])
 
   // Fetch Ollama models whenever the active provider is 'remote'
@@ -501,7 +522,7 @@ export function ModelSettings() {
           )}
 
           {/* Actions */}
-          <div className={styles.sectionFooter}>
+          <div className={styles.sectionFooter} style={{ borderTop: 'none', paddingTop: 0 }}>
             <Button
               variant="secondary"
               onClick={handleTestConnection}
@@ -536,6 +557,28 @@ export function ModelSettings() {
                 'Save'
               )}
             </Button>
+          </div>
+
+          {/* Slow Mode */}
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-primary)', margin: 'var(--space-4) 0' }} />
+          <div className={styles.toggleGroup}>
+            <div className={styles.toggleInfo}>
+              <span className={styles.toggleLabel}>Slow Mode</span>
+              <span className={styles.toggleDesc}>
+                Limits token usage to stay within API rate limits.
+                Enable this if you experience rate limiting errors from your provider.
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              className={styles.toggle}
+              checked={slowModeEnabled}
+              onChange={(e) => {
+                setSlowModeEnabled(e.target.checked)
+                send('slow_mode_set', { enabled: e.target.checked })
+              }}
+              disabled={isLoadingSlowMode}
+            />
           </div>
         </div>
       )}

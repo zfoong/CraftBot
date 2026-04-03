@@ -1200,7 +1200,16 @@ class AgentBase:
         user_message = classify_llm_error(error)
 
         # Fatal LLM errors must not re-queue the task - that causes infinite retry loops
-        is_fatal_llm_error = isinstance(error, LLMConsecutiveFailureError)
+        # Walk the full exception chain (__cause__, __context__) to detect wrapped errors
+        is_fatal_llm_error = False
+        exc: BaseException | None = error
+        while exc is not None:
+            if isinstance(exc, LLMConsecutiveFailureError):
+                is_fatal_llm_error = True
+                break
+            exc = exc.__cause__ or exc.__context__
+            if exc is error:  # prevent infinite loop on circular chains
+                break
 
         try:
             logger.debug("[REACT ERROR] Logging to event stream")
