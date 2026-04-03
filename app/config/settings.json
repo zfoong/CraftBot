@@ -21,7 +21,8 @@
     "openai": "",
     "anthropic": "",
     "google": "",
-    "byteplus": ""
+    "byteplus": "",
+    "deepseek": ""
   },
   "endpoints": {
     "remote_model_url": "",
