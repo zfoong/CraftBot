@@ -754,6 +754,9 @@ class BrowserAdapter(InterfaceAdapter):
         # Start watchdog to monitor running Living UI processes
         self._living_ui_manager.start_watchdog()
 
+        # Auto-launch projects that have auto_launch enabled
+        asyncio.create_task(self._living_ui_manager.auto_launch_projects())
+
         # Register global accessor and callbacks for Living UI actions
         set_living_ui_manager(self._living_ui_manager)
         register_broadcast_callbacks(
@@ -1409,6 +1412,16 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             setting = data.get("setting", "")
             value = data.get("value")
             await self._handle_living_ui_project_setting_update(project_id, setting, value)
+
+        elif msg_type == "living_ui_marketplace_list":
+            await self._handle_marketplace_list()
+
+        elif msg_type == "living_ui_marketplace_install":
+            app_id = data.get("appId", "")
+            app_name = data.get("appName", "")
+            app_description = data.get("appDescription", "")
+            custom_fields = data.get("customFields", {})
+            await self._handle_marketplace_install(app_id, app_name, app_description, custom_fields)
 
         # WhatsApp QR code flow handlers
         elif msg_type == "whatsapp_start_qr":
@@ -3997,6 +4010,63 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         from app.ui_layer.settings.living_ui_settings import update_project_setting
         result = update_project_setting(project_id, setting, value)
         await self._broadcast({"type": "living_ui_project_setting_update", "data": result})
+
+    # =====================
+    # Marketplace Handlers
+    # =====================
+
+    async def _handle_marketplace_list(self) -> None:
+        """Fetch marketplace catalogue from GitHub."""
+        import urllib.request
+        import json as _json
+
+        CATALOGUE_URL = "https://raw.githubusercontent.com/CraftOS-dev/living-ui-marketplace/main/catalogue.json"
+
+        try:
+            req = urllib.request.Request(CATALOGUE_URL, headers={'User-Agent': 'CraftBot'})
+            response = urllib.request.urlopen(req, timeout=15)
+            catalogue = _json.loads(response.read().decode())
+            await self._broadcast({
+                "type": "living_ui_marketplace_list",
+                "data": {"success": True, "apps": catalogue.get("apps", [])},
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "living_ui_marketplace_list",
+                "data": {"success": False, "error": str(e), "apps": []},
+            })
+
+    async def _handle_marketplace_install(self, app_id: str, app_name: str, app_description: str, custom_fields: dict = None) -> None:
+        """Install a marketplace app."""
+        if not app_id or not app_name:
+            await self._broadcast({
+                "type": "living_ui_marketplace_install",
+                "data": {"success": False, "error": "App ID and name are required"},
+            })
+            return
+
+        result = await self._living_ui_manager.install_from_marketplace(
+            app_id=app_id,
+            app_name=app_name,
+            app_description=app_description,
+            custom_fields=custom_fields,
+        )
+
+        if result.get("status") == "success":
+            # Also broadcast as living_ui_create so the sidebar updates
+            await self._broadcast({
+                "type": "living_ui_create",
+                "data": {
+                    "success": True,
+                    "projectId": result["project"]["id"],
+                    "project": result["project"],
+                },
+            })
+
+        await self._broadcast({
+            "type": "living_ui_marketplace_install",
+            "data": result,
+        })
 
     # =====================
     # WhatsApp QR Code Flow

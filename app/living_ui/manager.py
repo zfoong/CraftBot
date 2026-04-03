@@ -1559,6 +1559,155 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                 except Exception as e:
                     logger.warning(f"[LIVING_UI] Failed to process {filepath}: {e}")
 
+    async def install_from_marketplace(
+        self,
+        app_id: str,
+        app_name: str,
+        app_description: str,
+        custom_fields: Optional[Dict[str, str]] = None,
+        repo_url: str = "https://github.com/CraftOS-dev/living-ui-marketplace",
+    ) -> Dict[str, Any]:
+        """
+        Install a pre-built Living UI app from the marketplace.
+
+        Downloads the app from a GitHub repo, sets up the project,
+        and runs the launch pipeline.
+
+        Args:
+            app_id: The app folder name in the marketplace repo
+            custom_fields: Optional dict of custom placeholder replacements (e.g., {"APP_TITLE": "My Board"})
+            app_name: Display name for the project
+            app_description: App description
+            repo_url: GitHub repo URL
+
+        Returns:
+            Dict with status, project info, or error
+        """
+        import urllib.request
+        import zipfile
+        import io
+
+        project_id = self._generate_id()
+        sanitized_name = self._sanitize_name(app_name)
+        project_path = self.living_ui_dir / f"{sanitized_name}_{project_id}"
+
+        try:
+            # Download the repo as a zip
+            # GitHub API: /{owner}/{repo}/zipball/main
+            parts = repo_url.rstrip('/').split('/')
+            owner = parts[-2]
+            repo = parts[-1]
+            zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/main.zip"
+
+            logger.info(f"[LIVING_UI:MARKETPLACE] Downloading {app_id} from {zip_url}")
+
+            req = urllib.request.Request(zip_url, headers={'User-Agent': 'CraftBot'})
+            response = urllib.request.urlopen(req, timeout=60)
+            zip_data = response.read()
+
+            # Extract just the app folder from the zip
+            with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+                # GitHub zips have a root folder like "repo-main/"
+                root_prefix = None
+                app_prefix = None
+
+                for name in zf.namelist():
+                    if root_prefix is None:
+                        root_prefix = name.split('/')[0] + '/'
+                    # Look for the app folder: root/{app_id}/
+                    if f'/{app_id}/' in name:
+                        if app_prefix is None:
+                            # Find the prefix up to and including the app folder
+                            idx = name.index(f'{app_id}/')
+                            app_prefix = name[:idx + len(app_id) + 1]
+                        break
+
+                if not app_prefix:
+                    return {"status": "error", "error": f"App '{app_id}' not found in marketplace repo"}
+
+                # Extract app files to project path
+                project_path.mkdir(parents=True, exist_ok=True)
+                for member in zf.namelist():
+                    if member.startswith(app_prefix) and not member.endswith('/'):
+                        # Get the relative path within the app folder
+                        rel_path = member[len(app_prefix):]
+                        if rel_path:
+                            target = project_path / rel_path
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            with zf.open(member) as src, open(target, 'wb') as dst:
+                                dst.write(src.read())
+
+            logger.info(f"[LIVING_UI:MARKETPLACE] Extracted {app_id} to {project_path}")
+
+            # Allocate ports
+            frontend_port = self._allocate_port()
+            backend_port = self._allocate_port()
+
+            # Replace placeholders (marketplace apps use the same template placeholders)
+            # Build replacements — system placeholders + custom fields
+            replacements = {
+                '{{PROJECT_ID}}': project_id,
+                '{{PROJECT_NAME}}': app_name,
+                '{{PROJECT_DESCRIPTION}}': app_description,
+                '{{PORT}}': str(frontend_port),
+                '{{BACKEND_PORT}}': str(backend_port),
+                '{{THEME}}': 'system',
+                '{{CREATED_AT}}': datetime.now().isoformat(),
+                '{{FEATURES}}': '',
+            }
+            # Add custom fields from marketplace template (e.g., APP_TITLE)
+            if custom_fields:
+                for key, value in custom_fields.items():
+                    replacements[f'{{{{{key}}}}}'] = value
+
+            self._replace_placeholders(project_path, replacements)
+
+            # Create project instance
+            project = LivingUIProject(
+                id=project_id,
+                name=app_name,
+                description=app_description,
+                path=str(project_path),
+                status='created',
+                port=frontend_port,
+                backend_port=backend_port,
+            )
+
+            self.projects[project_id] = project
+            self._save_projects()
+
+            logger.info(f"[LIVING_UI:MARKETPLACE] Created project: {app_name} ({project_id})")
+
+            # Run the launch pipeline
+            result = await self.launch_and_verify(project_id)
+
+            if result["status"] == "success":
+                return {
+                    "status": "success",
+                    "project": project.to_dict(),
+                    "url": result.get("url"),
+                    "backend_url": result.get("backend_url"),
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": f"Launch failed at {result.get('step', 'unknown')}: {'; '.join(result.get('errors', [])[:3])}",
+                    "project": project.to_dict(),
+                }
+
+        except urllib.error.URLError as e:
+            logger.error(f"[LIVING_UI:MARKETPLACE] Download failed: {e}")
+            return {"status": "error", "error": f"Failed to download from marketplace: {e}"}
+        except Exception as e:
+            logger.error(f"[LIVING_UI:MARKETPLACE] Install failed: {e}")
+            # Clean up on failure
+            if project_path.exists():
+                try:
+                    shutil.rmtree(project_path)
+                except Exception:
+                    pass
+            return {"status": "error", "error": f"Installation failed: {e}"}
+
     def update_project_status(self, project_id: str, status: str, error: Optional[str] = None) -> None:
         """Update project status."""
         if project_id in self.projects:

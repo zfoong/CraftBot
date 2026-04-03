@@ -112,6 +112,7 @@ export function NavBar() {
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onSubmit={handleCreateSubmit}
+        onInstalled={(projectId) => navigate(`/living-ui/${projectId}`)}
       />
     </>
   )
