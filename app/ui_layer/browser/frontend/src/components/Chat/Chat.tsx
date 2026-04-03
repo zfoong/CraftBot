@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, KeyboardEvent, useCallback, ChangeEvent, useMemo } from 'react'
-import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply } from 'lucide-react'
+import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply, Mic, MicOff } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { Button, IconButton, StatusIndicator } from '../ui'
@@ -23,6 +23,22 @@ interface ChatProps {
   /** Optional empty state message */
   emptyMessage?: string
 }
+
+const MIC_LANGUAGES = [
+  { code: 'en-US', label: 'EN', full: 'English' },
+  { code: 'ja-JP', label: 'JA', full: '日本語' },
+  { code: 'zh-CN', label: 'ZH', full: '中文 (简体)' },
+  { code: 'zh-TW', label: 'ZH-TW', full: '中文 (繁體)' },
+  { code: 'ko-KR', label: 'KO', full: '한국어' },
+  { code: 'ar-SA', label: 'AR', full: 'العربية' },
+  { code: 'es-ES', label: 'ES', full: 'Español' },
+  { code: 'fr-FR', label: 'FR', full: 'Français' },
+  { code: 'de-DE', label: 'DE', full: 'Deutsch' },
+  { code: 'pt-BR', label: 'PT', full: 'Português' },
+  { code: 'hi-IN', label: 'HI', full: 'हिन्दी' },
+  { code: 'ru-RU', label: 'RU', full: 'Русский' },
+  { code: 'it-IT', label: 'IT', full: 'Italiano' },
+]
 
 // Attachment limits
 const MAX_ATTACHMENT_COUNT = 10
@@ -60,6 +76,21 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Voice input state
+  const [isListening, setIsListening] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null)
+  const [micLang, setMicLang] = useState(() => {
+    const browserLang = navigator.language || 'en-US'
+    return MIC_LANGUAGES.some(l => l.code === browserLang) ? browserLang : 'en-US'
+  })
+  const [langOpen, setLangOpen] = useState(false)
+  const langDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Input history (terminal-style up/down arrow navigation)
+  const inputHistoryRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
   const parentRef = useRef<HTMLDivElement>(null)
   const wasNearBottomRef = useRef(true)
   const prevMessageCountRef = useRef(0)
@@ -97,6 +128,18 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
     if (!container) return true
     return container.scrollHeight - container.scrollTop - container.clientHeight < 100
   }, [])
+
+  // Close language dropdown when clicking outside
+  useEffect(() => {
+    if (!langOpen) return
+    const handler = (e: MouseEvent) => {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(e.target as Node)) {
+        setLangOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [langOpen])
 
   // Track scroll position + load older messages on scroll-to-top
   useEffect(() => {
@@ -162,13 +205,81 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
     inputRef.current?.focus()
   }, [setReplyTarget])
 
+  const toggleListening = useCallback(() => {
+    if (isListening) {
+      recognitionRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any
+    const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition
+
+    if (!SpeechRecognitionAPI) {
+      alert('Speech recognition is not supported in this browser.')
+      return
+    }
+
+    const recognition = new SpeechRecognitionAPI()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = micLang
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript
+        }
+      }
+      if (finalTranscript) {
+        setInput(prev => prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + finalTranscript)
+        if (inputRef.current) {
+          inputRef.current.style.height = 'auto'
+          inputRef.current.style.height = inputRef.current.scrollHeight + 'px'
+        }
+      }
+    }
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      setIsListening(false)
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        alert('Microphone access denied. Please allow microphone permission in your browser settings.')
+      }
+    }
+    recognition.onend = () => setIsListening(false)
+
+    recognitionRef.current = recognition
+    recognition.start()
+    setIsListening(true)
+    inputRef.current?.focus()
+  }, [isListening, micLang])
+
+  // Stop mic if component unmounts while listening
+  useEffect(() => {
+    return () => { recognitionRef.current?.abort() }
+  }, [])
+
   const handleSend = () => {
     if (!attachmentValidation.valid) return
     if (input.trim() || pendingAttachments.length > 0) {
+      // Save to input history
+      if (input.trim()) {
+        inputHistoryRef.current.push(input.trim())
+      }
+      historyIndexRef.current = -1
+
       const replyContext = replyTarget ? {
         sessionId: replyTarget.sessionId,
         originalMessage: replyTarget.originalContent,
       } : undefined
+
+      // Stop mic if still listening when message is sent
+      if (isListening) {
+        recognitionRef.current?.stop()
+        setIsListening(false)
+      }
 
       sendMessage(
         input.trim(),
@@ -191,6 +302,30 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const history = inputHistoryRef.current
+      if (history.length === 0) return
+      if (historyIndexRef.current === -1 && input.trim() !== '') return
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) {
+          historyIndexRef.current = history.length - 1
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current--
+        }
+        setInput(history[historyIndexRef.current])
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) return
+        if (historyIndexRef.current < history.length - 1) {
+          historyIndexRef.current++
+          setInput(history[historyIndexRef.current])
+        } else {
+          historyIndexRef.current = -1
+          setInput('')
+        }
+      }
     }
   }
 
@@ -323,6 +458,39 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
         <input ref={fileInputRef} type="file" multiple className={styles.hiddenFileInput} onChange={handleFileSelect} />
         <IconButton icon={<Paperclip size={18} />} variant="ghost" tooltip="Attach file" onClick={handleAttachClick} />
 
+        <div className={styles.micGroup} ref={langDropdownRef}>
+          <IconButton
+            icon={isListening ? <MicOff size={18} /> : <Mic size={18} />}
+            variant="ghost"
+            active={isListening}
+            tooltip={isListening ? 'Stop listening' : 'Voice input'}
+            onClick={toggleListening}
+            className={isListening ? styles.micListening : undefined}
+          />
+          <button
+            className={styles.langBtn}
+            onClick={() => !isListening && setLangOpen(o => !o)}
+            title="Speech language"
+            disabled={isListening}
+          >
+            {MIC_LANGUAGES.find(l => l.code === micLang)?.label ?? 'EN'}
+          </button>
+          {langOpen && (
+            <div className={styles.langDropdown}>
+              {MIC_LANGUAGES.map(lang => (
+                <button
+                  key={lang.code}
+                  className={`${styles.langOption}${micLang === lang.code ? ` ${styles.langOptionActive}` : ''}`}
+                  onClick={() => { setMicLang(lang.code); setLangOpen(false) }}
+                >
+                  <span className={styles.langCode}>{lang.label}</span>
+                  <span className={styles.langFull}>{lang.full}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className={styles.inputWrapper}>
           {(attachmentError || !attachmentValidation.valid) && (
             <div className={styles.attachmentError}>
@@ -359,14 +527,22 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
             </div>
           )}
 
+          {isListening && (
+            <div className={styles.listeningDots}>
+              <span /><span /><span />
+            </div>
+          )}
+
           <textarea
             ref={inputRef}
-            className={styles.input}
-            placeholder={placeholder || 'Type a message...'}
+            className={`${styles.input}${isListening ? ` ${styles.inputListening}` : ''}`}
+            placeholder={isListening ? 'Listening... speak now' : (placeholder || 'Type a message...')}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={1}
+            lang={micLang}
+            inputMode="text"
           />
         </div>
 
