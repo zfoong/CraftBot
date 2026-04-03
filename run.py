@@ -259,6 +259,57 @@ def cleanup_background_processes():
 # Register cleanup on exit
 atexit.register(cleanup_background_processes)
 
+
+def _kill_stale_port_process(port: int) -> bool:
+    """Kill any process listening on the given port (stale leftovers from previous runs).
+
+    Returns True if a stale process was found and killed.
+    """
+    if sys.platform != "win32":
+        try:
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for pid_str in result.stdout.strip().split():
+                pid = int(pid_str)
+                if pid != os.getpid():
+                    subprocess.run(["kill", "-9", str(pid)], timeout=5)
+                    return True
+        except Exception:
+            pass
+        return False
+
+    # Windows: parse netstat to find the PID, then taskkill it
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in result.stdout.splitlines():
+            # Match LISTENING lines for our port on any address
+            if f":{port}" in line and "LISTENING" in line:
+                parts = line.split()
+                pid = int(parts[-1])
+                if pid and pid != os.getpid():
+                    subprocess.run(
+                        ["taskkill", "/PID", str(pid), "/F"],
+                        capture_output=True, timeout=10,
+                    )
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _free_ports(*ports: int) -> None:
+    """Kill stale processes on the given ports before startup."""
+    for port in ports:
+        if _kill_stale_port_process(port):
+            # Give the OS a moment to release the socket
+            time.sleep(0.5)
+
+
 def _try_install_nodejs_linux(silent: bool = False) -> bool:
     """
     Attempt to auto-install Node.js on Linux systems (including Kali).
@@ -999,6 +1050,9 @@ if __name__ == "__main__":
 
     # Browser mode: start frontend + agent, wait for both, then open browser
     if browser_mode:
+        # Kill stale processes from previous runs that may still hold our ports
+        _free_ports(FRONTEND_PORT, BACKEND_PORT)
+
         # Print browser mode header
         print_browser_header()
 

@@ -18,6 +18,8 @@ PROVIDER_TO_SETTINGS_KEY = {
     "google": "google",
     "byteplus": "byteplus",
     "anthropic": "anthropic",
+    "deepseek": "deepseek",
+    "grok": "grok",
 }
 
 

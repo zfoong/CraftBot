@@ -11,7 +11,32 @@ const MIN_PANEL_WIDTH = 200
 const MAX_PANEL_WIDTH = 800
 
 export function ChatPage() {
-  const { actions, cancelTask, cancellingTaskId, setReplyTarget } = useWebSocket()
+  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen, replyTarget, setReplyTarget, clearReplyTarget, loadOlderMessages, hasMoreMessages, loadingOlderMessages } = useWebSocket()
+
+  // Derive agent status from actions and messages
+  const status = useDerivedAgentStatus({
+    actions,
+    messages,
+    connected,
+  })
+  const [input, setInput] = useState('')
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Input history (terminal-style up/down arrow navigation)
+  const inputHistoryRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
+  const draftRef = useRef('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Virtualization refs
+  const parentRef = useRef<HTMLDivElement>(null)
+  const hasScrolledRef = useRef(false)
+  const prevMessageCountRef = useRef(0)
+  const prevPathRef = useRef<string | null>(null)
+  const wasNearBottomRef = useRef(true)
+  const location = useLocation()
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
@@ -57,6 +82,157 @@ export function ChatPage() {
       originalContent: `Task: ${taskName}`,
     })
   }, [setReplyTarget])
+
+  const handleSend = () => {
+    // Don't send if there are validation errors
+    if (!attachmentValidation.valid) return
+
+    if (input.trim() || pendingAttachments.length > 0) {
+      // Save to input history
+      if (input.trim()) {
+        inputHistoryRef.current.push(input.trim())
+      }
+      historyIndexRef.current = -1
+      draftRef.current = ''
+
+      // Include reply context if replying to a message/task
+      const replyContext = replyTarget ? {
+        sessionId: replyTarget.sessionId,
+        originalMessage: replyTarget.originalContent,
+      } : undefined
+
+      sendMessage(
+        input.trim(),
+        pendingAttachments.length > 0 ? pendingAttachments : undefined,
+        replyContext
+      )
+      setInput('')
+      setPendingAttachments([])
+      setAttachmentError(null)
+      clearReplyTarget()  // Clear reply target after sending
+      // Reset textarea height after clearing input
+      if (inputRef.current) {
+        inputRef.current.style.height = 'auto'
+      }
+      inputRef.current?.focus()
+    }
+  }
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const history = inputHistoryRef.current
+      // Only navigate history when input is empty (or already navigating history)
+      if (history.length === 0) return
+      if (historyIndexRef.current === -1 && input.trim() !== '') return
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) {
+          historyIndexRef.current = history.length - 1
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current--
+        }
+        setInput(history[historyIndexRef.current])
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) return
+        if (historyIndexRef.current < history.length - 1) {
+          historyIndexRef.current++
+          setInput(history[historyIndexRef.current])
+        } else {
+          // Back to empty
+          historyIndexRef.current = -1
+          setInput('')
+        }
+      }
+    }
+  }
+
+  const handleAttachClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    // Check if adding these files would exceed the count limit
+    const totalFileCount = pendingAttachments.length + files.length
+    if (totalFileCount > MAX_ATTACHMENT_COUNT) {
+      setAttachmentError(`Maximum ${MAX_ATTACHMENT_COUNT} files allowed. You have ${pendingAttachments.length} file(s) and are trying to add ${files.length} more.`)
+      e.target.value = ''
+      return
+    }
+
+    const newAttachments: PendingAttachment[] = []
+    let newTotalSize = pendingAttachments.reduce((sum, att) => sum + att.size, 0)
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+
+      // Check individual file size (for very large files, recommend manual copy)
+      if (file.size > MAX_TOTAL_SIZE_BYTES) {
+        setAttachmentError(`File "${file.name}" (${formatFileSize(file.size)}) exceeds the 70MB limit. For very large files, please copy them directly to the agent workspace folder.`)
+        e.target.value = ''
+        return
+      }
+
+      // Check if adding this file would exceed total size limit
+      if (newTotalSize + file.size > MAX_TOTAL_SIZE_BYTES) {
+        setAttachmentError(`Adding "${file.name}" would exceed the 70MB total size limit. Current total: ${formatFileSize(newTotalSize)}. For large files, please copy them directly to the agent workspace folder.`)
+        e.target.value = ''
+        return
+      }
+
+      try {
+        // Read file as base64
+        const content = await readFileAsBase64(file)
+        newAttachments.push({
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          content,
+        })
+        newTotalSize += file.size
+      } catch (error) {
+        console.error('Failed to read file:', error)
+        setAttachmentError(`Failed to read file "${file.name}". The file may be too large or inaccessible.`)
+        e.target.value = ''
+        return
+      }
+    }
+
+    // Clear any previous error and add the attachments
+    setAttachmentError(null)
+    setPendingAttachments(prev => [...prev, ...newAttachments])
+
+    // Reset file input so the same file can be selected again
+    e.target.value = ''
+  }
+
+  const removeAttachment = (index: number) => {
+    setPendingAttachments(prev => prev.filter((_, i) => i !== index))
+    // Clear any error when removing files
+    setAttachmentError(null)
+  }
+
+  // Helper to read file as base64
+  const readFileAsBase64 = (file: globalThis.File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        // Remove data URL prefix (e.g., "data:image/png;base64,")
+        const base64 = result.split(',')[1]
+        resolve(base64)
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
 
   // Group actions by task
   const tasks = actions.filter(a => a.itemType === 'task')

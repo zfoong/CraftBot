@@ -19,6 +19,10 @@ class MenuCommand(Command):
     def description(self) -> str:
         return "Show the main menu (TUI/Browser only)"
 
+    @property
+    def hidden(self) -> bool:
+        return True
+
     async def execute(
         self,
         args: List[str],

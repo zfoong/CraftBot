@@ -44,4 +44,9 @@ MODEL_REGISTRY = {
         InterfaceType.VLM: None,
         InterfaceType.EMBEDDING: None,
     },
+    "grok": {
+        InterfaceType.LLM: "grok-3",
+        InterfaceType.VLM: "grok-2-vision-1212",
+        InterfaceType.EMBEDDING: None,
+    },
 }

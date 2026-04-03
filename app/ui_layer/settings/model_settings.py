@@ -69,6 +69,12 @@ PROVIDER_INFO = {
     #     "settings_key": "moonshot",
     #     "requires_api_key": True,
     # },
+    "grok": {
+        "name": "Grok (xAI)",
+        "api_key_env": "XAI_API_KEY",
+        "settings_key": "grok",
+        "requires_api_key": True,
+    },
     "remote": {
         "name": "Local (Ollama)",
         "base_url_env": "REMOTE_MODEL_URL",
@@ -478,3 +484,41 @@ def validate_can_save(
             "can_save": False,
             "errors": [str(e)],
         }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Slow Mode Settings
+# ─────────────────────────────────────────────────────────────────────
+
+def get_slow_mode_settings() -> Dict[str, Any]:
+    """Get slow mode settings."""
+    settings = _load_settings()
+    model = settings.get("model", {})
+    return {
+        "success": True,
+        "enabled": model.get("slow_mode", False),
+        "tpm_limit": model.get("slow_mode_tpm_limit", 30000),
+    }
+
+
+def set_slow_mode(enabled: bool, tpm_limit: Optional[int] = None) -> Dict[str, Any]:
+    """Set slow mode on or off, optionally updating the TPM limit."""
+    settings = _load_settings()
+    if "model" not in settings:
+        settings["model"] = {}
+    settings["model"]["slow_mode"] = enabled
+    if tpm_limit is not None:
+        settings["model"]["slow_mode_tpm_limit"] = max(1000, tpm_limit)
+
+    if _save_settings(settings):
+        from app.config import reload_settings
+        reload_settings()
+        # Reset the rate limiter window on setting change
+        from app.rate_limiter import get_rate_limiter
+        get_rate_limiter().reset()
+        return {
+            "success": True,
+            "enabled": enabled,
+            "tpm_limit": settings["model"].get("slow_mode_tpm_limit", 30000),
+        }
+    return {"success": False, "error": "Failed to save settings"}

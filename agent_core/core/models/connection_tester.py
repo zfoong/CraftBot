@@ -51,6 +51,9 @@ def test_provider_connection(
         elif provider == "remote":
             url = base_url or cfg.default_base_url
             return _test_remote(url, timeout)
+        elif provider == "grok":
+            url = cfg.default_base_url
+            return _test_grok(api_key, url, timeout)
         elif provider in ("minimax", "deepseek", "moonshot"):
             url = cfg.default_base_url
             return _test_openai_compat(provider, api_key, url, timeout)
@@ -357,7 +360,7 @@ def _test_openai_compat(
     provider: str, api_key: Optional[str], base_url: str, timeout: float
 ) -> Dict[str, Any]:
     """Test an OpenAI-compatible API (MiniMax, DeepSeek, Moonshot)."""
-    names = {"minimax": "MiniMax", "deepseek": "DeepSeek", "moonshot": "Moonshot"}
+    names = {"minimax": "MiniMax", "deepseek": "DeepSeek", "moonshot": "Moonshot", "grok": "Grok (xAI)"}
     display = names.get(provider, provider)
 
     if not api_key:
@@ -377,11 +380,55 @@ def _test_openai_compat(
 
         if response.status_code == 200:
             return {"success": True, "message": f"Successfully connected to {display} API", "provider": provider}
-        elif response.status_code == 401:
-            return {"success": False, "message": "Invalid API key", "provider": provider, "error": "Authentication failed - check your API key"}
+        elif response.status_code in (401, 403):
+            return {"success": False, "message": "Invalid API key", "provider": provider, "error": f"Authentication failed (HTTP {response.status_code}) - check your API key"}
         else:
-            return {"success": False, "message": f"API returned status {response.status_code}", "provider": provider, "error": response.text[:200] if response.text else "Unknown error"}
+            return {"success": False, "message": f"API returned status {response.status_code}", "provider": provider, "error": response.text[:300] if response.text else "Unknown error"}
     except httpx.TimeoutException:
         return {"success": False, "message": "Connection timed out", "provider": provider, "error": "Request timed out - check your network connection"}
     except httpx.RequestError as e:
         return {"success": False, "message": "Network error", "provider": provider, "error": str(e)}
+
+
+def _test_grok(api_key: Optional[str], base_url: str, timeout: float) -> Dict[str, Any]:
+    """Test xAI Grok API connection using a minimal chat completion request.
+
+    xAI returns 403 on the /models endpoint even for valid keys, so we use
+    a minimal chat completions call instead.
+    """
+    if not api_key:
+        return {
+            "success": False,
+            "message": "API key is required for Grok (xAI)",
+            "provider": "grok",
+            "error": "Missing API key",
+        }
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(
+                f"{base_url.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "grok-3",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "hi"}],
+                },
+            )
+
+        if response.status_code in (200, 400, 403, 422):
+            # 200 = success
+            # 400/422 = bad request but auth passed
+            # 403 = model tier restriction but key is valid
+            return {"success": True, "message": "Successfully connected to Grok (xAI) API", "provider": "grok"}
+        elif response.status_code == 401:
+            return {"success": False, "message": "Invalid API key", "provider": "grok", "error": "Authentication failed - check your xAI API key"}
+        else:
+            return {"success": False, "message": f"API returned status {response.status_code}", "provider": "grok", "error": response.text[:300] if response.text else "Unknown error"}
+    except httpx.TimeoutException:
+        return {"success": False, "message": "Connection timed out", "provider": "grok", "error": "Request timed out - check your network connection"}
+    except httpx.RequestError as e:
+        return {"success": False, "message": "Network error", "provider": "grok", "error": str(e)}

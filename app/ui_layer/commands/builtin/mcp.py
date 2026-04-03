@@ -59,13 +59,13 @@ Examples:
     ) -> CommandResult:
         """Execute the mcp command."""
         if not args:
-            return await self._list_servers()
+            return CommandResult(success=True, message=self.help_text)
 
         subcommand = args[0].lower()
         sub_args = args[1:]
 
         handlers = {
-            "list": self._list_servers,
+            "list": lambda: self._list_servers(sub_args),
             "add": lambda: self._add_server(sub_args),
             "add-json": lambda: self._add_server_json(sub_args),
             "remove": lambda: self._remove_server(sub_args),
@@ -80,11 +80,12 @@ Examples:
 
         return CommandResult(
             success=False,
-            message=f"Unknown subcommand: {subcommand}\nUse /help mcp for usage.",
+            message=f"Unknown subcommand: {subcommand}\nUse /mcp for usage.",
         )
 
-    async def _list_servers(self) -> CommandResult:
-        """List configured MCP servers."""
+    async def _list_servers(self, args: List[str] = None) -> CommandResult:
+        """List MCP servers. Shows only enabled servers unless --all is passed."""
+        show_all = args and "--all" in args
         servers = list_mcp_servers()
         if not servers:
             return CommandResult(
@@ -92,11 +93,28 @@ Examples:
                 message="No MCP servers configured. Use /mcp add to add a server.",
             )
 
-        lines = ["Configured MCP servers:", ""]
+        if not show_all:
+            servers = [s for s in servers if s.get("enabled", True)]
+
+        if not servers:
+            return CommandResult(
+                success=True,
+                message="No enabled MCP servers. Use /mcp list --all to see all servers.",
+            )
+
+        label = "All MCP servers:" if show_all else "Enabled MCP servers:"
+        lines = [label, ""]
         for server in servers:
-            status = "enabled" if server.get("enabled", True) else "disabled"
             name = server.get("name", "unknown")
-            lines.append(f"  {name} [{status}]")
+            if show_all:
+                status = "enabled" if server.get("enabled", True) else "disabled"
+                lines.append(f"  {name} [{status}]")
+            else:
+                lines.append(f"  {name}")
+
+        if not show_all:
+            lines.append("")
+            lines.append("Use /mcp list --all to include disabled servers.")
 
         return CommandResult(success=True, message="\n".join(lines))
 
@@ -124,38 +142,22 @@ Examples:
                 cmd_idx = args.index("--")
                 cmd = args[cmd_idx + 1 :]
                 if cmd:
-                    result = add_mcp_server(
+                    success, message = add_mcp_server(
                         name=name,
                         transport="stdio",
                         command=cmd,
                     )
-                    if result.get("success"):
-                        return CommandResult(
-                            success=True,
-                            message=f"Added stdio MCP server: {name}",
-                        )
-                    return CommandResult(
-                        success=False,
-                        message=result.get("error", "Failed to add server"),
-                    )
+                    return CommandResult(success=success, message=message)
 
         elif transport == "http":
             url = args[transport_idx + 2] if len(args) > transport_idx + 2 else ""
             if url:
-                result = add_mcp_server(
+                success, message = add_mcp_server(
                     name=name,
                     transport="http",
                     url=url,
                 )
-                if result.get("success"):
-                    return CommandResult(
-                        success=True,
-                        message=f"Added HTTP MCP server: {name}",
-                    )
-                return CommandResult(
-                    success=False,
-                    message=result.get("error", "Failed to add server"),
-                )
+                return CommandResult(success=success, message=message)
 
         return CommandResult(
             success=False,
@@ -173,16 +175,8 @@ Examples:
         name = args[0]
         json_str = " ".join(args[1:])
 
-        result = add_mcp_server_from_json(name, json_str)
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Added MCP server from JSON: {name}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", "Failed to add server"),
-        )
+        success, message = add_mcp_server_from_json(name, json_str)
+        return CommandResult(success=success, message=message)
 
     async def _remove_server(self, args: List[str]) -> CommandResult:
         """Remove an MCP server."""
@@ -193,16 +187,8 @@ Examples:
             )
 
         name = args[0]
-        result = remove_mcp_server(name)
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Removed MCP server: {name}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to remove server: {name}"),
-        )
+        success, message = remove_mcp_server(name)
+        return CommandResult(success=success, message=message)
 
     async def _enable_server(self, args: List[str]) -> CommandResult:
         """Enable an MCP server."""
@@ -213,16 +199,8 @@ Examples:
             )
 
         name = args[0]
-        result = enable_mcp_server(name)
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Enabled MCP server: {name}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to enable server: {name}"),
-        )
+        success, message = enable_mcp_server(name)
+        return CommandResult(success=success, message=message)
 
     async def _disable_server(self, args: List[str]) -> CommandResult:
         """Disable an MCP server."""
@@ -233,16 +211,8 @@ Examples:
             )
 
         name = args[0]
-        result = disable_mcp_server(name)
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Disabled MCP server: {name}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to disable server: {name}"),
-        )
+        success, message = disable_mcp_server(name)
+        return CommandResult(success=success, message=message)
 
     async def _set_env(self, args: List[str]) -> CommandResult:
         """Set environment variable for an MCP server."""
@@ -253,13 +223,5 @@ Examples:
             )
 
         name, key, value = args[0], args[1], " ".join(args[2:])
-        result = update_mcp_server_env(name, key, value)
-        if result.get("success"):
-            return CommandResult(
-                success=True,
-                message=f"Set {key}={value} for MCP server: {name}",
-            )
-        return CommandResult(
-            success=False,
-            message=result.get("error", f"Failed to set env for server: {name}"),
-        )
+        success, message = update_mcp_server_env(name, key, value)
+        return CommandResult(success=success, message=message)

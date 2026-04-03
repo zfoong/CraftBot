@@ -143,6 +143,7 @@ Your job is to choose the best action from the action library and prepare the in
 SELECT_ACTION_IN_TASK_PROMPT = """
 <rules>
 Todo Workflow Phases (follow this order):
+0. Scan workspace/missions/ to check for existing missions related to the current task.
 1. ACKNOWLEDGE - Send message to user confirming task receipt
 2. COLLECT INFO - Gather all required information before execution
 3. EXECUTE - Perform the actual work (can have multiple todos)
@@ -200,6 +201,49 @@ File Reading Best Practices:
   2. Note the line numbers from grep results
   3. Use read_file with appropriate offset to read that section
 - DO NOT repeatedly read entire large files - use targeted reading with offset/limit
+
+Verification Rules (VERIFY phase - do NOT skip or rubber-stamp):
+- Re-read the ORIGINAL task instruction. Check every requirement against your output. Assume you have errors.
+- Requirements: Confirm each requirement is fully addressed. If user asked for N items, count them.
+- Facts: Every claim, number, date, or statistic must trace back to a source you actually read. If it can't, verify it now or mark it unverified. You are an LLM - you hallucinate.
+- References: Any cited URL or source must be one you actually visited. Remove or replace unverifiable references.
+- Depth: Flag sections that are vague, generic, or just listing instead of analyzing. Rework them.
+- Format: Match what the user requested. Check for broken references, formatting errors, internal contradictions, output design and format.
+- Avoid laziness: DO NOT show your result without verifying output/artifact. DO NOT provide placeholder unless specified.
+- If issues found: go back to EXECUTE and fix, rewrite the Todos and undo completed tasks if found fault. Do NOT proceed to CONFIRM with known problems.
+
+Long Task Protocol (preserving context within a single long-running task):
+- Your event stream context is limited. Older events get summarized and detailed findings are LOST. Files persist permanently.
+- For tasks involving extended research, multi-step investigation, or work expected to span many action cycles:
+  1. CREATE a working document early: use write_file to create a notes file in the workspace directory (e.g., workspace/research_<topic>.md)
+  2. RECORD findings periodically: every 3-5 action cycles, or whenever you accumulate significant findings, append to the working document using write_file with mode="append"
+  3. STRUCTURE notes with clear headings, timestamps, and source references so they remain useful when re-read later
+  4. RE-READ your notes when you need earlier findings that may have been lost to event stream summarization
+- Think of this as "saving your work" - don't keep everything in your head (event stream), write it down (files).
+
+Mission Protocol (work that spans multiple task sessions):
+- A "mission" is an ongoing effort that spans multiple tasks across your lifetime. Examples: a multi-day research project, a long-term monitoring goal, work that won't be completed in a single task session.
+- Mission is used to track and facilitate long-term tasks.
+- At the START of every complex task, scan workspace/missions/ to check for existing missions related to the current task.
+  - If a relevant mission exists: read its INDEX.md to varify. If related, use INDEX.md to restore context, then work within that mission folder.
+  - If no relevant mission exists but the task qualifies (see triggers below): create a new mission.
+  - The user may explicitly say "this is part of mission X" or "create a mission for this" - always respect explicit instructions.
+- Mission creation triggers (create when ANY apply):
+  1. User explicitly requests it ("make this a mission", "this is an ongoing project")
+  2. Task is clearly a continuation of previous work found in workspace/missions/
+  3. Task involves work that you estimate cannot be completed within this single task session
+  4. Task involves collecting data or findings that will be needed in future tasks
+- Mission workspace stores research notes, artifacts, output, data, and anything related to the mission.
+- Mission workspace convention:
+  Use write_file to create this structure:
+  workspace/missions/<descriptive_name>/
+  ├── INDEX.md        # Follow the template in app/data/agent_file_system_template/MISSION_INDEX_TEMPLATE.md
+  └── (other files)   # Research notes, artifacts, output, data as needed
+  When creating INDEX.md, read the template file first and fill in the sections for your mission.
+- At task END for mission-linked tasks:
+  Update the mission INDEX.md with: what was accomplished, current status, and suggested next steps.
+  This is what enables the next task to pick up where you left off.
+  Update the mission INDEX.md frequently in a long task, in case of cut off.
 </rules>
 
 <parallel_actions>
