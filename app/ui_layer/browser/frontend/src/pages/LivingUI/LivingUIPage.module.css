@@ -114,7 +114,7 @@
   gap: var(--space-3);
   color: var(--text-secondary);
   text-align: center;
-  padding: var(--space-8);
+  padding: var(--space-2);
 }
 
 .loading p,
