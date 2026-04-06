@@ -2600,6 +2600,14 @@ class AgentBase:
             # Shutdown scheduler (handles all periodic tasks including memory processing)
             self.is_running = False
             await self.scheduler.shutdown()
+            # Stop all Living UI projects (kill backend/frontend processes)
+            try:
+                from app.living_ui import get_living_ui_manager
+                lui_mgr = get_living_ui_manager()
+                if lui_mgr:
+                    await lui_mgr.stop_all_projects()
+            except Exception as e:
+                logger.warning(f"[SHUTDOWN] Living UI cleanup error: {e}")
             # Gracefully shutdown MCP connections
             await self._shutdown_mcp()
             # Stop external communications

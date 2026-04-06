@@ -963,6 +963,10 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
 
     async def _on_stop(self) -> None:
         """Stop the browser interface."""
+        # Stop all running Living UI projects
+        if self._living_ui_manager:
+            await self._living_ui_manager.stop_all_projects()
+
         # Cancel metrics broadcasting task
         if self._metrics_task:
             self._metrics_task.cancel()

@@ -1973,6 +1973,19 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         result = await self.launch_and_verify(project_id)
         return result["status"] == "success"
 
+    async def stop_all_projects(self) -> None:
+        """Stop all running Living UI projects. Called during agent shutdown."""
+        running = [pid for pid, p in self.projects.items() if p.status == 'running']
+        if not running:
+            return
+        logger.info(f"[LIVING_UI] Shutting down {len(running)} running project(s)...")
+        for project_id in running:
+            try:
+                await self.stop_project(project_id)
+            except Exception as e:
+                logger.warning(f"[LIVING_UI] Error stopping {project_id} during shutdown: {e}")
+        logger.info("[LIVING_UI] All projects stopped")
+
     async def stop_project(self, project_id: str, stop_backend: bool = True) -> bool:
         """
         Stop a running Living UI project (frontend and optionally backend).
