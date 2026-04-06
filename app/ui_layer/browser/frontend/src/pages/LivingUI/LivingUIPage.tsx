@@ -9,6 +9,7 @@ import {
   Square,
   Loader2,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { Button } from '../../components/ui/Button'
@@ -30,6 +31,7 @@ export function LivingUIPage() {
   } = useWebSocket()
 
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showChat, setShowChat] = useState(true)
   const [panelWidth, setPanelWidth] = useState(350)
   const [isResizing, setIsResizing] = useState(false)
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -148,6 +150,11 @@ export function LivingUIPage() {
             />
           ) : null}
           <IconButton
+            icon={<MessageSquare size={16} />}
+            tooltip={showChat ? 'Hide Chat' : 'Show Chat'}
+            onClick={() => setShowChat(prev => !prev)}
+          />
+          <IconButton
             icon={<Settings size={16} />}
             tooltip="Settings"
             onClick={() => {}}
@@ -199,19 +206,23 @@ export function LivingUIPage() {
         </div>
 
         {/* Resize Handle */}
-        <div
-          className={`${styles.resizeHandle} ${isResizing ? styles.resizing : ''}`}
-          onMouseDown={handleMouseDown}
-        />
+        {showChat && (
+          <div
+            className={`${styles.resizeHandle} ${isResizing ? styles.resizing : ''}`}
+            onMouseDown={handleMouseDown}
+          />
+        )}
 
         {/* Chat Panel */}
-        <div className={styles.chatPanel} style={{ width: panelWidth }}>
-          <Chat
-            livingUIId={projectId}
-            placeholder="Ask about this Living UI..."
-            emptyMessage="Chat with the agent"
-          />
-        </div>
+        {showChat && (
+          <div className={styles.chatPanel} style={{ width: panelWidth }}>
+            <Chat
+              livingUIId={projectId}
+              placeholder="Ask about this Living UI..."
+              emptyMessage="Chat with the agent"
+            />
+          </div>
+        )}
       </div>
 
       {/* Delete Confirmation Modal */}

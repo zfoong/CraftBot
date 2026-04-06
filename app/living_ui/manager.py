@@ -1029,7 +1029,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         # 2. Build
         build_cmd = frontend_cfg.get('build')
         if build_cmd:
-            result = await self._run_pipeline_command(frontend_cwd, build_cmd, step_name="frontend.build", timeout=120)
+            result = await self._run_pipeline_command(frontend_cwd, build_cmd, step_name="frontend.build", timeout=240)
             if result["status"] == "error":
                 build_errors = result.get("errors", ["build failed"])
                 for err in build_errors:
@@ -1038,7 +1038,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         return errors
 
     async def _run_pipeline_command(
-        self, cwd: Path, command: str, step_name: str, timeout: int = 60
+        self, cwd: Path, command: str, step_name: str, timeout: int = 1200
     ) -> dict:
         """Run a single pipeline command. Returns {"status": "success"} or {"status": "error", ...}."""
         logger.info(f"[LIVING_UI:PIPELINE] [{step_name}] Running: {command}")
