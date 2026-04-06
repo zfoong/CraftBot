@@ -4019,13 +4019,17 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         """Fetch marketplace catalogue from GitHub."""
         import urllib.request
         import json as _json
+        import re as _re
 
         CATALOGUE_URL = "https://raw.githubusercontent.com/CraftOS-dev/living-ui-marketplace/main/catalogue.json"
 
         try:
             req = urllib.request.Request(CATALOGUE_URL, headers={'User-Agent': 'CraftBot'})
             response = urllib.request.urlopen(req, timeout=15)
-            catalogue = _json.loads(response.read().decode())
+            raw = response.read().decode()
+            # Strip trailing commas before ] or } (tolerant of hand-edited JSON)
+            raw = _re.sub(r',\s*([}\]])', r'\1', raw)
+            catalogue = _json.loads(raw)
             await self._broadcast({
                 "type": "living_ui_marketplace_list",
                 "data": {"success": True, "apps": catalogue.get("apps", [])},

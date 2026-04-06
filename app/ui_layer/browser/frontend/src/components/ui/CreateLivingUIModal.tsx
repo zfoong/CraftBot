@@ -233,7 +233,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
 
         {/* Marketplace Tab */}
         {activeTab === 'marketplace' && !configuringApp && (
-          <div className={styles.modalBody} style={{ minHeight: '300px' }}>
+          <div className={styles.modalBody} style={{ minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
             {marketplaceLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
                 <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
