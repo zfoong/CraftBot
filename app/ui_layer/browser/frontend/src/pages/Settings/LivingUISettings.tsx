@@ -238,6 +238,7 @@ export function LivingUISettings() {
       case 'stopped': return 'default'
       case 'error': return 'error'
       case 'creating': return 'warning'
+      case 'launching': return 'warning'
       default: return 'default'
     }
   }

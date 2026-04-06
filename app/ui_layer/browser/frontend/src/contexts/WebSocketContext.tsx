@@ -1068,6 +1068,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
   const launchLivingUI = useCallback((projectId: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Immediately show loading state
+      setState(prev => ({
+        ...prev,
+        livingUIProjects: prev.livingUIProjects.map(p =>
+          p.id === projectId ? { ...p, status: 'launching' as const } : p
+        ),
+      }))
       wsRef.current.send(JSON.stringify({
         type: 'living_ui_launch',
         projectId,
