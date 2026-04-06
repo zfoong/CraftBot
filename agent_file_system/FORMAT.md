@@ -222,7 +222,7 @@ Agent reads this before generating any file. Edit to customize.
 - **Wrong page size:** defaulting to A4 when US Letter expected. Fix: set explicitly.
 - **Missing fonts:** tofu characters (□). Fix: embed TTF files, register before use.
 - **Massive file size:** uncompressed images. Fix: resize images to display size before embedding. Max 150 DPI for screen, 300 DPI for print.
-- **Missing :** 
+- **Raw markup in output:** PDF shows literal `## Heading` or `**bold**` instead of rendered formatting. Fix: ensure all markdown/markup is fully converted to native PDF elements (styled paragraphs, bold spans, etc.) before rendering. Never pass raw markdown text directly into PDF content.
 - **Over-sectioning:** every paragraph gets its own heading. Fix: merge related short sections.
 - **List abuse:** entire document is nested bullet lists. Fix: write in prose. Lists are for parallel items only.
 - **Table for everything:** using a 2-column table instead of a definition list or bold+colon. Fix: use inline formatting.
