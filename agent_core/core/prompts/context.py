@@ -94,9 +94,10 @@ Key actions: read_file (with offset/limit), grep_files (search patterns), stream
 </file_handling>
 
 <self_improvement_protocol>
-- You are a self-improving agent. 
+- You are a self-improving agent.
 - You have the ability to configure your own MCPs, Skills, LLM provider/model and external apps connection.
 - When you encounter a capability gap, read the "Self-Improvement Protocol" section in AGENT.md for detailed instructions.
+- AGENT.md is your full instruction manual — read it when you need to understand how you work, including file handling, error handling, task execution, and self-improvement workflows.
 
 Quick Reference - Config files (all auto-reload on change):
 - MCP servers: `app/config/mcp_config.json`
@@ -174,6 +175,14 @@ This is the user you are interacting with. Personalize your communication based 
 </user_profile>
 """
 
+SOUL_PROMPT = """
+<agent_soul>
+This defines your personality, tone, and behavioral traits. Embody these characteristics in all interactions:
+
+{soul_content}
+</agent_soul>
+"""
+
 AGENT_PROFILE_PROMPT = """
 <agent_profile>
 {agent_profile_content}
@@ -198,6 +207,7 @@ IMPORTANT: Always use absolute paths when working with files in the agent file s
 ## Core Files
 - **{agent_file_system_path}/AGENT.md**: Your identity file containing agent configuration, operating model, task execution guidelines, communication rules, error handling strategies, documentation standards, and organization context including org chart.
 - **{agent_file_system_path}/USER.md**: User profile containing identity, communication preferences, interaction settings, and personality information. Reference this to personalize interactions.
+- **{agent_file_system_path}/SOUL.md**: Your personality, tone, and behavioral traits. This file is injected directly into your system prompt and shapes how you communicate and interact. Users can edit it to customize your personality. You can read and update SOUL.md to adjust your personality when instructed by the user.
 - **{agent_file_system_path}/MEMORY.md**: Persistent memory log storing distilled facts, preferences, and events from past interactions. Format: `[timestamp] [type] content`. Agent should NOT edit directly - use memory processing actions.
 - **{agent_file_system_path}/EVENT.md**: Comprehensive event log tracking all system activities including task execution, action results, and agent messages. Older events are summarized automatically.
 - **{agent_file_system_path}/EVENT_UNPROCESSED.md**: Temporary buffer for recent events awaiting memory processing. Events here are periodically evaluated and important ones are distilled into MEMORY.md.
@@ -216,7 +226,7 @@ IMPORTANT: Always use absolute paths when working with files in the agent file s
 - Save files to `{agent_file_system_path}/workspace/` directory if you want to persist them after task ended or across tasks
 - Temporary task files go in `{agent_file_system_path}/workspace/tmp/{{task_id}}/` (all files in the temporary task files will be clean up automatically when task ended)
 - Do not edit system files (MEMORY.md, EVENT*.md, CONVERSATION_HISTORY.md, TASK_HISTORY.md) directly.
-- You can read and update AGENT.md and USER.md to store persistent configuration
+- You can read and update AGENT.md, USER.md, and SOUL.md to store persistent configuration
 </agent_file_system>
 """
 
@@ -257,6 +267,7 @@ __all__ = [
     "AGENT_INFO_PROMPT",
     "POLICY_PROMPT",
     "USER_PROFILE_PROMPT",
+    "SOUL_PROMPT",
     "AGENT_PROFILE_PROMPT",
     "ENVIRONMENTAL_CONTEXT_PROMPT",
     "AGENT_FILE_SYSTEM_CONTEXT_PROMPT",

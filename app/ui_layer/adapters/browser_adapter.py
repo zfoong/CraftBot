@@ -848,7 +848,7 @@ CraftBot can perform virtually any computer-based task by configuring the right 
 
 If you need help setting up MCP servers or skills, just ask the agent.
 
-A quick Q&A will now begin to understand your preferences and serve you better:""",
+A quick Q&A will now begin to understand your objectives to serve you better:""",
                 style="system",
                 timestamp=time.time(),
                 message_id=f"welcome-{uuid.uuid4().hex[:8]}",
