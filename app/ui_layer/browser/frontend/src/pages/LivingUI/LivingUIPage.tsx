@@ -185,6 +185,12 @@ export function LivingUIPage() {
               <p>Creating Living UI...</p>
               <p className={styles.hint}>The agent is developing your custom interface</p>
             </div>
+          ) : project.status === 'launching' ? (
+            <div className={styles.loading}>
+              <Loader2 size={32} className={styles.spinner} />
+              <p>Launching Living UI...</p>
+              <p className={styles.hint}>Installing dependencies, running tests, starting servers</p>
+            </div>
           ) : project.status === 'error' ? (
             <div className={styles.error}>
               <AlertCircle size={32} />

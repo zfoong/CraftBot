@@ -793,6 +793,14 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             project.process.terminate()
             project.process = None
 
+        # Check if source files changed since last successful launch
+        files_changed = self._has_files_changed(project_path)
+
+        if not files_changed:
+            logger.info(f"[LIVING_UI:PIPELINE] No source changes detected — skipping tests/build, starting servers directly")
+            # Fast path — just start servers
+            return await self._launch_servers_only(project_id, project, project_path, pipeline)
+
         # Clean up old log files so each launch starts fresh (if enabled)
         if project.log_cleanup:
             self._cleanup_project_logs(project_path)
@@ -945,6 +953,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         project.status = 'running'
         project.error = None
         self._save_projects()
+        self._save_launch_timestamp(project_path)
 
         logger.info(f"[LIVING_UI:PIPELINE] Launch complete for {project.name} ({project_id})")
         if project.url:
@@ -958,6 +967,95 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             "backend_url": project.backend_url,
             "port": project.port,
         }
+
+    async def _launch_servers_only(
+        self, project_id: str, project: 'LivingUIProject', project_path: Path, pipeline: dict
+    ) -> dict:
+        """Fast path: start servers without running tests/build (no source changes detected)."""
+        backend_cfg = pipeline.get('backend')
+        frontend_cfg = pipeline.get('frontend')
+
+        # Start backend
+        if backend_cfg:
+            backend_cwd = project_path / backend_cfg.get('cwd', 'backend')
+            backend_port = project.backend_port
+            if not backend_port:
+                backend_port = self._allocate_port()
+                project.backend_port = backend_port
+
+            if not await self._ensure_port_available(backend_port):
+                return {"status": "error", "step": "backend.port", "errors": [f"Port {backend_port} occupied"]}
+
+            start_cmd = backend_cfg.get('start', '')
+            if start_cmd:
+                logs_dir = backend_cwd / 'logs'
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                log_file = logs_dir / 'subprocess_output.log'
+                backend_process = self._start_process(backend_cwd, start_cmd, log_file, port=backend_port)
+                project.backend_process = backend_process
+                logger.info(f"[LIVING_UI:PIPELINE] Backend starting on port {backend_port} (fast)")
+
+                health_url = backend_cfg.get('health')
+                if health_url:
+                    healthy = await self._wait_for_health_check(health_url, timeout=20)
+                    if not healthy:
+                        log_tail = self._read_log_tail(log_file, 1000)
+                        if backend_process.poll() is not None:
+                            err = f"Backend process exited with code {backend_process.returncode}"
+                        else:
+                            err = f"Backend not responding at {health_url}"
+                            backend_process.terminate()
+                        project.backend_process = None
+                        return {"status": "error", "step": "backend.health", "errors": [err, log_tail]}
+
+                project.backend_url = f"http://localhost:{backend_port}"
+                logger.info(f"[LIVING_UI:PIPELINE] Backend healthy on port {backend_port}")
+
+        # Start frontend
+        if frontend_cfg:
+            frontend_cwd = project_path / frontend_cfg.get('cwd', '.')
+            if str(frontend_cwd) == '.':
+                frontend_cwd = project_path
+
+            frontend_port = project.port
+            if not frontend_port:
+                frontend_port = self._allocate_port()
+                project.port = frontend_port
+
+            if not await self._ensure_port_available(frontend_port):
+                await self.stop_backend(project_id)
+                return {"status": "error", "step": "frontend.port", "errors": [f"Port {frontend_port} occupied"]}
+
+            start_cmd = frontend_cfg.get('start', '')
+            if start_cmd:
+                frontend_log = self._create_frontend_log(project_path)
+                frontend_process = self._start_process(frontend_cwd, start_cmd, frontend_log, port=frontend_port)
+                project.process = frontend_process
+                project.port = frontend_port
+                logger.info(f"[LIVING_UI:PIPELINE] Frontend starting on port {frontend_port} (fast)")
+
+                server_ready = await self._wait_for_server(frontend_port, timeout=15)
+                if not server_ready:
+                    log_tail = self._read_log_tail(frontend_log, 1000)
+                    if frontend_process.poll() is not None:
+                        err = f"Frontend process exited with code {frontend_process.returncode}"
+                    else:
+                        err = f"Frontend not responding on port {frontend_port}"
+                        frontend_process.terminate()
+                    project.process = None
+                    await self.stop_backend(project_id)
+                    return {"status": "error", "step": "frontend.health", "errors": [err, log_tail]}
+
+                project.url = f"http://localhost:{frontend_port}"
+                logger.info(f"[LIVING_UI:PIPELINE] Frontend ready on port {frontend_port}")
+
+        project.status = 'running'
+        project.error = None
+        self._save_projects()
+        self._save_launch_timestamp(project_path)
+
+        logger.info(f"[LIVING_UI:PIPELINE] Fast launch complete for {project.name} ({project_id})")
+        return {"status": "success", "url": project.url, "backend_url": project.backend_url, "port": project.port}
 
     async def _validate_backend_track(
         self, project_id: str, project_path: Path, backend_cfg: dict, backend_cwd: Path
@@ -1182,6 +1280,38 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         logs_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return logs_dir / f"frontend_{timestamp}.log"
+
+    @staticmethod
+    def _has_files_changed(project_path: Path) -> bool:
+        """Check if any source files changed since last successful launch."""
+        last_launch_file = project_path / '.last_launch'
+        if not last_launch_file.exists():
+            return True  # No record = assume changed
+
+        try:
+            last_launch_time = last_launch_file.stat().st_mtime
+        except Exception:
+            return True
+
+        source_extensions = {'.py', '.ts', '.tsx', '.js', '.jsx', '.json', '.html', '.css', '.md'}
+        skip_dirs = {'node_modules', '__pycache__', 'dist', 'logs', '.git'}
+
+        for filepath in project_path.rglob('*'):
+            if filepath.is_file() and filepath.suffix in source_extensions:
+                if any(skip in filepath.parts for skip in skip_dirs):
+                    continue
+                if filepath.stat().st_mtime > last_launch_time:
+                    return True
+        return False
+
+    @staticmethod
+    def _save_launch_timestamp(project_path: Path) -> None:
+        """Save current time as last successful launch timestamp."""
+        last_launch_file = project_path / '.last_launch'
+        try:
+            last_launch_file.write_text(datetime.now().isoformat(), encoding='utf-8')
+        except Exception:
+            pass
 
     @staticmethod
     def _read_log_tail(log_file: Path, chars: int = 1000) -> str:
@@ -1953,4 +2083,6 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             project = self.projects.get(project_id)
             if project and project.status != 'error':
                 logger.info(f"[LIVING_UI] Auto-launching: {project.name} ({project_id})")
+                project.status = 'launching'
+                self._save_projects()
                 await self.launch_project(project_id)
