@@ -52,6 +52,8 @@ class LivingUIProject:
     task_id: Optional[str] = None
     auto_launch: bool = False  # Auto-launch on CraftBot startup
     log_cleanup: bool = True  # Clean logs on restart
+    granted_integrations: List[str] = field(default_factory=list)  # Integrations this project can use
+    bridge_token: str = ""  # Ephemeral token for integration bridge (NOT serialized)
     process: Optional[subprocess.Popen] = None  # Frontend process
     backend_process: Optional[subprocess.Popen] = None  # Backend process
 
@@ -73,6 +75,7 @@ class LivingUIProject:
             'error': self.error,
             'autoLaunch': self.auto_launch,
             'logCleanup': self.log_cleanup,
+            'grantedIntegrations': self.granted_integrations,
         }
 
 
@@ -469,6 +472,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                             theme=project_data.get('theme', 'system'),
                             auto_launch=project_data.get('autoLaunch', False),
                             log_cleanup=project_data.get('logCleanup', True),
+                            granted_integrations=project_data.get('grantedIntegrations', []),
                         )
                         # Reset status to stopped for all loaded projects
                         project.status = 'stopped' if project.status == 'running' else project.status
@@ -1381,12 +1385,24 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             subprocess_log_handle.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] Starting uvicorn on port {backend_port}\n{'='*60}\n")
             subprocess_log_handle.flush()
 
+            # Generate bridge token for integration proxy
+            from uuid import uuid4
+            bridge_token = str(uuid4())
+            project.bridge_token = bridge_token
+
+            # Build env with integration bridge vars
+            bridge_port = int(os.environ.get("BROWSER_PORT", "7926"))
+            backend_env = os.environ.copy()
+            backend_env["CRAFTBOT_BRIDGE_URL"] = f"http://localhost:{bridge_port}"
+            backend_env["CRAFTBOT_BRIDGE_TOKEN"] = bridge_token
+
             # Use python -m uvicorn to run the backend
             if os.name == 'nt':
                 # Windows
                 backend_process = subprocess.Popen(
                     ['python', '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
                     cwd=str(backend_path),
+                    env=backend_env,
                     stdout=subprocess_log_handle,
                     stderr=subprocess_log_handle,
                     shell=True,
@@ -1397,6 +1413,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                 backend_process = subprocess.Popen(
                     ['python', '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
                     cwd=str(backend_path),
+                    env=backend_env,
                     stdout=subprocess_log_handle,
                     stderr=subprocess_log_handle,
                 )
@@ -1972,6 +1989,42 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
         result = await self.launch_and_verify(project_id)
         return result["status"] == "success"
+
+    # ------------------------------------------------------------------
+    # Integration bridge helpers
+    # ------------------------------------------------------------------
+
+    def validate_bridge_token(self, token: str) -> Optional[str]:
+        """
+        Validate a bridge token and return the associated project ID.
+
+        Returns:
+            project_id if token is valid, None otherwise.
+        """
+        for project_id, project in self.projects.items():
+            if project.bridge_token and project.bridge_token == token:
+                return project_id
+        return None
+
+    def grant_integration(self, project_id: str, integration_type: str) -> bool:
+        """Grant an integration to a project."""
+        project = self.projects.get(project_id)
+        if not project:
+            return False
+        if integration_type not in project.granted_integrations:
+            project.granted_integrations.append(integration_type)
+            self._save_projects()
+        return True
+
+    def revoke_integration(self, project_id: str, integration_type: str) -> bool:
+        """Revoke an integration from a project."""
+        project = self.projects.get(project_id)
+        if not project:
+            return False
+        if integration_type in project.granted_integrations:
+            project.granted_integrations.remove(integration_type)
+            self._save_projects()
+        return True
 
     async def stop_all_projects(self) -> None:
         """Stop all running Living UI projects. Called during agent shutdown."""

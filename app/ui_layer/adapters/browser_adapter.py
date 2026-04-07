@@ -898,6 +898,11 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         self._app.router.add_get("/api/theme.css", self._theme_css_handler)
         self._app.router.add_get("/api/workspace/{path:.*}", self._workspace_file_handler)
 
+        # Integration bridge routes (Living UI → external APIs)
+        from app.living_ui.integration_bridge import IntegrationBridge
+        self._integration_bridge = IntegrationBridge(self._living_ui_manager)
+        self._integration_bridge.register_routes(self._app)
+
         # Serve Vite-built frontend (production)
         frontend_dist = Path(__file__).parent.parent / "browser" / "frontend" / "dist"
         if frontend_dist.exists():
@@ -966,6 +971,10 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         # Stop all running Living UI projects
         if self._living_ui_manager:
             await self._living_ui_manager.stop_all_projects()
+
+        # Close integration bridge HTTP client
+        if hasattr(self, '_integration_bridge'):
+            await self._integration_bridge.cleanup()
 
         # Cancel metrics broadcasting task
         if self._metrics_task:
