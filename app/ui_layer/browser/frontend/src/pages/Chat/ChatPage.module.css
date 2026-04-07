@@ -254,36 +254,96 @@
   box-shadow: 0 0 0 2px var(--color-primary-subtle);
 }
 
-/* Mic button + language selector grouped together */
+/* Mic + language selector */
 .micGroup {
   display: flex;
   align-items: center;
-  gap: 2px;
   position: relative;
+  gap: 0;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+}
+
+.micCombo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  outline: none;
+  transition: color 0.15s, background 0.15s;
+}
+
+.micCombo:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.micCombo.micComboActive {
+  color: var(--color-error, #ef4444);
+}
+
+.micIconWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+
+/* Pulsing ring around mic icon when recording */
+.micPulseRing {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--color-error, #ef4444);
+  animation: micRingPulse 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes micRingPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.25); opacity: 0; }
 }
 
 .langBtn {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
   background: transparent;
   border: none;
-  color: var(--text-primary);
+  border-left: 1px solid var(--border-primary);
+  color: var(--text-secondary);
   font-size: 10px;
   font-family: inherit;
   font-weight: 600;
   cursor: pointer;
-  padding: 2px 3px;
-  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   line-height: 1;
   outline: none;
   white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
 }
 
 .langBtn:hover:not(:disabled) {
   background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .langBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.langBtn.langBtnActive {
+  color: var(--color-error, #ef4444);
 }
 
 .langDropdown {
@@ -333,42 +393,6 @@
 .langFull {
   font-size: 11px;
   opacity: 0.8;
-}
-
-/* 3 bouncing dots shown while listening */
-.listeningDots {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px var(--space-3) 0;
-}
-
-.listeningDots span {
-  display: block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  animation: dotBounce 1.2s ease-in-out infinite;
-}
-
-.listeningDots span:nth-child(1) { animation-delay: 0s; }
-.listeningDots span:nth-child(2) { animation-delay: 0.2s; }
-.listeningDots span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes dotBounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-5px); opacity: 1; }
-}
-
-/* Mic button pulse animation when recording */
-.micListening {
-  animation: micPulse 1.2s ease-in-out infinite;
-}
-
-@keyframes micPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 
 /* Action Panel - Right Side (resizable) */

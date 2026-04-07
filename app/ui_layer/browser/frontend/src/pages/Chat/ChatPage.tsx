@@ -589,16 +589,18 @@ export function ChatPage() {
           />
 
           <div className={styles.micGroup} ref={langDropdownRef}>
-            <IconButton
-              icon={isListening ? <MicOff size={18} /> : <Mic size={18} />}
-              variant="ghost"
-              active={isListening}
-              tooltip={isListening ? 'Stop listening' : 'Voice input'}
-              onClick={toggleListening}
-              className={isListening ? styles.micListening : undefined}
-            />
             <button
-              className={styles.langBtn}
+              className={`${styles.micCombo} ${isListening ? styles.micComboActive : ''}`}
+              onClick={toggleListening}
+              title={isListening ? 'Stop listening' : 'Voice input'}
+            >
+              <span className={styles.micIconWrap}>
+                {isListening && <span className={styles.micPulseRing} />}
+                {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              </span>
+            </button>
+            <button
+              className={`${styles.langBtn} ${isListening ? styles.langBtnActive : ''}`}
               onClick={() => !isListening && setLangOpen(o => !o)}
               title="Speech language"
               disabled={isListening}
@@ -678,11 +680,6 @@ export function ChatPage() {
               </div>
             )}
 
-            {isListening && (
-              <div className={styles.listeningDots}>
-                <span /><span /><span />
-              </div>
-            )}
 
 
             <textarea
