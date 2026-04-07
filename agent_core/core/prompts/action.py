@@ -14,6 +14,7 @@ Action Selection Rules:
 - use 'ignore' when user's chat does not require any reply or action.
 - For ANY task requiring work beyond simple chat, use 'task_start' FIRST.
 - To use 3rd party tools or MCP to communicate with the user or execute task, use 'task_start' FIRST to gain access to 3rd party tools and MCP.
+- To connect, disconnect, or manage external app integrations (WhatsApp, Telegram, Slack, Discord, Google, etc.), use 'task_start' FIRST so the agent can call integration actions and send the result back to the user.
 
 Task Mode Selection (when using 'task_start'):
 - Use task_mode='simple' for:
@@ -114,6 +115,14 @@ Example (parallel actions - starting multiple tasks):
   "actions": [
     {{"action_name": "task_start", "parameters": {{"task": "Research topic A", "task_mode": "complex"}}}},
     {{"action_name": "task_start", "parameters": {{"task": "Research topic B", "task_mode": "complex"}}}}
+  ]
+}}
+
+Example (connecting an external app):
+{{
+  "reasoning": "User wants to connect Telegram. I need to start a task so I can call integration actions and send the QR code or OAuth URL back to the user.",
+  "actions": [
+    {{"action_name": "task_start", "parameters": {{"task": "Connect user to Telegram", "task_mode": "simple"}}}}
   ]
 }}
 </output_format>
