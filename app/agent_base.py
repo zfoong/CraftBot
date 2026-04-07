@@ -1718,18 +1718,6 @@ class AgentBase:
             active_task_ids = self.state_manager.get_main_state().active_task_ids
             triggers = await self.triggers.list_triggers()  # Still get triggers for waiting_for_reply status
 
-            # If message is about a specific Living UI, only consider tasks for that same Living UI
-            incoming_living_ui_id = payload.get("living_ui_id")
-            if incoming_living_ui_id and active_task_ids:
-                filtered_task_ids = []
-                for task_id in active_task_ids:
-                    # Check trigger payload for living_ui_id match
-                    task_trigger = next((t for t in triggers if t.session_id == task_id), None)
-                    task_lui_id = task_trigger.payload.get("living_ui_id") if task_trigger and task_trigger.payload else None
-                    if task_lui_id == incoming_living_ui_id:
-                        filtered_task_ids.append(task_id)
-                active_task_ids = filtered_task_ids
-
             if active_task_ids:
                 # Use unified routing prompt with rich task context
                 existing_sessions = self._format_sessions_for_routing(active_task_ids, triggers)
