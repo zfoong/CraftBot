@@ -250,8 +250,35 @@ This stops both backend and frontend, runs the launch pipeline (install dependen
 └── LIVING_UI.md          # Documentation index
 ```
 
+## External Integrations (Google, Discord, Slack, etc.)
+
+If the user asks to connect to an external service (Gmail, YouTube, Discord, Slack, etc.),
+use the built-in integration bridge — **do NOT build OAuth flows or ask for API keys.**
+
+CraftBot already has connected accounts. Use `backend/services/integration_client.py`:
+
+```python
+from services.integration_client import integration
+
+# Check what's connected
+integrations = await integration.get_integrations()
+
+# Make an authenticated API call (CraftBot injects credentials)
+result = await integration.request(
+    integration="google_workspace",
+    method="GET",
+    url="https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10",
+)
+```
+
+**Available:** google_workspace, slack, discord, notion, telegram, github, jira, linkedin, twitter, outlook, whatsapp
+
+If `integration_client.py` doesn't exist in the project, create it from the template at `backend/services/integration_client.py`.
+
 ## FORBIDDEN Actions
 
+- NEVER implement OAuth or credential management — use the integration bridge
+- NEVER ask users for API keys — CraftBot already has their connected accounts
 - NEVER use `metadata` as a SQLAlchemy column name
 - NEVER use relative imports in backend code (`from . import` or `from .models import`)
 - NEVER add `/api` prefix to route paths in `routes.py` (the router prefix handles this)

@@ -899,7 +899,11 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             logs_dir.mkdir(parents=True, exist_ok=True)
             log_file = logs_dir / 'subprocess_output.log'
 
-            backend_process = self._start_process(backend_cwd, start_cmd, log_file, port=backend_port)
+            # Generate bridge token for integration proxy
+            from uuid import uuid4
+            project.bridge_token = str(uuid4())
+
+            backend_process = self._start_process(backend_cwd, start_cmd, log_file, port=backend_port, project=project)
             project.backend_process = backend_process
             logger.info(f"[LIVING_UI:PIPELINE] Backend starting on port {backend_port}")
 
@@ -1209,7 +1213,8 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         return True
 
     def _start_process(
-        self, cwd: Path, command: str, log_file: Path, port: int = 0
+        self, cwd: Path, command: str, log_file: Path, port: int = 0,
+        project: "LivingUIProject" = None,
     ) -> subprocess.Popen:
         """Start a background process with output redirected to a log file."""
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1217,10 +1222,18 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         log_handle.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] Starting: {command}\n{'='*60}\n")
         log_handle.flush()
 
+        # Build env with integration bridge vars if project provided
+        env = os.environ.copy()
+        if project and project.bridge_token:
+            bridge_port = int(os.environ.get("BROWSER_PORT", "7926"))
+            env["CRAFTBOT_BRIDGE_URL"] = f"http://localhost:{bridge_port}"
+            env["CRAFTBOT_BRIDGE_TOKEN"] = project.bridge_token
+
         if os.name == 'nt':
             process = subprocess.Popen(
                 command,
                 cwd=str(cwd),
+                env=env,
                 stdout=log_handle,
                 stderr=log_handle,
                 shell=True,
@@ -1230,6 +1243,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             process = subprocess.Popen(
                 command,
                 cwd=str(cwd),
+                env=env,
                 stdout=log_handle,
                 stderr=log_handle,
                 shell=True,

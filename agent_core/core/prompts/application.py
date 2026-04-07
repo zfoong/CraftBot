@@ -47,6 +47,13 @@ When pytest fails:
 - Maximum 3 pytest attempts per feature. If still failing after 3, review your approach
 - Common fix: relative imports (from . import X) → absolute imports (from X import Y)
 
+External integrations (Gmail, YouTube, Discord, Slack, etc.):
+- CraftBot has connected external services — use the integration bridge, NOT custom OAuth
+- Import: from services.integration_client import integration
+- Call: result = await integration.request("google_workspace", "GET", url)
+- NEVER build OAuth flows, ask for API keys, or store credentials
+- See the "External Integrations" section in SKILL.md for details and examples
+
 What to AVOID:
 - Flat list of items with no visual structure
 - Custom CSS when preset components exist
