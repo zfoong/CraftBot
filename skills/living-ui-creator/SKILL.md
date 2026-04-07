@@ -360,6 +360,8 @@ cd backend && python -m pytest tests/ -v --tb=short
 
 **Edit: `frontend/types.ts`** — add TypeScript interfaces for this feature's models
 **Edit: `frontend/AppController.ts`** — add methods to call this feature's API endpoints
+  - For the backend URL, use: `const BACKEND_URL = (window as any).__CRAFTBOT_BACKEND_URL__ || 'http://localhost:3101'`
+  - NEVER hardcode a specific port — the port may change between launches
 **Edit: `frontend/components/`** — create React components for this feature
 **Edit: `frontend/components/MainView.tsx`** — wire the new components into the main view
 

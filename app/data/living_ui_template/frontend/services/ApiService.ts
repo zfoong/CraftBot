@@ -6,8 +6,8 @@
  * page reloads and tab switches.
  */
 
-// Backend URL is set during project creation via placeholder replacement
-const BACKEND_URL = 'http://localhost:{{BACKEND_PORT}}'
+// Backend URL — detected from manifest at runtime, falls back to creation-time port
+const BACKEND_URL = (window as any).__CRAFTBOT_BACKEND_URL__ || 'http://localhost:{{BACKEND_PORT}}'
 
 export interface ActionRequest {
   action: string

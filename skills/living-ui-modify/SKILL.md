@@ -156,6 +156,8 @@ export interface Todo {
 
 - Add methods for new backend endpoints
 - Follow existing patterns for API calls and state updates
+- For the backend URL, use: `const BACKEND_URL = (window as any).__CRAFTBOT_BACKEND_URL__ || 'http://localhost:3101'`
+- NEVER hardcode a specific port — the port may change between launches
 
 ```typescript
 async archiveTodo(id: number): Promise<void> {

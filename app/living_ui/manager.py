@@ -789,13 +789,18 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             old_frontend = str(old_ports.get('frontend', ''))
             old_backend = str(old_ports.get('backend', ''))
 
-            # Replace old ports with current allocated ports in manifest text
+            # Replace old ports with current allocated ports in manifest and source files
             if old_frontend and old_frontend != str(project.port):
                 manifest_raw = manifest_raw.replace(old_frontend, str(project.port))
             if old_backend and old_backend != str(project.backend_port):
                 manifest_raw = manifest_raw.replace(old_backend, str(project.backend_port))
 
             manifest = json.loads(manifest_raw)
+
+            # Write updated manifest back to disk so frontend can read correct ports
+            if old_frontend != str(project.port) or old_backend != str(project.backend_port):
+                manifest_path.write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+                logger.info(f"[LIVING_UI:PIPELINE] Updated manifest ports: frontend={project.port}, backend={project.backend_port}")
         except Exception as e:
             return {"status": "error", "step": "setup", "errors": [f"Failed to parse manifest: {e}"]}
 
