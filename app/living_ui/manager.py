@@ -773,7 +773,29 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             return {"status": "error", "step": "setup", "errors": ["config/manifest.json not found"]}
 
         try:
-            manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+            # Ensure ports are allocated and available
+            if not project.port:
+                project.port = self._allocate_port()
+            if not project.backend_port:
+                project.backend_port = self._allocate_port()
+
+            # Read manifest and resolve ports — always use project's current ports
+            # regardless of what's hardcoded in the manifest file
+            manifest_raw = manifest_path.read_text(encoding='utf-8')
+
+            # Extract old ports from manifest to do replacement
+            manifest_tmp = json.loads(manifest_raw)
+            old_ports = manifest_tmp.get('ports', {})
+            old_frontend = str(old_ports.get('frontend', ''))
+            old_backend = str(old_ports.get('backend', ''))
+
+            # Replace old ports with current allocated ports in manifest text
+            if old_frontend and old_frontend != str(project.port):
+                manifest_raw = manifest_raw.replace(old_frontend, str(project.port))
+            if old_backend and old_backend != str(project.backend_port):
+                manifest_raw = manifest_raw.replace(old_backend, str(project.backend_port))
+
+            manifest = json.loads(manifest_raw)
         except Exception as e:
             return {"status": "error", "step": "setup", "errors": [f"Failed to parse manifest: {e}"]}
 
@@ -1654,7 +1676,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             self._release_port(backend_port)
             raise RuntimeError(f"Failed to copy template: {e}")
 
-        # Replace template placeholders
+        # Replace template placeholders (including ports for source code)
         self._replace_placeholders(project_path, {
             '{{PROJECT_ID}}': project_id,
             '{{PROJECT_NAME}}': name,

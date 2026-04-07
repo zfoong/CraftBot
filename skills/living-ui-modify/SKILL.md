@@ -11,6 +11,17 @@ action-sets:
 
 Make changes to existing Living UI applications: add features, fix bugs, update UI components, modify backend logic, or restructure data models.
 
+## FIRST: Read Logs Before Any Code Changes
+
+If the user is reporting a bug or issue, you MUST read the logs BEFORE attempting any fix.
+Do NOT guess at what's wrong — the logs tell you exactly what failed.
+
+1. Read `{project.path}/backend/logs/subprocess_output.log` — backend crashes and stack traces
+2. Read `{project.path}/backend/logs/frontend_console.log` — frontend errors and failed API calls
+3. Read the most recent `{project.path}/backend/logs/backend_*.log` — request-level errors
+
+Only after reading the logs should you identify the root cause and make targeted fixes.
+
 ## Workflow
 
 Follow these phases in order. Use TodoWrite to track progress.

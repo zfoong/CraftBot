@@ -1508,6 +1508,9 @@ class AgentBase:
                             lines.append(f"Living UI Name: {proj.name}")
                             lines.append(f"Living UI Path: {proj.path}")
                             lines.append(f"  Read {proj.path}/LIVING_UI.md for app context")
+                            lines.append(f"  If debugging issues, FIRST read these logs:")
+                            lines.append(f"    - {proj.path}/backend/logs/subprocess_output.log (crashes, stack traces)")
+                            lines.append(f"    - {proj.path}/backend/logs/frontend_console.log (frontend errors, network failures)")
                 except Exception:
                     pass
 
@@ -1813,6 +1816,9 @@ class AgentBase:
                                 f"[Living UI: {proj.name} ({living_ui_id}) | "
                                 f"Path: {proj.path} | "
                                 f"Read {proj.path}/LIVING_UI.md for app context]"
+                                f"  If debugging issues, FIRST read these logs:"
+                                f"    - {proj.path}/backend/logs/subprocess_output.log (crashes, stack traces)"
+                                f"    - {proj.path}/backend/logs/frontend_console.log (frontend errors, network failures)"
                             )
                 except Exception:
                     pass
