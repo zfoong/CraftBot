@@ -1023,7 +1023,12 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                 logs_dir = backend_cwd / 'logs'
                 logs_dir.mkdir(parents=True, exist_ok=True)
                 log_file = logs_dir / 'subprocess_output.log'
-                backend_process = self._start_process(backend_cwd, start_cmd, log_file, port=backend_port)
+
+                # Generate bridge token for integration proxy
+                from uuid import uuid4
+                project.bridge_token = str(uuid4())
+
+                backend_process = self._start_process(backend_cwd, start_cmd, log_file, port=backend_port, project=project)
                 project.backend_process = backend_process
                 logger.info(f"[LIVING_UI:PIPELINE] Backend starting on port {backend_port} (fast)")
 
@@ -1233,6 +1238,9 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             bridge_port = int(os.environ.get("BROWSER_PORT", "7926"))
             env["CRAFTBOT_BRIDGE_URL"] = f"http://localhost:{bridge_port}"
             env["CRAFTBOT_BRIDGE_TOKEN"] = project.bridge_token
+            logger.info(f"[LIVING_UI] Bridge env injected: URL=http://localhost:{bridge_port}, token={project.bridge_token[:8]}...")
+        else:
+            logger.warning(f"[LIVING_UI] No bridge token for process: project={'yes' if project else 'no'}, token={'yes' if project and project.bridge_token else 'no'}")
 
         if os.name == 'nt':
             process = subprocess.Popen(
