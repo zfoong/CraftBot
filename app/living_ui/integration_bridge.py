@@ -62,9 +62,6 @@ class IntegrationBridge:
 
         from app.external_comms.registry import get_registered_platforms, get_client
 
-        project = self._manager.projects.get(project_id)
-        granted = set(project.granted_integrations) if project else set()
-
         integrations = []
         for platform_id in get_registered_platforms():
             client = get_client(platform_id)
@@ -72,7 +69,6 @@ class IntegrationBridge:
             integrations.append({
                 "id": platform_id,
                 "connected": connected,
-                "granted": platform_id in granted,
             })
 
         return web.json_response({"integrations": integrations})
@@ -108,17 +104,6 @@ class IntegrationBridge:
         if not integration or not url:
             return web.json_response(
                 {"error": "Missing required fields: integration, url"}, status=400
-            )
-
-        # Check integration is granted to this project
-        project = self._manager.projects.get(project_id)
-        if not project:
-            return web.json_response({"error": "Project not found"}, status=404)
-
-        if integration not in (project.granted_integrations or []):
-            return web.json_response(
-                {"error": f"Integration '{integration}' not granted to this project"},
-                status=403,
             )
 
         # Get auth headers from platform client

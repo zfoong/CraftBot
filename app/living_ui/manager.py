@@ -52,7 +52,6 @@ class LivingUIProject:
     task_id: Optional[str] = None
     auto_launch: bool = False  # Auto-launch on CraftBot startup
     log_cleanup: bool = True  # Clean logs on restart
-    granted_integrations: List[str] = field(default_factory=list)  # Integrations this project can use
     bridge_token: str = ""  # Ephemeral token for integration bridge (NOT serialized)
     process: Optional[subprocess.Popen] = None  # Frontend process
     backend_process: Optional[subprocess.Popen] = None  # Backend process
@@ -75,7 +74,6 @@ class LivingUIProject:
             'error': self.error,
             'autoLaunch': self.auto_launch,
             'logCleanup': self.log_cleanup,
-            'grantedIntegrations': self.granted_integrations,
         }
 
 
@@ -472,7 +470,6 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                             theme=project_data.get('theme', 'system'),
                             auto_launch=project_data.get('autoLaunch', False),
                             log_cleanup=project_data.get('logCleanup', True),
-                            granted_integrations=project_data.get('grantedIntegrations', []),
                         )
                         # Reset status to stopped for all loaded projects
                         project.status = 'stopped' if project.status == 'running' else project.status
@@ -2005,26 +2002,6 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             if project.bridge_token and project.bridge_token == token:
                 return project_id
         return None
-
-    def grant_integration(self, project_id: str, integration_type: str) -> bool:
-        """Grant an integration to a project."""
-        project = self.projects.get(project_id)
-        if not project:
-            return False
-        if integration_type not in project.granted_integrations:
-            project.granted_integrations.append(integration_type)
-            self._save_projects()
-        return True
-
-    def revoke_integration(self, project_id: str, integration_type: str) -> bool:
-        """Revoke an integration from a project."""
-        project = self.projects.get(project_id)
-        if not project:
-            return False
-        if integration_type in project.granted_integrations:
-            project.granted_integrations.remove(integration_type)
-            self._save_projects()
-        return True
 
     async def stop_all_projects(self) -> None:
         """Stop all running Living UI projects. Called during agent shutdown."""
