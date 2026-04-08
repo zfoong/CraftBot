@@ -243,7 +243,6 @@ def main():
         if not browser_startup_ui:
             print("--------------------------------")
             print("Type '/exit' or use your defined quit hotkey to stop.")
-            print("Ctrl+C is handled by the app logic (ignored by wrapper).")
             print("--------------------------------")
 
         # Run the main Python app in the foreground.

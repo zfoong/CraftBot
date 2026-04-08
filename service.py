@@ -60,6 +60,34 @@ LOGO_ICO = os.path.join(BASE_DIR, "craftbot_logo_1.ico")
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+def _to_short_path(path: str) -> str:
+    """Return the Windows 8.3 short path form to avoid Unicode / long-path
+    issues when embedding paths inside command strings (e.g. schtasks /tr)."""
+    if _PLATFORM != "win32":
+        return path
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(1024)
+        if ctypes.windll.kernel32.GetShortPathNameW(path, buf, len(buf)):
+            return buf.value
+    except Exception:
+        pass
+    return path
+
+
+def _warn_path_issues() -> None:
+    """Print warnings if BASE_DIR is too long or contains non-ASCII characters."""
+    if len(BASE_DIR) > 200:
+        print(f"WARNING: Installation path is very long ({len(BASE_DIR)} chars).")
+        print("         Windows MAX_PATH limit may cause failures.")
+        print(f"         Consider moving CraftBot to a shorter path.\n")
+    try:
+        BASE_DIR.encode("ascii")
+    except UnicodeEncodeError:
+        print("WARNING: Installation path contains non-ASCII characters (e.g. Japanese).")
+        print("         Some commands may fail. Short paths will be used where possible.\n")
+
+
 def _python_exe() -> str:
     """Return the Python executable to use for the service process."""
     # On Windows prefer pythonw.exe (no console window) when not in TUI/CLI mode
@@ -143,12 +171,21 @@ def _open_browser_detached(url: str, delay: int = 5) -> None:
     still opens after the server has had time to start.
     """
     if _PLATFORM == "win32":
-        # Use a detached cmd process: wait, then open URL via 'start'
+        # Poll until the server responds (max 30s), then open the browser.
+        # No visible window — PowerShell runs silently.
         DETACHED_PROCESS = 0x00000008
         CREATE_NO_WINDOW = 0x08000000
+        ps_cmd = (
+            f'$url = "{url}"; '
+            f'$deadline = (Get-Date).AddSeconds(30); '
+            f'while ((Get-Date) -lt $deadline) {{ '
+            f'  try {{ Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop | Out-Null; break }} '
+            f'  catch {{ Start-Sleep -Milliseconds 500 }} '
+            f'}}; '
+            f'Start-Process $url'
+        )
         subprocess.Popen(
-            f'timeout /t {delay} /nobreak >nul & start "" "{url}"',
-            shell=True,
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -391,25 +428,37 @@ def _create_desktop_shortcut_windows() -> None:
         return  # already exists, don't recreate
     ico_path = _ensure_ico()
     try:
-        # Target cmd.exe to launch the URL via 'start', which opens the
-        # default browser. A direct URL as TargetPath in .lnk is unreliable.
-        ps_script = (
-            f'$ws = New-Object -ComObject WScript.Shell; '
-            f'$s = $ws.CreateShortcut("{shortcut_path}"); '
-            f'$s.TargetPath = "cmd.exe"; '
-            f'$s.Arguments = "/c start {BROWSER_URL}"; '
-            f'$s.WindowStyle = 7; '  # minimized (hides the cmd flash)
-        )
+        # Write the PS script to a temp file with UTF-8-BOM so PowerShell
+        # handles non-ASCII paths (e.g. Japanese Desktop folder) correctly.
+        import tempfile
+        ps_lines = [
+            f'$ws = New-Object -ComObject WScript.Shell',
+            f'$s = $ws.CreateShortcut("{shortcut_path}")',
+            f'$s.TargetPath = "cmd.exe"',
+            f'$s.Arguments = "/c start {BROWSER_URL}"',
+            f'$s.WindowStyle = 7',  # minimized (hides the cmd flash)
+        ]
         if ico_path:
-            ps_script += f'$s.IconLocation = "{ico_path},0"; '
-        ps_script += (
-            f'$s.Description = "Open CraftBot in your browser"; '
-            f'$s.Save()'
-        )
-        subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_script],
-            capture_output=True, timeout=15,
-        )
+            ps_lines.append(f'$s.IconLocation = "{ico_path},0"')
+        ps_lines += [
+            f'$s.Description = "Open CraftBot in your browser"',
+            f'$s.Save()',
+        ]
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".ps1", delete=False, encoding="utf-8-sig"
+        ) as tf:
+            tf.write("\n".join(ps_lines))
+            tmp_ps1 = tf.name
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp_ps1],
+                capture_output=True, timeout=15,
+            )
+        finally:
+            try:
+                os.remove(tmp_ps1)
+            except Exception:
+                pass
         if os.path.exists(shortcut_path):
             print(f"  Desktop shortcut created: {shortcut_path}")
             print(f"  Double-click it anytime to open CraftBot in your browser.")
@@ -463,7 +512,10 @@ def _install_windows_registry(action: str) -> bool:
 
 def _install_windows(run_args: List[str]) -> None:
     python = _python_exe()
-    action = f'"{python}" "{RUN_SCRIPT}" {" ".join(run_args)}'
+    # Use 8.3 short paths to avoid Unicode/long-path failures in schtasks /tr
+    python_s = _to_short_path(python)
+    script_s = _to_short_path(RUN_SCRIPT)
+    action = f'"{python_s}" "{script_s}" {" ".join(run_args)}'
 
     # Try Task Scheduler first; silently fall back to Registry on failure
     registered = False
@@ -675,6 +727,7 @@ def _is_installed() -> bool:
 
 def cmd_install(extra_args: List[str]) -> None:
     """Install dependencies, register auto-start, and start CraftBot."""
+    _warn_path_issues()
     # ── Step 1: Install dependencies via install.py ────────────────────────
     install_script = os.path.join(BASE_DIR, "install.py")
     if os.path.isfile(install_script):
@@ -722,10 +775,10 @@ def cmd_install(extra_args: List[str]) -> None:
     print("=" * 60)
     cmd_start(extra_args)
 
-    # Close this window so the user isn't left with an idle terminal
     print("\nCraftBot is running in the background.")
-    print("This window will close automatically...")
-    time.sleep(3)
+    print("You can close this window now.")
+    print("(This window will also try to close automatically in 5 seconds...)")
+    time.sleep(5)
     _close_console_window()
 
 
@@ -765,17 +818,44 @@ def cmd_uninstall() -> None:
 
 # ─── Utility ──────────────────────────────────────────────────────────────────
 
-def _close_console_window() -> None:
-    """Close the current console/terminal window on Windows."""
-    if _PLATFORM != "win32":
-        return
+def _get_parent_pid() -> Optional[int]:
+    """Return the PID of the parent process (cmd.exe / terminal)."""
     try:
-        import ctypes
-        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-        if hwnd:
-            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+        result = subprocess.run(
+            ["wmic", "process", "where", f"ProcessId={os.getpid()}", "get", "ParentProcessId", "/value"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if "ParentProcessId=" in line:
+                return int(line.split("=")[1].strip())
     except Exception:
         pass
+    return None
+
+
+def _close_console_window() -> None:
+    """Close the current console/terminal window on Windows then exit."""
+    if _PLATFORM != "win32":
+        sys.exit(0)
+    # Use PowerShell to kill the parent cmd.exe after a short delay
+    try:
+        parent_pid = _get_parent_pid()
+        if parent_pid:
+            DETACHED_PROCESS = 0x00000008
+            CREATE_NO_WINDOW = 0x08000000
+            subprocess.Popen(
+                [
+                    "powershell", "-NoProfile", "-Command",
+                    f"Start-Sleep -Milliseconds 500; Stop-Process -Id {parent_pid} -Force -ErrorAction SilentlyContinue",
+                ],
+                creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except Exception:
+        pass
+    sys.exit(0)
 
 
 def _timestamp() -> str:
