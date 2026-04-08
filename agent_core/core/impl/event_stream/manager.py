@@ -201,11 +201,12 @@ class EventStreamManager:
         return self._conversation_history[-limit:]
 
     def clear_all(self) -> None:
-        """Remove all event streams."""
+        """Remove all event streams and conversation history."""
         for stream in self._task_streams.values():
             stream.clear()
         self._task_streams.clear()
         self._main_stream.clear()
+        self._conversation_history.clear()
 
     # ───────────────────────── file-based logging ─────────────────────────
 
