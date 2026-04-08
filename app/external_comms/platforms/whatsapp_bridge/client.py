@@ -91,11 +91,25 @@ class WhatsAppBridge:
             logger.warning("[WA-Bridge] Already running")
             return
 
-        # Kill any stale Chromium processes from a previous session
+        # Kill any stale Chromium processes using the wwebjs auth directory
         auth_dir = Path(self._auth_dir)
+        if os.name == "nt":
+            try:
+                # Find and kill chrome processes with our auth dir in command line
+                result = subprocess.run(
+                    ["wmic", "process", "where", f"commandline like '%{auth_dir.name}%' and name='chrome.exe'", "get", "processid"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                for line in result.stdout.strip().split("\n")[1:]:
+                    pid = line.strip()
+                    if pid.isdigit():
+                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=5)
+                        logger.info(f"[WA-Bridge] Killed stale Chromium process: {pid}")
+            except Exception:
+                pass
+        # Also clean lock file
         lock_file = auth_dir / "session" / "SingletonLock"
         if lock_file.exists():
-            logger.info("[WA-Bridge] Found stale browser lock, cleaning up...")
             try:
                 lock_file.unlink(missing_ok=True)
             except Exception:
@@ -141,16 +155,16 @@ class WhatsAppBridge:
         self._running = False
         self._ready = False
 
-        # Send shutdown command
+        # Send shutdown command — give wwebjs time to save session
         try:
-            await self.send_command("shutdown", timeout=5.0)
+            await self.send_command("shutdown", timeout=10.0)
         except Exception:
             pass
 
-        # Wait for process to exit, kill entire process tree on timeout
+        # Wait for graceful exit — wwebjs needs time to save session files
         if self._process:
             try:
-                await asyncio.wait_for(self._process.wait(), timeout=10.0)
+                await asyncio.wait_for(self._process.wait(), timeout=20.0)
             except asyncio.TimeoutError:
                 logger.warning("[WA-Bridge] Process did not exit, killing process tree")
                 if os.name == "nt":

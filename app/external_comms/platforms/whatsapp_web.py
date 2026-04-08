@@ -249,7 +249,7 @@ class WhatsAppWebClient(BasePlatformClient):
 
             # Wait for ready or QR — if QR is needed the user must login first
             logger.info("[WhatsApp Web] Waiting for bridge to become ready...")
-            event_type, _ = await bridge.wait_for_qr_or_ready(timeout=120.0)
+            event_type, _ = await bridge.wait_for_qr_or_ready(timeout=90.0)
 
         if event_type == "qr":
             # Not authenticated — stop the bridge quietly (user will connect via settings UI)

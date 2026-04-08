@@ -1862,9 +1862,9 @@ class AgentBase:
             platform_map = {
                 "whatsapp_web": "whatsapp",
                 "whatsapp_business": "whatsapp",
-                "telegram_bot": "telegram",
-                "telegram_user": "telegram",
-                "telegram_mtproto": "telegram",
+                "telegram_bot": "telegram_bot",
+                "telegram_user": "telegram_user",
+                "telegram_mtproto": "telegram_user",
                 "slack": "slack",
                 "discord": "discord",
                 "linkedin": "linkedin",

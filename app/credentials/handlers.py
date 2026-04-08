@@ -787,14 +787,8 @@ class WhatsAppHandler(IntegrationHandler):
                 del manager._active_clients["whatsapp_web"]
         except Exception:
             pass
-        # Clean session directory so next connect starts fresh
-        try:
-            import shutil
-            from app.config import PROJECT_ROOT
-            auth_dir = PROJECT_ROOT / ".credentials" / "whatsapp_wwebjs_auth"
-            if auth_dir.exists():
-                shutil.rmtree(auth_dir, ignore_errors=True)
-        except Exception:
+        # Keep session directory — session persists for quick reconnect
+        # Only a full "logout" (not disconnect) should delete the session
             pass
         return True, "WhatsApp disconnected."
 

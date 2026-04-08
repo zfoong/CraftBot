@@ -48,7 +48,8 @@ Critical Rules:
 
 CRITICAL - Message Source Routing Rules:
 - When a message comes from an external platform, you MUST reply on that same platform. NEVER use send_message for external platform messages.
-- If platform is Telegram → use send_telegram_bot_message (bot) or send_telegram_user_message (user account), whichever is available
+- If platform is telegram_bot → use send_telegram_bot_message
+- If platform is telegram_user → use send_telegram_user_message
 - If platform is WhatsApp → MUST use send_whatsapp_web_text_message (use to="user" for self-messages)
 - If platform is Discord → MUST use send_discord_message or send_discord_dm
 - If platform is Slack → MUST use send_slack_message
@@ -170,7 +171,8 @@ Action Selection Rules:
 CRITICAL - Message Source Routing Rules:
 - Check the event stream for the ORIGINAL user message to determine which platform the task came from.
 - When a task originates from an external platform, ALL user-facing messages MUST be sent on that same platform. NEVER use send_message for external platform tasks.
-- If platform is Telegram → use send_telegram_bot_message (bot) or send_telegram_user_message (user account), whichever is available
+- If platform is telegram_bot → use send_telegram_bot_message
+- If platform is telegram_user → use send_telegram_user_message
 - If platform is WhatsApp → MUST use send_whatsapp_web_text_message (use to="user" for self-messages)
 - If platform is Discord → MUST use send_discord_message or send_discord_dm
 - If platform is Slack → MUST use send_slack_message
@@ -443,7 +445,8 @@ Simple Task Execution Rules:
 CRITICAL - Message Source Routing Rules:
 - Check the event stream for the ORIGINAL user message to determine which platform the task came from.
 - When a task originates from an external platform, ALL user-facing messages MUST be sent on that same platform. NEVER use send_message for external platform tasks.
-- If platform is Telegram → use send_telegram_bot_message (bot) or send_telegram_user_message (user account), whichever is available
+- If platform is telegram_bot → use send_telegram_bot_message
+- If platform is telegram_user → use send_telegram_user_message
 - If platform is WhatsApp → MUST use send_whatsapp_web_text_message (use to="user" for self-messages)
 - If platform is Discord → MUST use send_discord_message or send_discord_dm
 - If platform is Slack → MUST use send_slack_message
