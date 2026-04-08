@@ -382,7 +382,7 @@ class VLMInterface:
             "stream": False,
             "temperature": self.temperature,
         }
-        url: str = f"{self.remote_url.rstrip('/')}/vision"
+        url: str = f"{self.remote_url.rstrip('/')}/api/generate"
         r = requests.post(url, json=payload, timeout=600)
         r.raise_for_status()
         content = r.json().get("response", "").strip()

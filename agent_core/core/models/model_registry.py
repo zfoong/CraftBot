@@ -25,8 +25,8 @@ MODEL_REGISTRY = {
         InterfaceType.EMBEDDING: "skylark-embedding-vision-250615",
     },
     "remote": {
-        InterfaceType.LLM: "llama3",
-        InterfaceType.VLM: "llava-v1.6",
+        InterfaceType.LLM: "llama3.2:3b",
+        InterfaceType.VLM: "llava:7b",
         InterfaceType.EMBEDDING: "nomic-embed-text",
     },
     "minimax": {

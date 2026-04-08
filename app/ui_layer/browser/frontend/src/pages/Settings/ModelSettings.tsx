@@ -193,6 +193,22 @@ export function ModelSettings() {
         setOllamaAvailable(d.success)
         if (d.success && d.models && d.models.length > 0) {
           setOllamaModels(d.models)
+          // Auto-select first available model if current selection isn't installed
+          setNewLlmModel(prev => {
+            const effective = prev || currentLlmModel
+            if (!d.models.includes(effective)) {
+              setHasChanges(true)
+              return d.models[0]
+            }
+            return prev
+          })
+          setNewVlmModel(prev => {
+            const effective = prev || currentVlmModel
+            if (!d.models.includes(effective)) {
+              return d.models[0]
+            }
+            return prev
+          })
         } else {
           setOllamaModels([])
         }
