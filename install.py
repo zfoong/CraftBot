@@ -15,6 +15,7 @@ Note: GUI mode (--gui) is temporarily disabled in V1.2.2.
 After installation completes, CraftBot will automatically launch in browser mode.
 To use TUI mode instead, run: python run.py --tui
 """
+import math
 import multiprocessing
 import os
 import sys
@@ -134,19 +135,17 @@ def run_command_with_progress(cmd_list: list[str], message: str = "Processing", 
         # Start process
         process = subprocess.Popen(cmd_list, cwd=cwd, env=my_env, **kwargs)
         
-        # Simulate progress updates while process runs
-        import threading
+        # Asymptotic progress: continuously moves, decelerates near 95%, never sticks
+        # Formula: pct = 95 * (1 - e^(-elapsed / tau))
+        # tau=45s → ~60% at 45s, ~86% at 90s, ~95% at ~135s
         def update_progress():
-            steps = [5, 10, 15, 25, 35, 45, 55, 65, 75, 85, 92, 98]
-            step_idx = 0
-            while process.poll() is None and step_idx < len(steps):
-                progress.update(steps[step_idx])
-                step_idx += 1
-                time.sleep(0.1)  # Faster updates
-            
-            # Continue updating until process finishes
+            start = time.time()
+            tau = 45.0
             while process.poll() is None:
-                time.sleep(0.05)
+                elapsed = time.time() - start
+                pct = int(95 * (1 - math.exp(-elapsed / tau)))
+                progress.update(pct)
+                time.sleep(0.5)
         
         # Start progress thread
         progress_thread = threading.Thread(target=update_progress, daemon=True)
@@ -750,7 +749,7 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
         
         # First attempt with standard pip install
         cmd = [sys.executable, "-m", "pip", "install", "-r", requirements_file]
-        result = run_command(cmd, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
+        result = run_command_with_progress(cmd, message="Installing core dependencies", check=False, env_extras={"TMPDIR": tmp_dir})
         
         if result and hasattr(result, 'returncode') and result.returncode != 0:
             # Check error output
@@ -798,7 +797,7 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
                 
                 # Retry with --break-system-packages
                 cmd_with_flag = [sys.executable, "-m", "pip", "install", "--break-system-packages", "-r", requirements_file]
-                result = run_command(cmd_with_flag, capture=True, check=False, env_extras={"TMPDIR": tmp_dir})
+                result = run_command_with_progress(cmd_with_flag, message="Retrying installation", check=False, env_extras={"TMPDIR": tmp_dir})
                 
                 if result and hasattr(result, 'returncode') and result.returncode == 0:
                     print("✓ Core dependencies installed (with --break-system-packages)")
@@ -1240,10 +1239,15 @@ if __name__ == "__main__":
         print("="*60 + "\n")
         setup_omniparser(force_cpu=force_cpu, use_conda=use_conda)
 
-    # Done - launch the agent in browser mode (default)
+    # Done
     print("="*60)
     print(" ✅ Installation Complete!")
     print("="*60)
-    print("\n🚀 Starting CraftBot Browser Interface...\n")
-    launch_agent_after_install(install_gui, use_conda)
+
+    if "--no-launch" in args:
+        # Called from service.py install — skip auto-launch, service.py will start it
+        print("\n✓ Dependencies installed. Service will be started by the caller.\n")
+    else:
+        print("\n🚀 Starting CraftBot Browser Interface...\n")
+        launch_agent_after_install(install_gui, use_conda)
 

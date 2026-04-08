@@ -35,8 +35,13 @@ import os
 import sys
 import signal
 import subprocess
+import threading
 import time
+import webbrowser
 from typing import List, Optional
+
+# Store platform once so static analysers don't short-circuit platform branches
+_PLATFORM: str = sys.platform
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -49,14 +54,16 @@ TASK_NAME = "CraftBot"          # Windows Task Scheduler task name
 SYSTEMD_SERVICE = "craftbot"    # Linux systemd service name
 LAUNCHD_LABEL = "com.craftbot.agent"  # macOS launchd label
 BROWSER_URL = "http://localhost:7925"
-SHORTCUT_NAME = "CraftBot.url"
+SHORTCUT_NAME = "CraftBot.lnk"
+LOGO_PNG = os.path.join(BASE_DIR, "craftbot_logo_1.png")
+LOGO_ICO = os.path.join(BASE_DIR, "craftbot_logo_1.ico")
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _python_exe() -> str:
     """Return the Python executable to use for the service process."""
     # On Windows prefer pythonw.exe (no console window) when not in TUI/CLI mode
-    if sys.platform == "win32":
+    if _PLATFORM == "win32":
         pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
         if os.path.isfile(pythonw):
             return pythonw
@@ -86,7 +93,7 @@ def _remove_pid() -> None:
 
 def _is_running(pid: int) -> bool:
     """Return True if a process with the given PID is currently alive."""
-    if sys.platform == "win32":
+    if _PLATFORM == "win32":
         try:
             result = subprocess.run(
                 ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
@@ -119,15 +126,60 @@ def _build_run_args(extra: List[str], service_mode: bool = True) -> List[str]:
 
 # ─── Core operations ──────────────────────────────────────────────────────────
 
+def _open_browser_when_ready(url: str, pid_check_fn, delay: float = 4.0) -> None:
+    """Wait for the server to start, then open the browser."""
+    time.sleep(delay)
+    if not pid_check_fn():
+        print("\nWarning: CraftBot process exited before browser could open.")
+        print(f"Check logs: python service.py logs")
+        return
+    webbrowser.open(url)
+
+
+def _open_browser_detached(url: str, delay: int = 5) -> None:
+    """Launch a detached process that waits then opens the browser.
+
+    This allows the calling script to exit immediately while the browser
+    still opens after the server has had time to start.
+    """
+    if _PLATFORM == "win32":
+        # Use a detached cmd process: wait, then open URL via 'start'
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NO_WINDOW = 0x08000000
+        subprocess.Popen(
+            f'timeout /t {delay} /nobreak >nul & start "" "{url}"',
+            shell=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+            close_fds=True,
+        )
+    else:
+        subprocess.Popen(
+            f'sleep {delay} && xdg-open "{url}" 2>/dev/null || open "{url}" 2>/dev/null',
+            shell=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+
 def cmd_start(extra_args: List[str]) -> None:
     """Start CraftBot as a detached background process."""
     pid = _read_pid()
     if pid and _is_running(pid):
-        print(f"CraftBot is already running (PID {pid}).")
-        print(f"Use 'python service.py stop' to stop it first.")
-        return
+        cmd_stop()
 
-    run_args = _build_run_args(extra_args)
+
+    # service_mode=False — don't suppress the browser; we open it ourselves below
+    run_args = _build_run_args(extra_args, service_mode=False)
+    # Always pass --no-open-browser to run.py; service.py handles opening the browser
+    if "--tui" not in run_args and "--cli" not in run_args:
+        if "--no-open-browser" not in run_args:
+            run_args.append("--no-open-browser")
+
     python = _python_exe()
 
     # Use plain python.exe for TUI/CLI because pythonw has no console
@@ -143,14 +195,19 @@ def cmd_start(extra_args: List[str]) -> None:
     log_fh.write(f"{'='*60}\n")
     log_fh.flush()
 
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+
     kwargs = dict(
         cwd=BASE_DIR,
         stdout=log_fh,
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
+        env=env,
     )
 
-    if sys.platform == "win32":
+    if _PLATFORM == "win32":
         DETACHED_PROCESS = 0x00000008
         CREATE_NEW_PROCESS_GROUP = 0x00000200
         CREATE_NO_WINDOW = 0x08000000
@@ -166,13 +223,20 @@ def cmd_start(extra_args: List[str]) -> None:
         return
 
     _write_pid(proc.pid)
-    print(f"CraftBot started in background (PID {proc.pid}).")
-    print(f"Logs: {LOG_FILE}")
+
+    # Create a desktop shortcut so the user can reopen the browser anytime
     if "--tui" not in run_args and "--cli" not in run_args:
-        print(f"\nBrowser interface: {BROWSER_URL}")
-        print(f"  Tip: Bookmark {BROWSER_URL} so you never have to remember it!")
-        if "--no-open-browser" in run_args:
-            print("  (Browser will NOT open automatically — open it manually)")
+        if _PLATFORM == "win32":
+            _create_desktop_shortcut_windows()
+        else:
+            _create_desktop_shortcut_unix()
+
+    open_browser = "--tui" not in run_args and "--cli" not in run_args and "--no-open-browser" not in extra_args
+    if open_browser:
+        # Fire-and-forget: a detached process waits a few seconds then opens
+        # the browser.  The current script exits immediately so the terminal
+        # can be closed right away without affecting CraftBot.
+        _open_browser_detached(BROWSER_URL, delay=5)
 
 
 def cmd_stop() -> None:
@@ -189,7 +253,7 @@ def cmd_stop() -> None:
 
     print(f"Stopping CraftBot (PID {pid})...")
 
-    if sys.platform == "win32":
+    if _PLATFORM == "win32":
         try:
             subprocess.run(
                 ["taskkill", "/PID", str(pid), "/F", "/T"],
@@ -219,7 +283,7 @@ def cmd_stop() -> None:
 
 
 def cmd_status() -> None:
-    """Print whether CraftBot is currently running."""
+    """Print whether CraftBot is currently running and whether auto-start is installed."""
     pid = _read_pid()
     if pid and _is_running(pid):
         print(f"CraftBot is RUNNING (PID {pid}).")
@@ -228,6 +292,11 @@ def cmd_status() -> None:
         if pid:
             _remove_pid()
         print("CraftBot is NOT running.")
+
+    if _is_installed():
+        print("Auto-start: INSTALLED (CraftBot will start automatically on login).")
+    else:
+        print("Auto-start: NOT installed  (run 'python service.py install' to enable).")
 
 
 def cmd_logs(n: int = 50) -> None:
@@ -254,7 +323,40 @@ def cmd_restart(extra_args: List[str]) -> None:
 # ─── Desktop shortcut ─────────────────────────────────────────────────────────
 
 def _find_desktop() -> Optional[str]:
-    """Return the path to the user's Desktop folder, or None if not found."""
+    """Return the path to the user's Desktop folder.
+
+    Works for all users regardless of language, OneDrive config, or custom paths.
+    On Windows reads the Shell Folders registry key directly (no subprocess).
+    """
+    if _PLATFORM == "win32":
+        # Method 1: Read the registry directly — fast, no subprocess
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+                0, winreg.KEY_READ,
+            )
+            raw, _ = winreg.QueryValueEx(key, "Desktop")
+            winreg.CloseKey(key)
+            path = os.path.expandvars(raw)
+            if path and os.path.isdir(path):
+                return path
+        except Exception:
+            pass
+
+        # Method 2: ctypes SHGetFolderPath (CSIDL_DESKTOPDIRECTORY = 0x0010)
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(260)
+            ctypes.windll.shell32.SHGetFolderPathW(None, 0x0010, None, 0, buf)
+            path = buf.value
+            if path and os.path.isdir(path):
+                return path
+        except Exception:
+            pass
+
+    # Fallback: check common paths
     for candidate in [
         os.path.join(os.path.expanduser("~"), "Desktop"),
         os.path.join(os.path.expanduser("~"), "OneDrive", "Desktop"),
@@ -264,17 +366,55 @@ def _find_desktop() -> Optional[str]:
     return None
 
 
+def _ensure_ico() -> Optional[str]:
+    """Convert craftbot_logo_1.png to .ico if needed. Returns .ico path or None."""
+    if os.path.isfile(LOGO_ICO):
+        return LOGO_ICO
+    if not os.path.isfile(LOGO_PNG):
+        return None
+    try:
+        from PIL import Image
+        img = Image.open(LOGO_PNG)
+        img.save(LOGO_ICO, format="ICO", sizes=[(256, 256), (48, 48), (32, 32), (16, 16)])
+        return LOGO_ICO
+    except Exception:
+        return None
+
+
 def _create_desktop_shortcut_windows() -> None:
-    """Create a .url shortcut on the Windows Desktop."""
+    """Create a .lnk shortcut on the Windows Desktop with the CraftBot icon."""
     desktop = _find_desktop()
     if not desktop:
         return
     shortcut_path = os.path.join(desktop, SHORTCUT_NAME)
+    if os.path.exists(shortcut_path):
+        return  # already exists, don't recreate
+    ico_path = _ensure_ico()
     try:
-        with open(shortcut_path, "w") as f:
-            f.write(f"[InternetShortcut]\nURL={BROWSER_URL}\n")
-        print(f"  Desktop shortcut created: {shortcut_path}")
-        print(f"  Double-click it anytime to open CraftBot in your browser.")
+        # Target cmd.exe to launch the URL via 'start', which opens the
+        # default browser. A direct URL as TargetPath in .lnk is unreliable.
+        ps_script = (
+            f'$ws = New-Object -ComObject WScript.Shell; '
+            f'$s = $ws.CreateShortcut("{shortcut_path}"); '
+            f'$s.TargetPath = "cmd.exe"; '
+            f'$s.Arguments = "/c start {BROWSER_URL}"; '
+            f'$s.WindowStyle = 7; '  # minimized (hides the cmd flash)
+        )
+        if ico_path:
+            ps_script += f'$s.IconLocation = "{ico_path},0"; '
+        ps_script += (
+            f'$s.Description = "Open CraftBot in your browser"; '
+            f'$s.Save()'
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True, timeout=15,
+        )
+        if os.path.exists(shortcut_path):
+            print(f"  Desktop shortcut created: {shortcut_path}")
+            print(f"  Double-click it anytime to open CraftBot in your browser.")
+        else:
+            print(f"  (Shortcut creation may have failed — check {desktop})")
     except Exception as e:
         print(f"  (Could not create desktop shortcut: {e})")
 
@@ -305,37 +445,46 @@ def _create_desktop_shortcut_unix() -> None:
 
 # ─── Auto-start: Windows Task Scheduler ───────────────────────────────────────
 
+def _install_windows_registry(action: str) -> bool:
+    """Fallback: register auto-start via HKCU Run registry key (no admin needed)."""
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0, winreg.KEY_SET_VALUE,
+        )
+        winreg.SetValueEx(key, TASK_NAME, 0, winreg.REG_SZ, action)
+        winreg.CloseKey(key)
+        return True
+    except Exception:
+        return False
+
+
 def _install_windows(run_args: List[str]) -> None:
     python = _python_exe()
-    # Build the task action string
-    # Wrap paths in quotes to handle spaces
     action = f'"{python}" "{RUN_SCRIPT}" {" ".join(run_args)}'
 
-    # Create a scheduled task that runs at logon for this user
-    cmd = [
-        "schtasks", "/create",
-        "/tn", TASK_NAME,
-        "/tr", action,
-        "/sc", "ONLOGON",
-        "/ru", os.environ.get("USERNAME", ""),
-        "/f",  # overwrite if exists
-    ]
+    # Try Task Scheduler first; silently fall back to Registry on failure
+    registered = False
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0:
-            print(f"Auto-start registered in Windows Task Scheduler (task: '{TASK_NAME}').")
-            print("CraftBot will start automatically the next time you log in.")
-            print(f"\nOpen CraftBot: {BROWSER_URL}")
-            print(f"  Tip: Bookmark {BROWSER_URL} so you never have to remember it!")
-            _create_desktop_shortcut_windows()
-        else:
-            print(f"Failed to register task:\n{result.stderr.strip()}")
-            print("\nTry running this command manually as Administrator:")
-            print(f"  schtasks /create /tn \"{TASK_NAME}\" /tr \"{action}\" /sc ONLOGON /f")
-    except FileNotFoundError:
-        print("Error: schtasks not found. Are you on Windows?")
-    except subprocess.TimeoutExpired:
-        print("Error: schtasks timed out.")
+        result = subprocess.run(
+            ["schtasks", "/create", "/tn", TASK_NAME, "/tr", action, "/sc", "ONLOGON", "/f"],
+            capture_output=True, text=True, timeout=30,
+        )
+        registered = result.returncode == 0
+    except Exception:
+        pass
+
+    if not registered:
+        registered = _install_windows_registry(action)
+
+    if registered:
+        print(f"Auto-start registered. CraftBot will start automatically on login.")
+        print(f"Open CraftBot: {BROWSER_URL}")
+        _create_desktop_shortcut_windows()
+    else:
+        print("Could not register auto-start. Use 'python service.py start' to start manually.")
 
 
 def _uninstall_windows() -> None:
@@ -489,21 +638,106 @@ def _uninstall_macos() -> None:
 
 # ─── Install / Uninstall dispatch ─────────────────────────────────────────────
 
-def cmd_install(extra_args: List[str]) -> None:
-    """Register CraftBot to auto-start when the system boots / user logs in."""
-    run_args = _build_run_args(extra_args, service_mode=True)
-    plat = sys.platform
+def _is_installed() -> bool:
+    """Return True if CraftBot is registered for auto-start on this platform."""
+    plat = _PLATFORM
     if plat == "win32":
-        _install_windows(run_args)
+        # Check Task Scheduler
+        try:
+            result = subprocess.run(
+                ["schtasks", "/query", "/tn", TASK_NAME],
+                capture_output=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return True
+        except Exception:
+            pass
+        # Check Registry fallback
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0, winreg.KEY_READ,
+            )
+            winreg.QueryValueEx(key, TASK_NAME)
+            winreg.CloseKey(key)
+            return True
+        except Exception:
+            return False
     elif plat == "darwin":
-        _install_macos(run_args)
+        plist = os.path.expanduser(f"~/Library/LaunchAgents/{LAUNCHD_LABEL}.plist")
+        return os.path.isfile(plist)
     else:
-        _install_linux(run_args)
+        service_file = os.path.expanduser(f"~/.config/systemd/user/{SYSTEMD_SERVICE}.service")
+        return os.path.isfile(service_file)
+
+
+def cmd_install(extra_args: List[str]) -> None:
+    """Install dependencies, register auto-start, and start CraftBot."""
+    # ── Step 1: Install dependencies via install.py ────────────────────────
+    install_script = os.path.join(BASE_DIR, "install.py")
+    if os.path.isfile(install_script):
+        print("=" * 60)
+        print(" Step 1/3: Installing dependencies...")
+        print("=" * 60)
+        # Pass through any user flags (--conda etc.) and add --no-launch
+        install_flags = [a for a in extra_args if a in ("--conda", "--mamba", "--cpu-only")]
+        result = subprocess.run(
+            [sys.executable, install_script, "--no-launch"] + install_flags,
+            cwd=BASE_DIR,
+        )
+        if result.returncode != 0:
+            print("\nDependency installation failed. Aborting.")
+            return
+        print()
+    else:
+        print("(install.py not found — skipping dependency install)\n")
+
+    # ── Step 2: Register auto-start ────────────────────────────────────────
+    if _is_installed():
+        print("Step 2/3: Auto-start is already registered — skipping.")
+        # Still ensure the desktop shortcut exists
+        if _PLATFORM == "win32":
+            _create_desktop_shortcut_windows()
+        elif _PLATFORM != "darwin":
+            _create_desktop_shortcut_unix()
+    else:
+        print("=" * 60)
+        print(" Step 2/3: Registering auto-start...")
+        print("=" * 60)
+        run_args = _build_run_args(extra_args, service_mode=True)
+        plat = _PLATFORM
+        if plat == "win32":
+            _install_windows(run_args)
+        elif plat == "darwin":
+            _install_macos(run_args)
+        else:
+            _install_linux(run_args)
+        print()
+
+    # ── Step 3: Start the service now ──────────────────────────────────────
+    print("=" * 60)
+    print(" Step 3/3: Starting CraftBot...")
+    print("=" * 60)
+    cmd_start(extra_args)
+
+    # Close this window so the user isn't left with an idle terminal
+    print("\nCraftBot is running in the background.")
+    print("This window will close automatically...")
+    time.sleep(3)
+    _close_console_window()
 
 
 def cmd_uninstall() -> None:
-    """Remove auto-start registration."""
-    plat = sys.platform
+    """Remove auto-start registration and uninstall dependencies."""
+    # Stop the service first if running
+    pid = _read_pid()
+    if pid and _is_running(pid):
+        cmd_stop()
+
+    # Remove auto-start registration
+    plat = _PLATFORM
     if plat == "win32":
         _uninstall_windows()
     elif plat == "darwin":
@@ -511,8 +745,38 @@ def cmd_uninstall() -> None:
     else:
         _uninstall_linux()
 
+    # Uninstall pip packages
+    req_file = os.path.join(BASE_DIR, "requirements.txt")
+    if os.path.isfile(req_file):
+        print("\nUninstalling pip packages...")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "uninstall", "-r", req_file, "-y"],
+            cwd=BASE_DIR,
+        )
+    else:
+        print("\n(requirements.txt not found — skipping pip uninstall)")
+
+    # Purge pip cache
+    print("\nPurging pip cache...")
+    subprocess.run([sys.executable, "-m", "pip", "cache", "purge"])
+
+    print("\nUninstall complete.")
+
 
 # ─── Utility ──────────────────────────────────────────────────────────────────
+
+def _close_console_window() -> None:
+    """Close the current console/terminal window on Windows."""
+    if _PLATFORM != "win32":
+        return
+    try:
+        import ctypes
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+    except Exception:
+        pass
+
 
 def _timestamp() -> str:
     import datetime
