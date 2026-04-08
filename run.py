@@ -533,9 +533,17 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
             return None
 
     # Build command for npm run dev
+    # On Windows, bypass npm/cmd.exe and invoke node directly with the vite script.
+    # This avoids the grandchild node.exe allocating a new console (which Windows
+    # Terminal intercepts and shows as a blank tab).
     if sys.platform == "win32":
-        # On Windows, use cmd.exe to run npm
-        cmd = ["cmd.exe", "/c", "npm", "run", "dev"]
+        node_exe = shutil.which("node")
+        vite_script = os.path.join(FRONTEND_DIR, "node_modules", "vite", "bin", "vite.js")
+        if node_exe and os.path.isfile(vite_script):
+            cmd = [node_exe, vite_script]
+        else:
+            # Fallback: use cmd.exe if node/vite not found directly
+            cmd = ["cmd.exe", "/c", "npm", "run", "dev"]
     else:
         cmd = [npm_cmd, "run", "dev"]
 
@@ -551,8 +559,8 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
             env=os.environ.copy(),
         )
         if sys.platform == "win32":
-            # CREATE_NO_WINDOW + DETACHED_PROCESS prevents npm/node from creating
-            # a visible console window, including child processes like Vite
+            # DETACHED_PROCESS + CREATE_NO_WINDOW on the direct node.exe call
+            # ensures no console window is created or inherited
             DETACHED_PROCESS = 0x00000008
             popen_kwargs["creationflags"] = DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW
         process = subprocess.Popen(cmd, **popen_kwargs)
