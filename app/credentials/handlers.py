@@ -772,7 +772,31 @@ class WhatsAppHandler(IntegrationHandler):
         if not has_credential("whatsapp_web.json"):
             return False, "No WhatsApp credentials found."
         remove_credential("whatsapp_web.json")
-        return True, "Removed WhatsApp credential."
+        # Stop the bridge and listener
+        try:
+            from app.external_comms.platforms.whatsapp_bridge.client import get_whatsapp_bridge
+            bridge = get_whatsapp_bridge()
+            if bridge.is_running:
+                await bridge.stop()
+            from app.external_comms.manager import get_external_comms_manager
+            manager = get_external_comms_manager()
+            if manager and "whatsapp_web" in manager._active_clients:
+                client = manager._active_clients["whatsapp_web"]
+                if hasattr(client, 'stop_listening'):
+                    await client.stop_listening()
+                del manager._active_clients["whatsapp_web"]
+        except Exception:
+            pass
+        # Clean session directory so next connect starts fresh
+        try:
+            import shutil
+            from app.config import PROJECT_ROOT
+            auth_dir = PROJECT_ROOT / ".credentials" / "whatsapp_wwebjs_auth"
+            if auth_dir.exists():
+                shutil.rmtree(auth_dir, ignore_errors=True)
+        except Exception:
+            pass
+        return True, "WhatsApp disconnected."
 
     async def status(self):
         if not has_credential("whatsapp_web.json"):
