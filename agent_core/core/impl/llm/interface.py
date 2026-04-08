@@ -1240,7 +1240,7 @@ class LLMInterface:
                     "temperature": self.temperature,
                 }
             }
-            url: str = f"{self.remote_url.rstrip('/')}/generate"
+            url: str = f"{self.remote_url.rstrip('/')}/api/generate"
             response = requests.post(url, json=payload, timeout=600)
             response.raise_for_status()
             result = response.json()

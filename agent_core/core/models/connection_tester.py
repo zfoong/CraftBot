@@ -328,10 +328,16 @@ def _test_remote(base_url: Optional[str], timeout: float) -> Dict[str, Any]:
             response = client.get(f"{url.rstrip('/')}/api/tags")
 
         if response.status_code == 200:
+            models = [m["name"] for m in response.json().get("models", [])]
+            if models:
+                message = f"Connected! {len(models)} model(s) available: {', '.join(models)}"
+            else:
+                message = "Connected to Ollama, but no models downloaded yet. Use '+ Download New Model' to get one."
             return {
                 "success": True,
-                "message": "Successfully connected to Ollama",
+                "message": message,
                 "provider": "remote",
+                "models": models,
             }
         else:
             return {
