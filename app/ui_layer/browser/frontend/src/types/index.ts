@@ -74,6 +74,8 @@ export type WSMessageType =
   | 'dashboard_metrics'
   | 'dashboard_metrics_filter'
   | 'dashboard_filtered_metrics'
+  | 'subscribe_dashboard_metrics'
+  | 'unsubscribe_dashboard_metrics'
   // File operations
   | 'file_list'
   | 'file_read'

@@ -726,6 +726,7 @@ class BrowserAdapter(InterfaceAdapter):
         self._footage = BrowserFootageComponent(self)
         self._app: Optional["web.Application"] = None
         self._ws_clients: Set = set()
+        self._metrics_subscribers: Set = set()
         self._runner: Optional["web.AppRunner"] = None
 
         # Dashboard metrics collector
@@ -989,7 +990,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                 try:
                     if msg.type == WSMsgType.TEXT:
                         data = json.loads(msg.data)
-                        await self._handle_ws_message(data)
+                        await self._handle_ws_message(data, ws)
                     elif msg.type == WSMsgType.ERROR:
                         break
                     elif msg.type == WSMsgType.CLOSE:
@@ -1015,10 +1016,11 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             print(f"[BROWSER ADAPTER] WebSocket loop error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         finally:
             self._ws_clients.discard(ws)
+            self._metrics_subscribers.discard(ws)
 
         return ws
 
-    async def _handle_ws_message(self, data: Dict[str, Any]) -> None:
+    async def _handle_ws_message(self, data: Dict[str, Any], ws=None) -> None:
         """Handle incoming WebSocket message."""
         msg_type = data.get("type")
 
@@ -1379,6 +1381,14 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         elif msg_type == "whatsapp_cancel":
             session_id = data.get("session_id", "")
             await self._handle_whatsapp_cancel(session_id)
+
+        elif msg_type == "subscribe_dashboard_metrics":
+            if ws is not None:
+                self._metrics_subscribers.add(ws)
+
+        elif msg_type == "unsubscribe_dashboard_metrics":
+            if ws is not None:
+                self._metrics_subscribers.discard(ws)
 
         elif msg_type == "dashboard_metrics_filter":
             period = data.get("period", "total")
@@ -3796,15 +3806,19 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             print(f"[BROWSER ADAPTER] Failed to broadcast error: {error_message}")
 
     async def _broadcast_metrics_loop(self) -> None:
-        """Periodically broadcast dashboard metrics to connected clients."""
+        """Periodically broadcast dashboard metrics to subscribed clients only."""
         while self._running:
             try:
-                if self._ws_clients:
+                if self._metrics_subscribers:
                     metrics = self._metrics_collector.get_metrics()
-                    await self._broadcast({
-                        "type": "dashboard_metrics",
-                        "data": metrics.to_dict(),
-                    })
+                    payload = {"type": "dashboard_metrics", "data": metrics.to_dict()}
+                    disconnected: Set = set()
+                    for ws in self._metrics_subscribers.copy():
+                        try:
+                            await ws.send_json(payload)
+                        except Exception:
+                            disconnected.add(ws)
+                    self._metrics_subscribers -= disconnected
                 await asyncio.sleep(2)  # Update every 2 seconds
             except asyncio.CancelledError:
                 break

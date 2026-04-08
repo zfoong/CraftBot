@@ -64,6 +64,8 @@ interface WebSocketContextType extends WebSocketState {
   openFile: (path: string) => void
   openFolder: (path: string) => void
   requestFilteredMetrics: (period: MetricsTimePeriod) => void
+  subscribeDashboardMetrics: () => void
+  unsubscribeDashboardMetrics: () => void
   // Onboarding methods
   requestOnboardingStep: () => void
   submitOnboardingStep: (value: string | string[]) => void
@@ -789,6 +791,18 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const subscribeDashboardMetrics = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'subscribe_dashboard_metrics' }))
+    }
+  }, [])
+
+  const unsubscribeDashboardMetrics = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'unsubscribe_dashboard_metrics' }))
+    }
+  }, [])
+
   // Onboarding methods
   const requestOnboardingStep = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -912,6 +926,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         openFile,
         openFolder,
         requestFilteredMetrics,
+        subscribeDashboardMetrics,
+        unsubscribeDashboardMetrics,
         requestOnboardingStep,
         submitOnboardingStep,
         skipOnboardingStep,

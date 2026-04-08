@@ -99,7 +99,7 @@ function getChartLabels(period: MetricsTimePeriod): { title: string; description
 }
 
 export function DashboardPage() {
-  const { connected, actions, messages, dashboardMetrics, filteredMetricsCache, requestFilteredMetrics } = useWebSocket()
+  const { connected, actions, messages, dashboardMetrics, filteredMetricsCache, requestFilteredMetrics, subscribeDashboardMetrics, unsubscribeDashboardMetrics } = useWebSocket()
 
   // Derive agent status from actions and messages
   const status = useDerivedAgentStatus({
@@ -128,6 +128,14 @@ export function DashboardPage() {
       requestFilteredMetrics(period)
     }
   }, [requestFilteredMetrics, filteredMetricsCache])
+
+  // Subscribe to live metrics while on this page, unsubscribe on leave
+  useEffect(() => {
+    subscribeDashboardMetrics()
+    return () => {
+      unsubscribeDashboardMetrics()
+    }
+  }, [subscribeDashboardMetrics, unsubscribeDashboardMetrics])
 
   // Request 'total' metrics on initial load
   useEffect(() => {
