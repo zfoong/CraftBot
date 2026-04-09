@@ -135,7 +135,26 @@ async def install_ollama(progress_callback: Callable) -> Dict[str, Any]:
                     stderr=asyncio.subprocess.PIPE,
                 )
                 await progress_callback("Installing Ollama via winget (this may take a minute)...")
-                _, stderr = await proc.communicate()
+
+                # Stream winget output line-by-line so the UI doesn't appear frozen.
+                # winget writes useful lines like "Downloading …", "Verifying …",
+                # "Starting package install…" which we surface directly.
+                async def _stream_winget(stream: asyncio.StreamReader) -> None:
+                    while True:
+                        line = await stream.readline()
+                        if not line:
+                            break
+                        text = line.decode("utf-8", errors="replace").strip()
+                        # Skip blank lines and raw progress-bar characters
+                        if text and not set(text).issubset(set("█▓░▒ \t\r")):
+                            await progress_callback(text[:120])
+
+                await asyncio.gather(
+                    _stream_winget(proc.stdout),
+                    _stream_winget(proc.stderr),
+                )
+                await proc.wait()
+
                 # Verify actual install regardless of exit code — winget can return non-zero on success
                 if get_ollama_status()["installed"]:
                     subprocess.run(
@@ -161,10 +180,23 @@ async def install_ollama(progress_callback: Callable) -> Dict[str, Any]:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            _, stderr = await dl_proc.communicate()
+            # Stream PowerShell output so download progress is visible
+            async def _stream_ps(stream: asyncio.StreamReader) -> None:
+                while True:
+                    line = await stream.readline()
+                    if not line:
+                        break
+                    text = line.decode("utf-8", errors="replace").strip()
+                    if text:
+                        await progress_callback(text[:120])
+
+            await asyncio.gather(
+                _stream_ps(dl_proc.stdout),
+                _stream_ps(dl_proc.stderr),
+            )
+            await dl_proc.wait()
             if dl_proc.returncode != 0:
-                err = stderr.decode(errors="replace")[:300]
-                return {"success": False, "error": f"Download failed: {err}"}
+                return {"success": False, "error": "Installer download failed"}
 
             await progress_callback("Running installer silently...")
             run_proc = await asyncio.create_subprocess_exec(

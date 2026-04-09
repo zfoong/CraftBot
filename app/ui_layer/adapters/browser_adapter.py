@@ -357,8 +357,11 @@ class BrowserActionPanelComponent(ActionPanelProtocol):
             from app.usage.action_storage import get_action_storage, StoredActionItem
             self._storage = get_action_storage()
 
-            # Mark any stale running items as cancelled from previous session
-            self._storage.mark_running_as_cancelled()
+            # Mark stale running items as cancelled, but exclude restored tasks
+            restored_ids = getattr(
+                self._adapter._controller.agent, '_restored_task_ids', set()
+            )
+            self._storage.mark_running_as_cancelled(exclude=restored_ids)
 
             # Load recent tasks (and their child actions) from storage
             stored_items = self._storage.get_recent_tasks_with_actions(task_limit=15)
@@ -723,6 +726,7 @@ class BrowserAdapter(InterfaceAdapter):
         self._footage = BrowserFootageComponent(self)
         self._app: Optional["web.Application"] = None
         self._ws_clients: Set = set()
+        self._metrics_subscribers: Set = set()
         self._runner: Optional["web.AppRunner"] = None
 
         # Dashboard metrics collector
@@ -848,7 +852,7 @@ CraftBot can perform virtually any computer-based task by configuring the right 
 
 If you need help setting up MCP servers or skills, just ask the agent.
 
-A quick Q&A will now begin to understand your preferences and serve you better:""",
+A quick Q&A will now begin to understand your objectives to serve you better:""",
                 style="system",
                 timestamp=time.time(),
                 message_id=f"welcome-{uuid.uuid4().hex[:8]}",
@@ -896,9 +900,9 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         if static_path.exists():
             self._app.router.add_static("/static/", static_path)
 
-        runner = web.AppRunner(self._app)
-        await runner.setup()
-        site = web.TCPSite(runner, self._host, self._port)
+        self._runner = web.AppRunner(self._app)
+        await self._runner.setup()
+        site = web.TCPSite(self._runner, self._host, self._port)
         await site.start()
 
         # Only print URL info if not using browser startup UI (run.py handles it)
@@ -941,6 +945,11 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             await ws.close()
         self._ws_clients.clear()
 
+        # Shut down the aiohttp server and release the port
+        if self._runner:
+            await self._runner.cleanup()
+            self._runner = None
+
     async def _websocket_handler(self, request: "web.Request") -> "web.WebSocketResponse":
         """Handle WebSocket connections."""
         from aiohttp import web, WSMsgType
@@ -981,7 +990,7 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
                 try:
                     if msg.type == WSMsgType.TEXT:
                         data = json.loads(msg.data)
-                        await self._handle_ws_message(data)
+                        await self._handle_ws_message(data, ws)
                     elif msg.type == WSMsgType.ERROR:
                         break
                     elif msg.type == WSMsgType.CLOSE:
@@ -1007,10 +1016,11 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             print(f"[BROWSER ADAPTER] WebSocket loop error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         finally:
             self._ws_clients.discard(ws)
+            self._metrics_subscribers.discard(ws)
 
         return ws
 
-    async def _handle_ws_message(self, data: Dict[str, Any]) -> None:
+    async def _handle_ws_message(self, data: Dict[str, Any], ws=None) -> None:
         """Handle incoming WebSocket message."""
         msg_type = data.get("type")
 
@@ -1234,6 +1244,12 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             base_url = data.get("baseUrl")
             await self._handle_ollama_models_get(base_url)
 
+        elif msg_type == "slow_mode_get":
+            await self._handle_slow_mode_get()
+
+        elif msg_type == "slow_mode_set":
+            await self._handle_slow_mode_set(data)
+
         # MCP settings operations
         elif msg_type == "mcp_list":
             await self._handle_mcp_list()
@@ -1366,6 +1382,14 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             session_id = data.get("session_id", "")
             await self._handle_whatsapp_cancel(session_id)
 
+        elif msg_type == "subscribe_dashboard_metrics":
+            if ws is not None:
+                self._metrics_subscribers.add(ws)
+
+        elif msg_type == "unsubscribe_dashboard_metrics":
+            if ws is not None:
+                self._metrics_subscribers.discard(ws)
+
         elif msg_type == "dashboard_metrics_filter":
             period = data.get("period", "total")
             await self._handle_dashboard_metrics_filter(period)
@@ -1400,6 +1424,56 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             model = data.get("model", "")
             base_url = data.get("baseUrl")
             await self._handle_local_llm_pull_model(model, base_url)
+
+        # Update operations
+        elif msg_type == "check_update":
+            await self._handle_check_update()
+
+        elif msg_type == "do_update":
+            await self._handle_do_update()
+
+    async def _handle_check_update(self) -> None:
+        """Check if a CraftBot update is available."""
+        from app.updater import check_for_update
+
+        try:
+            update_available, current, latest = await check_for_update()
+            await self._broadcast({
+                "type": "update_check_result",
+                "data": {
+                    "updateAvailable": update_available,
+                    "currentVersion": current,
+                    "latestVersion": latest,
+                },
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "update_check_result",
+                "data": {
+                    "updateAvailable": False,
+                    "currentVersion": "",
+                    "latestVersion": "",
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_do_update(self) -> None:
+        """Perform CraftBot update and restart."""
+        from app.updater import perform_update
+
+        async def progress(msg: str) -> None:
+            await self._broadcast({
+                "type": "update_progress",
+                "data": {"message": msg},
+            })
+
+        try:
+            await perform_update(progress_callback=progress)
+        except Exception as e:
+            await self._broadcast({
+                "type": "update_progress",
+                "data": {"message": f"Update failed: {e}"},
+            })
 
     async def _handle_dashboard_metrics_filter(self, period: str) -> None:
         """Handle filtered metrics request for specific time period."""
@@ -2684,7 +2758,10 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
     async def _handle_model_settings_update(self, data: Dict[str, Any]) -> None:
         """Update model settings.
 
-        Validates API key presence and tests connection BEFORE saving settings.
+        Validates API key presence before saving. Connection is tested only when
+        credentials (API key or base URL) are actually changing, so that saving
+        a model name or switching providers works even when the service is offline
+        (e.g. Ollama not running).
         """
         try:
             new_provider = data.get("llmProvider")
@@ -2712,8 +2789,11 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
                     })
                     return
 
-            # Step 2: Test connection before saving
-            if new_provider:
+            # Step 2: Test connection before saving — only when credentials are changing.
+            # Mirror the frontend logic: skip the test when only model/provider name
+            # changes so that saving works even if the service (e.g. Ollama) is offline.
+            credentials_changing = bool(api_key or base_url)
+            if new_provider and credentials_changing:
                 # Determine the API key to test with
                 test_api_key = api_key
                 if not test_api_key and provider_for_key != new_provider:
@@ -2835,6 +2915,36 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             await self._broadcast({
                 "type": "ollama_models_get",
                 "data": {"success": False, "models": [], "error": str(e)},
+            })
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Slow Mode Handlers
+    # ─────────────────────────────────────────────────────────────────────
+
+    async def _handle_slow_mode_get(self) -> None:
+        """Get slow mode settings."""
+        try:
+            from app.ui_layer.settings.model_settings import get_slow_mode_settings
+            result = get_slow_mode_settings()
+            await self._broadcast({"type": "slow_mode_get", "data": result})
+        except Exception as e:
+            await self._broadcast({
+                "type": "slow_mode_get",
+                "data": {"success": False, "error": str(e)},
+            })
+
+    async def _handle_slow_mode_set(self, data: Dict[str, Any]) -> None:
+        """Set slow mode on or off."""
+        try:
+            from app.ui_layer.settings.model_settings import set_slow_mode
+            enabled = data.get("enabled", False)
+            tpm_limit = data.get("tpmLimit")
+            result = set_slow_mode(enabled, tpm_limit)
+            await self._broadcast({"type": "slow_mode_set", "data": result})
+        except Exception as e:
+            await self._broadcast({
+                "type": "slow_mode_set",
+                "data": {"success": False, "error": str(e)},
             })
 
     # ─────────────────────────────────────────────────────────────────────
@@ -3696,15 +3806,19 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             print(f"[BROWSER ADAPTER] Failed to broadcast error: {error_message}")
 
     async def _broadcast_metrics_loop(self) -> None:
-        """Periodically broadcast dashboard metrics to connected clients."""
+        """Periodically broadcast dashboard metrics to subscribed clients only."""
         while self._running:
             try:
-                if self._ws_clients:
+                if self._metrics_subscribers:
                     metrics = self._metrics_collector.get_metrics()
-                    await self._broadcast({
-                        "type": "dashboard_metrics",
-                        "data": metrics.to_dict(),
-                    })
+                    payload = {"type": "dashboard_metrics", "data": metrics.to_dict()}
+                    disconnected: Set = set()
+                    for ws in self._metrics_subscribers.copy():
+                        try:
+                            await ws.send_json(payload)
+                        except Exception:
+                            disconnected.add(ws)
+                    self._metrics_subscribers -= disconnected
                 await asyncio.sleep(2)  # Update every 2 seconds
             except asyncio.CancelledError:
                 break
@@ -4700,7 +4814,10 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         state = self._controller.state
         metrics = self._metrics_collector.get_metrics()
 
+        from app.config import get_app_version
+
         return {
+            "version": get_app_version(),
             "agentState": state.agent_state.value,
             "guiMode": state.gui_mode,
             "needsHardOnboarding": onboarding_manager.needs_hard_onboarding,

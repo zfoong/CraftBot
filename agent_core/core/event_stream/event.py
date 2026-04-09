@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 
 
 SEVERITIES = ("DEBUG", "INFO", "WARN", "ERROR")
@@ -64,6 +64,32 @@ class Event:
         """
         return self.display_message
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize the event to a dictionary for persistence."""
+        return {
+            "message": self.message,
+            "kind": self.kind,
+            "severity": self.severity,
+            "display_message": self.display_message,
+            "ts": self.ts.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Event":
+        """Deserialize an event from a dictionary."""
+        ts = (
+            datetime.fromisoformat(data["ts"])
+            if isinstance(data.get("ts"), str)
+            else datetime.now(timezone.utc)
+        )
+        return cls(
+            message=data["message"],
+            kind=data["kind"],
+            severity=data["severity"],
+            display_message=data.get("display_message"),
+            ts=ts,
+        )
+
     @property
     def iso_ts(self) -> str:
         """
@@ -91,6 +117,29 @@ class EventRecord:
     ts: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     repeat_count: int = 1
     _cached_tokens: int | None = field(default=None, repr=False)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize the event record to a dictionary for persistence."""
+        return {
+            "event": self.event.to_dict(),
+            "ts": self.ts.isoformat(),
+            "repeat_count": self.repeat_count,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EventRecord":
+        """Deserialize an event record from a dictionary."""
+        event = Event.from_dict(data["event"])
+        ts = (
+            datetime.fromisoformat(data["ts"])
+            if isinstance(data.get("ts"), str)
+            else datetime.now(timezone.utc)
+        )
+        return cls(
+            event=event,
+            ts=ts,
+            repeat_count=data.get("repeat_count", 1),
+        )
 
     def compact_line(self) -> str:
         """

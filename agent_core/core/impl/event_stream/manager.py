@@ -15,7 +15,7 @@ Also handles file-based event logging to:
 from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 import threading
 
 from agent_core.core.impl.event_stream.event_stream import EventStream
@@ -64,7 +64,9 @@ class EventStreamManager:
     def __init__(
         self,
         llm: LLMInterfaceProtocol,
-        agent_file_system_path: Optional[Path] = None
+        agent_file_system_path: Optional[Path] = None,
+        on_stream_persist: Optional[Callable[[str, "EventStream"], None]] = None,
+        on_stream_remove_persist: Optional[Callable[[str], None]] = None,
     ) -> None:
         # Main stream for conversation mode (not task-specific)
         self._main_stream: EventStream = EventStream(llm=llm, temp_dir=None)
@@ -76,6 +78,10 @@ class EventStreamManager:
         self._agent_file_system_path = agent_file_system_path
         self._skip_unprocessed_logging = False
         self._file_lock = threading.Lock()
+
+        # Session persistence hooks
+        self._on_stream_persist = on_stream_persist
+        self._on_stream_remove_persist = on_stream_remove_persist
 
         # Conversation history for context injection into tasks
         # Stores recent user AND agent messages without affecting TUI display
@@ -195,11 +201,12 @@ class EventStreamManager:
         return self._conversation_history[-limit:]
 
     def clear_all(self) -> None:
-        """Remove all event streams."""
+        """Remove all event streams and conversation history."""
         for stream in self._task_streams.values():
             stream.clear()
         self._task_streams.clear()
         self._main_stream.clear()
+        self._conversation_history.clear()
 
     # ───────────────────────── file-based logging ─────────────────────────
 

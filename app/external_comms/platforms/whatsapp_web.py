@@ -227,29 +227,36 @@ class WhatsAppWebClient(BasePlatformClient):
 
         bridge = self._get_bridge()
 
-        # Always restart the bridge fresh so its reader tasks run on the
-        # current event loop.  The login flow may have started the bridge on
-        # a background thread whose event loop is now dead.  whatsapp-web.js
-        # LocalAuth persists the session, so the restart will auto-authenticate.
-        if bridge.is_running:
-            logger.info("[WhatsApp Web] Restarting bridge on current event loop...")
-            await bridge.stop()
+        # If bridge is already running and ready (from login flow), reuse it
+        logger.info(f"[WhatsApp Web] Bridge state check: is_running={bridge.is_running}, is_ready={bridge.is_ready}")
+        if bridge.is_running and bridge.is_ready:
+            logger.info("[WhatsApp Web] Bridge already running and ready, reusing...")
+            bridge.set_event_callback(self._on_bridge_event)
+            event_type = "ready"
+        else:
+            # Restart bridge fresh
+            if bridge.is_running:
+                logger.info("[WhatsApp Web] Restarting bridge on current event loop...")
+                await bridge.stop()
+                # Give wwebjs time to save session files
+                import asyncio
+                await asyncio.sleep(2)
 
-        await bridge.start()
+            await bridge.start()
 
-        # Register event callback
-        bridge.set_event_callback(self._on_bridge_event)
+            # Register event callback
+            bridge.set_event_callback(self._on_bridge_event)
 
-        # Wait for ready or QR — if QR is needed the user must login first
-        logger.info("[WhatsApp Web] Waiting for bridge to become ready...")
-        event_type, _ = await bridge.wait_for_qr_or_ready(timeout=120.0)
+            # Wait for ready or QR — if QR is needed the user must login first
+            logger.info("[WhatsApp Web] Waiting for bridge to become ready...")
+            event_type, _ = await bridge.wait_for_qr_or_ready(timeout=90.0)
 
         if event_type == "qr":
-            # Not authenticated — stop the bridge and tell user to login
-            logger.warning("[WhatsApp Web] Bridge requires QR scan — user must run /whatsapp login first")
+            # Not authenticated — stop the bridge quietly (user will connect via settings UI)
+            logger.info("[WhatsApp Web] Session expired or not authenticated — connect via settings to scan QR")
             bridge.set_event_callback(None)
             await bridge.stop()
-            raise RuntimeError("WhatsApp not authenticated. Please run /whatsapp login to scan the QR code first.")
+            return  # Don't raise — just skip silently
 
         if event_type != "ready":
             bridge.set_event_callback(None)

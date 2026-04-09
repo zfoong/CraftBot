@@ -26,37 +26,11 @@ from agent_core.core.prompts import EVENT_STREAM_SUMMARIZATION_PROMPT
 from sklearn.feature_extraction.text import TfidfVectorizer
 from agent_core.utils.logger import logger
 from agent_core.decorators import profiler, OperationCategory
+from agent_core.utils.token import count_tokens
 import threading
-import tiktoken
-# Ensure tiktoken extension encodings (cl100k_base, etc.) are registered.
-# Required for tiktoken >= 0.12 and PyInstaller frozen builds.
-try:
-    import tiktoken_ext.openai_public  # noqa: F401
-except ImportError:
-    pass
 
 SEVERITIES = ("DEBUG", "INFO", "WARN", "ERROR")
 MAX_EVENT_INLINE_CHARS = 200000
-
-# Token counting utility
-_tokenizer = None
-
-def _get_tokenizer():
-    """Get or create the tiktoken tokenizer (cached for performance)."""
-    global _tokenizer
-    if _tokenizer is None:
-        try:
-            _tokenizer = tiktoken.get_encoding("cl100k_base")
-        except Exception:
-            # Fallback: use o200k_base if cl100k_base is unavailable
-            _tokenizer = tiktoken.get_encoding("o200k_base")
-    return _tokenizer
-
-def count_tokens(text: str) -> int:
-    """Count the number of tokens in a text string using tiktoken."""
-    if not text:
-        return 0
-    return len(_get_tokenizer().encode(text))
 
 
 def get_cached_token_count(rec: "EventRecord") -> int:
@@ -281,6 +255,16 @@ class EventStream:
         )
 
         try:
+            # Skip LLM call if the LLM is already in a consecutive failure state
+            max_failures = getattr(self.llm, "_max_consecutive_failures", 5)
+            current_failures = getattr(self.llm, "consecutive_failures", 0)
+            if current_failures >= max_failures:
+                logger.warning(
+                    f"[EventStream] Skipping LLM summarization: LLM has {current_failures} "
+                    f"consecutive failures (max={max_failures}). Falling back to prune."
+                )
+                raise RuntimeError("LLM in consecutive failure state, skip summarization")
+
             logger.info(f"[EventStream] Running synchronous summarization ({self._total_tokens} tokens)")
             llm_output = self.llm.generate_response(user_prompt=prompt)
             new_summary = (llm_output or "").strip()
@@ -303,7 +287,17 @@ class EventStream:
             logger.info(f"[EventStream] Summarization complete. Tokens: {self._total_tokens}")
 
         except Exception:
-            logger.exception("[EventStream] LLM summarization failed. Keeping all events without summarization.")
+            logger.exception(
+                "[EventStream] LLM summarization failed. "
+                "Pruning oldest events without a summary to prevent retry spam."
+            )
+            # Fallback: drop the oldest chunk without generating a summary so that
+            # _total_tokens falls below the threshold.  Without this, every subsequent
+            # log() call would immediately re-trigger summarization and flood the logs.
+            removed_tokens = sum(get_cached_token_count(r) for r in chunk)
+            self._total_tokens -= removed_tokens
+            self.tail_events = self.tail_events[cutoff:]
+            self._session_sync_points.clear()
 
     # ───────────────────── utilities ─────────────────────
 

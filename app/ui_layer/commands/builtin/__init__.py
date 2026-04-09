@@ -10,6 +10,7 @@ from app.ui_layer.commands.builtin.mcp import MCPCommand
 from app.ui_layer.commands.builtin.skill import SkillCommand
 from app.ui_layer.commands.builtin.cred import CredCommand
 from app.ui_layer.commands.builtin.integrations import IntegrationCommand
+from app.ui_layer.commands.builtin.update import UpdateCommand
 from app.ui_layer.commands.builtin.agent_command import AgentCommandWrapper
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "SkillCommand",
     "CredCommand",
     "IntegrationCommand",
+    "UpdateCommand",
     "AgentCommandWrapper",
 ]

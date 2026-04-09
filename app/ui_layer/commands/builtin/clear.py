@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import List
 
 from app.ui_layer.commands.base import Command, CommandResult
-from app.ui_layer.events import UIEvent, UIEventType
 
 
 class ClearCommand(Command):
@@ -32,13 +31,11 @@ class ClearCommand(Command):
         # Clear action items state
         self._controller.state_store.dispatch("CLEAR_ACTION_ITEMS", None)
 
-        # Emit event for adapters to clear their displays
-        self._controller.event_bus.emit(
-            UIEvent(
-                type=UIEventType.SYSTEM_MESSAGE,
-                data={"message": "__CLEAR__", "is_clear_command": True},
-                source_adapter=adapter_id,
-            )
-        )
+        # Clear chat and action panel via the active adapter's components
+        adapter = self._controller.active_adapter
+        if adapter:
+            await adapter.chat_component.clear()
+            if adapter.action_panel:
+                await adapter.action_panel.clear()
 
         return CommandResult(success=True)

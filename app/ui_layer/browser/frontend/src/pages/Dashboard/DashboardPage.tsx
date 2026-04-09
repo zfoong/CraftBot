@@ -99,7 +99,7 @@ function getChartLabels(period: MetricsTimePeriod): { title: string; description
 }
 
 export function DashboardPage() {
-  const { connected, actions, messages, dashboardMetrics, filteredMetricsCache, requestFilteredMetrics } = useWebSocket()
+  const { connected, actions, messages, dashboardMetrics, filteredMetricsCache, requestFilteredMetrics, subscribeDashboardMetrics, unsubscribeDashboardMetrics } = useWebSocket()
 
   // Derive agent status from actions and messages
   const status = useDerivedAgentStatus({
@@ -128,6 +128,14 @@ export function DashboardPage() {
       requestFilteredMetrics(period)
     }
   }, [requestFilteredMetrics, filteredMetricsCache])
+
+  // Subscribe to live metrics while on this page, unsubscribe on leave
+  useEffect(() => {
+    subscribeDashboardMetrics()
+    return () => {
+      unsubscribeDashboardMetrics()
+    }
+  }, [subscribeDashboardMetrics, unsubscribeDashboardMetrics])
 
   // Request 'total' metrics on initial load
   useEffect(() => {
@@ -159,7 +167,7 @@ export function DashboardPage() {
   // Calculate token ratios
   const inputRatio = totalTokens > 0 ? Math.round((inputTokens / totalTokens) * 100) : 0
   const outputRatio = totalTokens > 0 ? Math.round((outputTokens / totalTokens) * 100) : 0
-  const cachedRatio = inputTokens > 0 ? Math.round((cachedTokens / inputTokens) * 100) : 0
+  const cachedRatio = inputTokens > 0 ? Math.min(100, Math.round((cachedTokens / inputTokens) * 100)) : 0
 
   const cpuPercent = metrics?.system.cpuPercent ?? 0
   const memoryPercent = metrics?.system.memoryPercent ?? 0

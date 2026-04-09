@@ -25,7 +25,7 @@ def read_agent_file(filename: str) -> Dict[str, Any]:
         Dict with 'success', 'content' or 'error' fields
     """
     # Validate filename to prevent directory traversal
-    allowed_files = {"USER.md", "AGENT.md", "MEMORY.md", "PROACTIVE.md"}
+    allowed_files = {"USER.md", "AGENT.md", "SOUL.md", "MEMORY.md", "PROACTIVE.md"}
     if filename not in allowed_files:
         return {
             "success": False,
@@ -69,7 +69,7 @@ def write_agent_file(filename: str, content: str) -> Dict[str, Any]:
         Dict with 'success' and optional 'error' fields
     """
     # Validate filename to prevent directory traversal
-    allowed_files = {"USER.md", "AGENT.md"}
+    allowed_files = {"USER.md", "AGENT.md", "SOUL.md"}
     if filename not in allowed_files:
         return {
             "success": False,
@@ -101,7 +101,7 @@ def restore_agent_file(filename: str) -> Dict[str, Any]:
         Dict with 'success', 'content' or 'error' fields
     """
     # Validate filename
-    allowed_files = {"USER.md", "AGENT.md", "PROACTIVE.md"}
+    allowed_files = {"USER.md", "AGENT.md", "SOUL.md", "PROACTIVE.md"}
     if filename not in allowed_files:
         return {
             "success": False,

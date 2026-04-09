@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
+import { getOllamaInstallPercent } from '../../utils/ollamaInstall'
 import {
   Check,
   AlertCircle,
@@ -123,11 +124,16 @@ function OllamaSetup({ defaultUrl, onConnected }: OllamaSetupProps) {
 
   // ── Installing ──
   if (phase === 'installing') {
+    const pct = getOllamaInstallPercent(installProgress)
     return (
       <div className={styles.ollamaBox}>
         <div className={styles.ollamaStatusRow}>
           <div className={styles.spinnerSmall} />
           <span className={styles.ollamaStatusLabel}>Installing Ollama…</span>
+          <span className={styles.installPct}>{pct}%</span>
+        </div>
+        <div className={styles.installProgressBar}>
+          <div className={styles.installProgressFill} style={{ width: `${pct}%` }} />
         </div>
         <div className={styles.installLog}>
           {installProgress.length === 0 && <span className={styles.installLogLine}>Starting…</span>}

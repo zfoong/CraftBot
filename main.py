@@ -195,7 +195,8 @@ def main():
     # ------------------------------
 
     # Check if GUI mode is enabled
-    gui_mode_enabled = os.getenv("GUI_MODE_ENABLED", "False").lower() == "true"
+    # [V1.2.2] GUI mode is temporarily disabled - always force False
+    gui_mode_enabled = False  # os.getenv("GUI_MODE_ENABLED", "False").lower() == "true"
     docker_started = False
 
     # Check if browser startup UI is active (suppress verbose output)
@@ -242,7 +243,6 @@ def main():
         if not browser_startup_ui:
             print("--------------------------------")
             print("Type '/exit' or use your defined quit hotkey to stop.")
-            print("Ctrl+C is handled by the app logic (ignored by wrapper).")
             print("--------------------------------")
 
         # Run the main Python app in the foreground.

@@ -16,6 +16,7 @@ from agent_core.core.protocols.action import ActionLibraryProtocol
 from agent_core.core.protocols.context import ContextEngineProtocol
 from agent_core.core.protocols.llm import LLMInterfaceProtocol
 from agent_core.core.impl.llm import LLMCallType
+from agent_core.core.impl.llm.errors import LLMConsecutiveFailureError
 from agent_core.core.prompts import (
     SELECT_ACTION_PROMPT,
     SELECT_ACTION_IN_TASK_PROMPT,
@@ -538,7 +539,7 @@ class ActionRouter:
             # agent_info is included for all modes to provide consistent agent context
             system_prompt, _ = self.context_engine.make_prompt(
                 user_flags={"query": False, "expected_output": False},
-                system_flags={"agent_info": True, "policy": False},
+                system_flags={"agent_info": True},
             )
 
             raw_response = None
@@ -620,6 +621,9 @@ class ActionRouter:
                     f"{raw_response} | error={feedback_error}"
                 )
                 current_prompt = self._augment_prompt_with_feedback(prompt, attempt + 1, raw_response, feedback_error)
+            except LLMConsecutiveFailureError:
+                # Fatal: LLM is in a broken state - re-raise immediately, do not retry
+                raise
             except RuntimeError as e:
                 # LLM provider error (empty response, API error, auth failure, etc.)
                 error_msg = str(e)
@@ -633,8 +637,8 @@ class ActionRouter:
                     raise last_error
                 # Otherwise, retry with more context in the prompt
                 current_prompt = self._augment_prompt_with_feedback(
-                    prompt, attempt + 1, 
-                    f"[LLM ERROR] {error_msg}", 
+                    prompt, attempt + 1,
+                    f"[LLM ERROR] {error_msg}",
                     "LLM provider failed - retrying"
                 )
             except Exception as e:

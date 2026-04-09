@@ -148,7 +148,7 @@ class EmbeddingInterface:
                 "model": self.model,
                 "prompt": text,  # Ollama accepts "prompt" for /api/embeddings
             }
-            url: str = f"{self.remote_url.rstrip('/')}/embeddings"
+            url: str = f"{self.remote_url.rstrip('/')}/api/embeddings"
             response = requests.post(url, json=payload, timeout=120)
             response.raise_for_status()
             result = response.json()

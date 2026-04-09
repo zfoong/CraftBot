@@ -807,6 +807,8 @@ class LLMInterface:
         self._byteplus_cache_manager: Optional[BytePlusCacheManager] = None
         # Store system prompts for lazy session creation (instance variable)
         self._session_system_prompts: Dict[str, str] = {}
+        # Anthropic multi-turn session message history for KV cache accumulation
+        self._anthropic_session_messages: Dict[str, List[dict]] = {}
 
         if ctx["byteplus"]:
             self.api_key = ctx["byteplus"]["api_key"]
@@ -847,16 +849,19 @@ class LLMInterface:
         Returns:
             True if initialization was successful, False otherwise.
         """
+        from app.config import get_api_key as _get_api_key, get_base_url as _get_base_url, get_llm_model as _get_llm_model
+
         target_provider = provider or self.provider
-        target_api_key = api_key or self._init_api_key
-        target_base_url = base_url or self._init_base_url
+        target_api_key = api_key if api_key is not None else _get_api_key(target_provider)
+        target_base_url = base_url if base_url is not None else _get_base_url(target_provider)
+        target_model = _get_llm_model()  # None means use registry default
 
         try:
-            logger.info(f"[LLM] Reinitializing with provider: {target_provider}")
+            logger.info(f"[LLM] Reinitializing with provider: {target_provider}, model: {target_model or 'registry default'}")
             ctx = ModelFactory.create(
                 provider=target_provider,
                 interface=InterfaceType.LLM,
-                model_override=None,
+                model_override=target_model,
                 api_key=target_api_key,
                 base_url=target_base_url,
                 deferred=False,
@@ -879,11 +884,13 @@ class LLMInterface:
                     base_url=self.byteplus_base_url,
                     model=self.model,
                 )
-                # Reset session system prompts
+                # Reset session system prompts and Anthropic message history
                 self._session_system_prompts = {}
+                self._anthropic_session_messages = {}
             else:
                 self._byteplus_cache_manager = None
                 self._session_system_prompts = {}
+                self._anthropic_session_messages = {}
 
             # Reinitialize Gemini cache manager
             if self._gemini_client:
@@ -917,6 +924,15 @@ class LLMInterface:
         if log_response:
             logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
+        # Slow mode: throttle before making the API call
+        from app.config import is_slow_mode_enabled
+        _slow_mode_active = is_slow_mode_enabled()
+        if _slow_mode_active:
+            from agent_core.utils.token import count_tokens
+            from app.rate_limiter import get_rate_limiter
+            estimated = count_tokens(system_prompt or "") + count_tokens(user_prompt)
+            get_rate_limiter().wait_if_needed(estimated)
+
         if self.provider == "openai":
             response = self._generate_openai(system_prompt, user_prompt)
         elif self.provider == "remote":
@@ -932,7 +948,13 @@ class LLMInterface:
 
         cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
 
-        STATE.set_agent_property("token_count", STATE.get_agent_property("token_count", 0) + response.get("tokens_used", 0))
+        tokens_used = response.get("tokens_used", 0)
+        STATE.set_agent_property("token_count", STATE.get_agent_property("token_count", 0) + tokens_used)
+
+        if _slow_mode_active and tokens_used > 0:
+            from app.rate_limiter import get_rate_limiter
+            get_rate_limiter().record_usage(tokens_used)
+
         if log_response:
             logger.info(f"[LLM RECV] {cleaned}")
         return cleaned
@@ -1026,9 +1048,10 @@ class LLMInterface:
             task_id: The task ID.
             call_type: Type of LLM call (use LLMCallType enum values).
         """
-        # Clean up stored system prompt
+        # Clean up stored system prompt and Anthropic message history
         session_key = f"{task_id}:{call_type}"
         system_prompt = self._session_system_prompts.pop(session_key, None)
+        self._anthropic_session_messages.pop(session_key, None)
 
         # Clean up provider-specific caches
         if self.provider == "byteplus" and self._byteplus_cache_manager:
@@ -1055,6 +1078,11 @@ class LLMInterface:
                 call_type = key.split(":", 1)[1] if ":" in key else None
                 if call_type:
                     prompts_and_types.append((system_prompt, call_type))
+
+        # Clean up Anthropic multi-turn message history
+        anthropic_keys = [k for k in self._anthropic_session_messages if k.startswith(f"{task_id}:")]
+        for key in anthropic_keys:
+            self._anthropic_session_messages.pop(key, None)
 
         # Clean up provider-specific caches
         if self.provider == "byteplus" and self._byteplus_cache_manager:
@@ -1166,6 +1194,15 @@ class LLMInterface:
         if log_response:
             logger.info(f"[LLM SESSION] task={task_id} call_type={call_type} | user={user_prompt}")
 
+        # Slow mode: throttle before making the API call
+        from app.config import is_slow_mode_enabled
+        _slow_mode_active = is_slow_mode_enabled()
+        if _slow_mode_active:
+            from agent_core.utils.token import count_tokens
+            from app.rate_limiter import get_rate_limiter
+            estimated = count_tokens(user_prompt)
+            get_rate_limiter().wait_if_needed(estimated)
+
         # Handle Gemini with explicit caching (per call_type)
         if self.provider == "gemini" and self._gemini_cache_manager:
             # Get stored system prompt or use provided one
@@ -1181,10 +1218,14 @@ class LLMInterface:
             # Use Gemini with explicit caching (call_type passed for cache keying)
             response = self._generate_gemini(effective_system_prompt, user_prompt, call_type=call_type)
             cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
+            _tokens_used = response.get("tokens_used", 0)
             STATE.set_agent_property(
                 "token_count",
-                STATE.get_agent_property("token_count", 0) + response.get("tokens_used", 0)
+                STATE.get_agent_property("token_count", 0) + _tokens_used
             )
+            if _slow_mode_active and _tokens_used > 0:
+                from app.rate_limiter import get_rate_limiter
+                get_rate_limiter().record_usage(_tokens_used)
             if log_response:
                 logger.info(f"[LLM RECV] {cleaned}")
             return cleaned
@@ -1204,17 +1245,20 @@ class LLMInterface:
             # Use OpenAI with call_type for better cache routing via prompt_cache_key
             response = self._generate_openai(effective_system_prompt, user_prompt, call_type=call_type)
             cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
+            _tokens_used = response.get("tokens_used", 0)
             STATE.set_agent_property(
                 "token_count",
-                STATE.get_agent_property("token_count", 0) + response.get("tokens_used", 0)
+                STATE.get_agent_property("token_count", 0) + _tokens_used
             )
+            if _slow_mode_active and _tokens_used > 0:
+                from app.rate_limiter import get_rate_limiter
+                get_rate_limiter().record_usage(_tokens_used)
             if log_response:
                 logger.info(f"[LLM RECV] {cleaned}")
             return cleaned
 
-        # Handle Anthropic with call_type-based extended TTL caching
+        # Handle Anthropic with multi-turn KV caching
         if self.provider == "anthropic" and self._anthropic_client:
-            # Get stored system prompt or use provided one
             session_key = f"{task_id}:{call_type}"
             stored_system_prompt = self._session_system_prompts.get(session_key)
             effective_system_prompt = system_prompt_for_new_session or stored_system_prompt
@@ -1224,13 +1268,79 @@ class LLMInterface:
                     f"No system prompt for task {task_id}:{call_type}"
                 )
 
-            # Use Anthropic with call_type for extended 1-hour TTL caching
-            response = self._generate_anthropic(effective_system_prompt, user_prompt, call_type=call_type)
+            # Get or initialize multi-turn message history
+            if session_key not in self._anthropic_session_messages:
+                self._anthropic_session_messages[session_key] = []
+
+            history = self._anthropic_session_messages[session_key]
+
+            # Build messages: history (with cache_control on last assistant) + new user msg
+            messages: List[dict] = []
+
+            # Copy history messages (strip old cache_control, we'll re-place it)
+            for msg in history:
+                msg_copy = {"role": msg["role"]}
+                content = msg["content"]
+                if isinstance(content, list):
+                    # Strip cache_control from content blocks
+                    msg_copy["content"] = [
+                        {k: v for k, v in block.items() if k != "cache_control"}
+                        for block in content
+                    ]
+                else:
+                    msg_copy["content"] = content
+                messages.append(msg_copy)
+
+            # Place cache_control on the LAST assistant message for prefix caching
+            if messages:
+                cache_control = {"type": "ephemeral"}
+                if call_type:
+                    cache_control["ttl"] = "1h"
+                for i in range(len(messages) - 1, -1, -1):
+                    if messages[i]["role"] == "assistant":
+                        content = messages[i]["content"]
+                        if isinstance(content, str):
+                            messages[i]["content"] = [
+                                {"type": "text", "text": content, "cache_control": cache_control}
+                            ]
+                        elif isinstance(content, list):
+                            # Add cache_control to the last text block
+                            for j in range(len(content) - 1, -1, -1):
+                                if content[j].get("type") == "text":
+                                    content[j]["cache_control"] = cache_control
+                                    break
+                        break
+
+            # Append the new user message
+            messages.append({"role": "user", "content": user_prompt})
+
+            logger.debug(
+                f"[ANTHROPIC SESSION] {session_key}: {len(history)} history msgs, "
+                f"sending {len(messages)} total msgs"
+            )
+
+            # Call Anthropic with the full multi-turn messages
+            # Note: _generate_anthropic adds JSON prefill as the last message automatically
+            response = self._generate_anthropic(
+                effective_system_prompt, user_prompt, call_type=call_type, messages=messages
+            )
+
+            # On success, accumulate user message + assistant response in history
+            # The response content already has '{' prepended from JSON prefill
+            assistant_content = response.get("content", "")
+            if assistant_content and "error" not in response:
+                history.append({"role": "user", "content": user_prompt})
+                history.append({"role": "assistant", "content": assistant_content})
+
             cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
+            _tokens_used = response.get("tokens_used", 0)
             STATE.set_agent_property(
                 "token_count",
-                STATE.get_agent_property("token_count", 0) + response.get("tokens_used", 0)
+                STATE.get_agent_property("token_count", 0) + _tokens_used
             )
+            if _slow_mode_active and _tokens_used > 0:
+                from app.rate_limiter import get_rate_limiter
+                get_rate_limiter().record_usage(_tokens_used)
             if log_response:
                 logger.info(f"[LLM RECV] {cleaned}")
             return cleaned
@@ -1311,10 +1421,14 @@ class LLMInterface:
 
         cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
 
+        _tokens_used = response.get("tokens_used", 0)
         STATE.set_agent_property(
             "token_count",
-            STATE.get_agent_property("token_count", 0) + response.get("tokens_used", 0)
+            STATE.get_agent_property("token_count", 0) + _tokens_used
         )
+        if _slow_mode_active and _tokens_used > 0:
+            from app.rate_limiter import get_rate_limiter
+            get_rate_limiter().record_usage(_tokens_used)
         if log_response:
             logger.info(f"[LLM RECV] {cleaned}")
         return cleaned
@@ -1698,7 +1812,7 @@ class LLMInterface:
                     "temperature": self.temperature,
                 }
             }
-            url: str = f"{self.remote_url.rstrip('/')}/generate"
+            url: str = f"{self.remote_url.rstrip('/')}/api/generate"
             response = requests.post(url, json=payload, timeout=600)
             response.raise_for_status()
             result = response.json()
@@ -2050,12 +2164,18 @@ class LLMInterface:
 
     @profile("llm_anthropic_call", OperationCategory.LLM)
     def _generate_anthropic(
-        self, system_prompt: str | None, user_prompt: str, call_type: Optional[str] = None
+        self, system_prompt: str | None, user_prompt: str,
+        call_type: Optional[str] = None,
+        messages: Optional[List[dict]] = None,
     ) -> Dict[str, Any]:
         """Generate response using Anthropic with prompt caching.
 
         Anthropic's prompt caching uses `cache_control` markers on content blocks.
         When the system prompt is long enough (≥1024 tokens), we enable caching.
+
+        For multi-turn sessions, pass pre-built `messages` with cache_control on the
+        last assistant message. This enables prefix caching of the entire conversation
+        history, not just the system prompt.
 
         TTL Options:
         - Default (5 minutes): Free, uses "ephemeral" type
@@ -2068,6 +2188,9 @@ class LLMInterface:
             user_prompt: The user prompt for this request.
             call_type: Optional call type (e.g., "reasoning", "action_selection").
                        When provided, uses extended 1-hour TTL for better cache hit rates.
+            messages: Optional pre-built messages list for multi-turn sessions.
+                      When provided, used instead of building a single-turn message.
+                      JSON prefill is added automatically when applicable.
 
         Cache hits are logged when `cache_read_input_tokens` > 0 in the response.
         """
@@ -2087,16 +2210,20 @@ class LLMInterface:
             # Always enable JSON mode via prefilling
             json_mode = True
 
-            # Build the message with optional system prompt
-            messages = [{"role": "user", "content": user_prompt}]
-            # For JSON mode, use prefilling to force JSON output
+            # Build the message list: use pre-built messages for multi-turn, or single-turn
+            if messages is not None:
+                api_messages = list(messages)  # Copy to avoid mutating caller's list
+            else:
+                api_messages = [{"role": "user", "content": user_prompt}]
+            # For JSON mode, use prefilling to force JSON output (always last message)
             if json_mode:
-                messages.append({"role": "assistant", "content": "{"})
+                api_messages.append({"role": "assistant", "content": "{"})
 
+            # Anthropic requires max_tokens; use 16384 (Claude 4 default) to avoid truncation
             message_kwargs: Dict[str, Any] = {
                 "model": self.model,
-                "max_tokens": self.max_tokens,
-                "messages": messages,
+                "max_tokens": 16384,
+                "messages": api_messages,
             }
 
             if system_prompt:

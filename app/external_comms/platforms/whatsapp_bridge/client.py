@@ -91,12 +91,37 @@ class WhatsAppBridge:
             logger.warning("[WA-Bridge] Already running")
             return
 
+        # Kill any stale Chromium processes using the wwebjs auth directory
+        auth_dir = Path(self._auth_dir)
+        if os.name == "nt":
+            try:
+                # Find and kill chrome processes with our auth dir in command line
+                result = subprocess.run(
+                    ["wmic", "process", "where", f"commandline like '%{auth_dir.name}%' and name='chrome.exe'", "get", "processid"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                for line in result.stdout.strip().split("\n")[1:]:
+                    pid = line.strip()
+                    if pid.isdigit():
+                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=5)
+                        logger.info(f"[WA-Bridge] Killed stale Chromium process: {pid}")
+            except Exception:
+                pass
+        # Also clean lock file
+        lock_file = auth_dir / "session" / "SingletonLock"
+        if lock_file.exists():
+            try:
+                lock_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
         # Ensure node_modules are installed
         node_modules = BRIDGE_DIR / "node_modules"
         if not node_modules.exists():
             logger.info("[WA-Bridge] Installing npm dependencies...")
+            npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
             proc = await asyncio.create_subprocess_exec(
-                "npm", "install",
+                npm_cmd, "install",
                 cwd=str(BRIDGE_DIR),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -108,8 +133,9 @@ class WhatsAppBridge:
 
         logger.info(f"[WA-Bridge] Starting bridge process (auth_dir={self._auth_dir})")
 
+        node_cmd = "node.exe" if os.name == "nt" else "node"
         self._process = await asyncio.create_subprocess_exec(
-            "node", str(BRIDGE_SCRIPT), self._auth_dir,
+            node_cmd, str(BRIDGE_SCRIPT), self._auth_dir,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -129,19 +155,29 @@ class WhatsAppBridge:
         self._running = False
         self._ready = False
 
-        # Send shutdown command
+        # Send shutdown command — give wwebjs time to save session
         try:
-            await self.send_command("shutdown", timeout=5.0)
+            await self.send_command("shutdown", timeout=10.0)
         except Exception:
             pass
 
-        # Wait for process to exit
+        # Wait for graceful exit — wwebjs needs time to save session files
         if self._process:
             try:
-                await asyncio.wait_for(self._process.wait(), timeout=10.0)
+                await asyncio.wait_for(self._process.wait(), timeout=20.0)
             except asyncio.TimeoutError:
-                logger.warning("[WA-Bridge] Process did not exit, killing")
-                self._process.kill()
+                logger.warning("[WA-Bridge] Process did not exit, killing process tree")
+                if os.name == "nt":
+                    # Windows: kill entire process tree (including spawned Chromium)
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(self._process.pid)],
+                            capture_output=True, timeout=5,
+                        )
+                    except Exception:
+                        self._process.kill()
+                else:
+                    self._process.kill()
 
         # Cancel reader tasks
         for task in [self._reader_task, self._stderr_task]:
@@ -348,7 +384,8 @@ class WhatsAppBridge:
 
         elif event == "message_sent":
             logger.info(
-                f"[WA-Bridge] Message sent to {data.get('chat', {}).get('name', 'unknown')}: "
+                f"[WA-Bridge] Message sent to {data.get('chat', {}).get('name', 'unknown')} "
+                f"(self_chat={data.get('is_self_chat', False)}): "
                 f"{(data.get('body', '') or '')[:80]}"
             )
 

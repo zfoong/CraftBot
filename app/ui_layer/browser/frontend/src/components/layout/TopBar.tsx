@@ -19,7 +19,7 @@ function DiscordIcon() {
 
 export function TopBar() {
   const { theme, toggleTheme } = useTheme()
-  const { connected, actions, messages } = useWebSocket()
+  const { connected, actions, messages, version } = useWebSocket()
 
   // Derive agent status from actions and messages
   const derivedStatus = useDerivedAgentStatus({
@@ -51,6 +51,7 @@ export function TopBar() {
       </div>
 
       <div className={styles.right}>
+        {version && <span className={styles.versionBadge}>v{version}</span>}
         <IconButton
           icon={theme === 'dark' ? <Sun /> : <Moon />}
           onClick={toggleTheme}

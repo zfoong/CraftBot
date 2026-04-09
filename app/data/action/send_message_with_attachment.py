@@ -67,6 +67,24 @@ def send_message_with_attachment(input_data: dict) -> dict:
     if isinstance(file_paths, str):
         file_paths = [file_paths]
 
+    # Validate all file paths exist before attempting to send
+    import os
+    errors = []
+    for fp in file_paths:
+        if not os.path.exists(fp):
+            errors.append(f"File not found: {fp}")
+        elif os.path.isdir(fp):
+            errors.append(f"Cannot attach directory: {fp}")
+
+    if errors:
+        return {
+            'status': 'error',
+            'fire_at_delay': 0,
+            'wait_for_user_reply': wait_for_user_reply,
+            'files_sent': 0,
+            'errors': errors,
+        }
+
     # In simulated mode, skip the actual interface call for testing
     if simulated_mode:
         return {

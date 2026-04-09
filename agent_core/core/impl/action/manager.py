@@ -260,6 +260,10 @@ class ActionManager:
                     logger.error(f"[ERROR] Failed to execute divisible action {action.name}: {e}", exc_info=True)
                     raise e
 
+            # Auto-save large base64 strings in action output to temp files
+            # This prevents LLMs from truncating binary data when it appears in context
+            outputs = self._extract_base64_to_files(outputs, action.name)
+
             logger.debug(f"[OUTPUT DATA] Final outputs for action {action.name}: {outputs}")
 
             if status != "error":
@@ -591,3 +595,66 @@ class ActionManager:
             attempt += 1
 
         return {"success": False, "message": "Observation failed or timed out."}
+
+    @staticmethod
+    def _extract_base64_to_files(data: dict, action_name: str) -> dict:
+        """
+        Scan action output for large base64 data URLs and save them to temp files.
+        Replaces the base64 string with the file path so LLMs don't truncate it.
+        """
+        import tempfile
+        import base64
+        import os
+        import re
+
+        if not isinstance(data, dict):
+            return data
+
+        MIN_BASE64_LENGTH = 500  # Only process strings longer than this
+
+        def process_value(key: str, value):
+            if not isinstance(value, str) or len(value) < MIN_BASE64_LENGTH:
+                return value
+
+            # Check for data URL format: data:image/png;base64,iVBOR...
+            match = re.match(r'^data:([\w/+.-]+);base64,(.+)$', value, re.DOTALL)
+            if match:
+                mime_type = match.group(1)
+                b64_data = match.group(2)
+                ext = {
+                    'image/png': '.png',
+                    'image/jpeg': '.jpg',
+                    'image/gif': '.gif',
+                    'image/webp': '.webp',
+                    'application/pdf': '.pdf',
+                }.get(mime_type, '.bin')
+
+                try:
+                    decoded = base64.b64decode(b64_data)
+                    tmp = tempfile.NamedTemporaryFile(
+                        delete=False, suffix=ext,
+                        prefix=f"{action_name}_{key}_",
+                    )
+                    tmp.write(decoded)
+                    tmp.close()
+                    logger.info(f"[ACTION] Saved base64 {key} ({len(b64_data)} chars) to {tmp.name}")
+                    return tmp.name
+                except Exception as e:
+                    logger.warning(f"[ACTION] Failed to extract base64 from {key}: {e}")
+
+            return value
+
+        result = {}
+        for k, v in data.items():
+            if isinstance(v, dict):
+                result[k] = ActionManager._extract_base64_to_files(v, action_name)
+            elif isinstance(v, list):
+                result[k] = [
+                    ActionManager._extract_base64_to_files(item, action_name) if isinstance(item, dict)
+                    else process_value(k, item) if isinstance(item, str)
+                    else item
+                    for item in v
+                ]
+            else:
+                result[k] = process_value(k, v)
+        return result

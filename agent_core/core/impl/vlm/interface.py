@@ -141,11 +141,17 @@ class VLMInterface:
             target_base_url = base_url
 
         try:
-            logger.info(f"[VLM] Reinitializing with provider: {target_provider}")
+            from app.config import get_vlm_model as _get_vlm_model  # type: ignore[import]
+            target_model = _get_vlm_model()
+        except Exception:
+            target_model = None  # app context not available (e.g. agent_core standalone)
+
+        try:
+            logger.info(f"[VLM] Reinitializing with provider: {target_provider}, model: {target_model or 'registry default'}")
             ctx = ModelFactory.create(
                 provider=target_provider,
                 interface=InterfaceType.VLM,
-                model_override=None,
+                model_override=target_model,
                 api_key=target_api_key,
                 base_url=target_base_url,
                 deferred=False,
@@ -227,7 +233,7 @@ class VLMInterface:
             if log_response:
                 logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
-            if self.provider in ("openai", "minimax", "deepseek", "moonshot"):
+            if self.provider in ("openai", "minimax", "deepseek", "moonshot", "grok"):
                 response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt)
             elif self.provider == "remote":
                 response = self._ollama_describe_bytes(image_bytes, system_prompt, user_prompt)
@@ -376,7 +382,7 @@ class VLMInterface:
             "stream": False,
             "temperature": self.temperature,
         }
-        url: str = f"{self.remote_url.rstrip('/')}/vision"
+        url: str = f"{self.remote_url.rstrip('/')}/api/generate"
         r = requests.post(url, json=payload, timeout=600)
         r.raise_for_status()
         content = r.json().get("response", "").strip()
@@ -533,13 +539,15 @@ class VLMInterface:
 
         content = content.strip()
 
-        token_count_input = response.usage.input_tokens
+        # Anthropic reports input_tokens as non-cached input only.
+        # Total input = input_tokens + cache_creation + cache_read
+        base_input = response.usage.input_tokens
         token_count_output = response.usage.output_tokens
-        total_tokens = token_count_input + token_count_output
-
         cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
         cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-        cached_tokens = cache_creation + cache_read
+        token_count_input = base_input + cache_creation + cache_read
+        total_tokens = token_count_input + token_count_output
+        cached_tokens = cache_read
 
         # Record cache metrics
         metrics = get_cache_metrics()

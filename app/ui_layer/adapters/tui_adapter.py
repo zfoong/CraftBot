@@ -391,8 +391,9 @@ class TUIAdapter(InterfaceAdapter):
             await self._run_hard_onboarding(onboarding)
 
         # Queue initial messages
+        from app.config import get_app_version
         await self.chat_updates.put(
-            ("System", "CraftBot TUI ready. Type /help for more info and /exit to quit.", "system")
+            ("System", f"CraftBot v{get_app_version()} ready. Type /help for more info and /exit to quit.", "system")
         )
         await self.status_updates.put("Agent is idle")
 
