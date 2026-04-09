@@ -130,6 +130,7 @@ export function WorkspacePage() {
   const [createName, setCreateName] = useState('')
   const [editingFile, setEditingFile] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
+  const [editExt, setEditExt] = useState('')  // locked file extension during rename
   const [clipboard, setClipboard] = useState<{ action: 'copy' | 'cut'; paths: string[] } | null>(null)
   const [showPreviewContent, setShowPreviewContent] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -321,13 +322,15 @@ export function WorkspacePage() {
   const handleRenameSubmit = useCallback(async () => {
     if (!editingFile || !editName.trim()) return
 
-    const result = await renameFile(editingFile, editName)
+    const fullName = editExt ? `${editName}${editExt}` : editName
+    const result = await renameFile(editingFile, fullName)
 
     if (result.success) {
       setEditingFile(null)
       setEditName('')
+      setEditExt('')
     }
-  }, [editingFile, editName, renameFile])
+  }, [editingFile, editName, editExt, renameFile])
 
   const handleDelete = useCallback(async (paths: string[]) => {
     if (paths.length === 0) return
@@ -503,25 +506,30 @@ export function WorkspacePage() {
         <div className={styles.fileName}>
           <span className={styles.fileIcon}>{getFileIcon(file)}</span>
           {isEditing ? (
-            <input
-              ref={editInputRef}
-              type="text"
-              className={styles.editInput}
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleRenameSubmit()
-                if (e.key === 'Escape') {
+            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <input
+                ref={editInputRef}
+                type="text"
+                className={styles.editInput}
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRenameSubmit()
+                  if (e.key === 'Escape') {
+                    setEditingFile(null)
+                    setEditName('')
+                    setEditExt('')
+                  }
+                }}
+                onBlur={() => {
                   setEditingFile(null)
                   setEditName('')
-                }
-              }}
-              onBlur={() => {
-                setEditingFile(null)
-                setEditName('')
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
+                  setEditExt('')
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+              {editExt && <span style={{ opacity: 0.5, fontSize: 'inherit', pointerEvents: 'none' }}>{editExt}</span>}
+            </span>
           ) : (
             <span className={styles.fileNameText}>
               {file.name}
@@ -611,7 +619,19 @@ export function WorkspacePage() {
           className={styles.contextMenuItem}
           onClick={() => {
             setEditingFile(file.path)
-            setEditName(file.name)
+            if (file.type !== 'directory') {
+              const lastDot = file.name.lastIndexOf('.')
+              if (lastDot > 0) {
+                setEditName(file.name.substring(0, lastDot))
+                setEditExt(file.name.substring(lastDot))
+              } else {
+                setEditName(file.name)
+                setEditExt('')
+              }
+            } else {
+              setEditName(file.name)
+              setEditExt('')
+            }
             setContextMenu(null)
           }}
         >
@@ -844,7 +864,19 @@ export function WorkspacePage() {
             icon={<Edit3 size={14} />}
             onClick={() => {
               setEditingFile(selectedFile.path)
-              setEditName(selectedFile.name)
+              if (selectedFile.type !== 'directory') {
+                const lastDot = selectedFile.name.lastIndexOf('.')
+                if (lastDot > 0) {
+                  setEditName(selectedFile.name.substring(0, lastDot))
+                  setEditExt(selectedFile.name.substring(lastDot))
+                } else {
+                  setEditName(selectedFile.name)
+                  setEditExt('')
+                }
+              } else {
+                setEditName(selectedFile.name)
+                setEditExt('')
+              }
             }}
           >
             Rename
