@@ -92,7 +92,11 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
       onMessage('living_ui_marketplace_list', (data: any) => {
         setMarketplaceLoading(false)
         if (data.success) {
-          setApps(data.apps || [])
+          const appsWithThumbnails = (data.apps || []).map((app: any) => ({
+            ...app,
+            preview: app.preview || (app.folder ? `https://raw.githubusercontent.com/CraftOS-dev/living-ui-marketplace/main/${app.folder}/thumbnail.png` : undefined),
+          }))
+          setApps(appsWithThumbnails)
           setMarketplaceError(null)
         } else {
           setMarketplaceError(data.error || 'Failed to load marketplace')
@@ -261,7 +265,9 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
                     border: '1px solid var(--border-primary)',
                   }}>
                     {app.preview ? (
-                      <img src={app.preview} alt={app.name} style={{ width: 80, height: 60, borderRadius: 'var(--radius-sm)', objectFit: 'cover' }} />
+                      <img src={app.preview} alt={app.name} referrerPolicy="no-referrer"
+                        style={{ width: 80, height: 60, borderRadius: 'var(--radius-sm)', objectFit: 'cover', background: 'var(--bg-secondary)' }}
+                        onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).style.display = 'none' }} />
                     ) : (
                       <div style={{ width: 80, height: 60, borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Package size={24} style={{ color: 'var(--text-muted)' }} />
