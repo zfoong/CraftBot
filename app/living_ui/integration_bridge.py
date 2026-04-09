@@ -44,6 +44,8 @@ class IntegrationBridge:
         """Register integration bridge routes on the aiohttp app."""
         app.router.add_get("/api/integrations/available", self._handle_available)
         app.router.add_post("/api/integrations/proxy", self._handle_proxy)
+        app.router.add_post("/api/bridge/llm", self._handle_llm)
+        app.router.add_post("/api/bridge/vlm", self._handle_vlm)
         logger.info("[INTEGRATION_BRIDGE] Routes registered")
 
     async def cleanup(self) -> None:
@@ -146,6 +148,79 @@ class IntegrationBridge:
         except Exception as e:
             logger.error(f"[INTEGRATION_BRIDGE] Proxy error: {e}")
             return web.json_response({"error": f"Proxy error: {str(e)}"}, status=502)
+
+    async def _handle_llm(self, request: web.Request) -> web.Response:
+        """Proxy LLM completion request through CraftBot's configured LLM."""
+        project_id = self._validate_token(request)
+        if not project_id:
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        prompt = data.get("prompt", "")
+        system_message = data.get("system_message")
+
+        if not prompt:
+            return web.json_response({"error": "Missing required field: prompt"}, status=400)
+
+        try:
+            import app.internal_action_interface as iai
+            result = await iai.InternalActionInterface.use_llm(prompt, system_message)
+            llm_response = result.get("llm_response", "")
+            if isinstance(llm_response, dict):
+                response_text = llm_response.get("content", "")
+            else:
+                response_text = str(llm_response)
+            return web.json_response({"content": response_text})
+        except Exception as e:
+            logger.error(f"[INTEGRATION_BRIDGE] LLM error: {e}")
+            return web.json_response({"error": f"LLM error: {str(e)}"}, status=502)
+
+    async def _handle_vlm(self, request: web.Request) -> web.Response:
+        """Proxy VLM image description through CraftBot's configured VLM."""
+        project_id = self._validate_token(request)
+        if not project_id:
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        image_url = data.get("image_url", "")
+        prompt = data.get("prompt", "Describe this image.")
+
+        if not image_url:
+            return web.json_response({"error": "Missing required field: image_url"}, status=400)
+
+        try:
+            # Download image to temp file
+            import tempfile
+            import os
+            response = await self._http_client.get(image_url)
+            if response.status_code != 200:
+                return web.json_response({"error": f"Failed to download image: HTTP {response.status_code}"}, status=424)
+
+            # Save to temp file for VLM
+            suffix = ".jpg"
+            if "png" in response.headers.get("content-type", ""):
+                suffix = ".png"
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            tmp.write(response.content)
+            tmp.close()
+
+            try:
+                import app.internal_action_interface as iai
+                description = iai.InternalActionInterface.describe_image(tmp.name, prompt)
+                return web.json_response({"description": description})
+            finally:
+                os.unlink(tmp.name)
+        except Exception as e:
+            logger.error(f"[INTEGRATION_BRIDGE] VLM error: {e}")
+            return web.json_response({"error": f"VLM error: {str(e)}"}, status=502)
 
     # ------------------------------------------------------------------
     # Helpers
