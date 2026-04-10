@@ -246,3 +246,52 @@ async def living_ui_report_progress(input_data: dict) -> dict:
             "status": "error",
             "message": f"Failed to report progress: {str(e)}",
         }
+
+
+@action(
+    name="living_ui_import_external",
+    description=(
+        "Import an external app as a Living UI project. "
+        "Use this when the user wants to add an existing app (Go, Node.js, Python, Rust, static site) "
+        "to their Living UI dashboard. The agent should first analyze the app source code to determine "
+        "the runtime, build/install command, start command, and health check strategy, then call this action."
+    ),
+    action_sets=["living_ui"],
+    input_schema={
+        "name": {"type": "string", "description": "Display name for the project.", "example": "Glance Dashboard"},
+        "description": {"type": "string", "description": "Brief app description.", "example": "Self-hosted dashboard"},
+        "source_path": {"type": "string", "description": "Absolute path to the app source code.", "example": "/path/to/app"},
+        "app_runtime": {"type": "string", "description": "Runtime: node, python, go, rust, docker, static, or unknown.", "example": "go"},
+        "install_command": {"type": "string", "description": "Command to install/build the app (empty if none needed).", "example": "go build -o app ."},
+        "start_command": {"type": "string", "description": "Command to start the app. Use {{PORT}} placeholder for port.", "example": "./app --port {{PORT}}"},
+        "health_strategy": {"type": "string", "description": "Health check: http_get, tcp, or process_alive.", "example": "http_get"},
+        "health_url": {"type": "string", "description": "Health check URL (for http_get). Use {{PORT}} placeholder.", "example": "http://localhost:{{PORT}}/health"},
+        "port_env_var": {"type": "string", "description": "Env var name for port injection (e.g., PORT). Empty if app uses command-line flag.", "example": "PORT"},
+    },
+    output_schema={
+        "status": {"type": "string", "example": "success"},
+        "project": {"type": "object", "description": "Project info dict."},
+    },
+)
+async def living_ui_import_external(input_data: dict) -> dict:
+    """Import an external app as a Living UI project."""
+    try:
+        from app.living_ui import get_living_ui_manager
+        manager = get_living_ui_manager()
+        if not manager:
+            return {"status": "error", "message": "Living UI manager not available."}
+
+        result = await manager.import_external_app(
+            name=input_data.get("name", "External App"),
+            description=input_data.get("description", ""),
+            source_path=input_data["source_path"],
+            app_runtime=input_data.get("app_runtime", "unknown"),
+            install_command=input_data.get("install_command", ""),
+            start_command=input_data.get("start_command", ""),
+            health_strategy=input_data.get("health_strategy", "tcp"),
+            health_url=input_data.get("health_url", ""),
+            port_env_var=input_data.get("port_env_var", "PORT"),
+        )
+        return result
+    except Exception as e:
+        return {"status": "error", "message": f"Import failed: {str(e)}"}

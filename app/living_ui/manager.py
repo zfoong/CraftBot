@@ -52,9 +52,12 @@ class LivingUIProject:
     task_id: Optional[str] = None
     auto_launch: bool = False  # Auto-launch on CraftBot startup
     log_cleanup: bool = True  # Clean logs on restart
+    project_type: str = 'native'  # 'native' or 'external'
+    app_runtime: Optional[str] = None  # 'go', 'node', 'python', 'rust', 'docker', 'static'
     bridge_token: str = ""  # Ephemeral token for integration bridge (NOT serialized)
     process: Optional[subprocess.Popen] = None  # Frontend process
     backend_process: Optional[subprocess.Popen] = None  # Backend process
+    app_process: Optional[subprocess.Popen] = None  # Single process for external apps
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -74,6 +77,8 @@ class LivingUIProject:
             'error': self.error,
             'autoLaunch': self.auto_launch,
             'logCleanup': self.log_cleanup,
+            'projectType': self.project_type,
+            'appRuntime': self.app_runtime,
         }
 
 
@@ -470,6 +475,8 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                             theme=project_data.get('theme', 'system'),
                             auto_launch=project_data.get('autoLaunch', False),
                             log_cleanup=project_data.get('logCleanup', True),
+                            project_type=project_data.get('projectType', 'native'),
+                            app_runtime=project_data.get('appRuntime'),
                         )
                         # Reset status to stopped for all loaded projects
                         project.status = 'stopped' if project.status == 'running' else project.status
@@ -809,6 +816,11 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             return {"status": "error", "step": "setup", "errors": ["No pipeline defined in manifest"]}
 
         logger.info(f"[LIVING_UI:PIPELINE] Starting launch pipeline for {project.name} ({project_id})")
+
+        # Check for single-process mode (external apps)
+        app_cfg = pipeline.get('app')
+        if app_cfg:
+            return await self._launch_single_process(project_id, project, project_path, app_cfg)
 
         # Stop any existing processes from previous launch attempts
         # This prevents orphan uvicorn/vite processes accumulating on repeated calls
@@ -1224,7 +1236,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
     def _start_process(
         self, cwd: Path, command: str, log_file: Path, port: int = 0,
-        project: "LivingUIProject" = None,
+        project: "LivingUIProject" = None, extra_env: dict = None,
     ) -> subprocess.Popen:
         """Start a background process with output redirected to a log file."""
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1234,6 +1246,8 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
         # Build env with integration bridge vars if project provided
         env = os.environ.copy()
+        if extra_env:
+            env.update(extra_env)
         if project and project.bridge_token:
             bridge_port = int(os.environ.get("BROWSER_PORT", "7926"))
             env["CRAFTBOT_BRIDGE_URL"] = f"http://localhost:{bridge_port}"
@@ -2040,6 +2054,189 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
     # Integration bridge helpers
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # External app support
+    # ------------------------------------------------------------------
+
+    async def _launch_single_process(
+        self, project_id: str, project: 'LivingUIProject', project_path: Path, app_cfg: dict
+    ) -> dict:
+        """Launch a single-process app (external apps, Go, Node, etc.)."""
+        cwd = project_path / app_cfg.get('cwd', '.')
+        port = project.port
+        if not port:
+            port = self._allocate_port()
+            project.port = port
+
+        if not await self._ensure_port_available(port):
+            return {"status": "error", "step": "app.port", "errors": [f"Port {port} occupied"]}
+
+        # Install step (optional)
+        install_cmd = app_cfg.get('install', '')
+        if install_cmd:
+            logger.info(f"[LIVING_UI:PIPELINE] [app.install] Running: {install_cmd}")
+            result = await self._run_pipeline_command(cwd, install_cmd, "app.install")
+            if result["status"] == "error":
+                return result
+
+        # Start the process
+        start_cmd = app_cfg.get('start', '')
+        if not start_cmd:
+            return {"status": "error", "step": "app.start", "errors": ["No start command in manifest"]}
+
+        logs_dir = project_path / 'logs'
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        log_file = logs_dir / 'app_output.log'
+
+        # Build extra env vars from manifest
+        extra_env = {}
+        for k, v in app_cfg.get('env', {}).items():
+            extra_env[k] = str(v).replace('{{PORT}}', str(port)).replace('{{BACKEND_PORT}}', str(project.backend_port or port))
+
+        # Replace port placeholders in start command
+        start_cmd = start_cmd.replace('{{PORT}}', str(port)).replace('{{BACKEND_PORT}}', str(project.backend_port or port))
+
+        # Generate bridge token
+        from uuid import uuid4
+        project.bridge_token = str(uuid4())
+
+        app_process = self._start_process(cwd, start_cmd, log_file, port=port, project=project, extra_env=extra_env)
+        project.app_process = app_process
+        logger.info(f"[LIVING_UI:PIPELINE] App starting on port {port}")
+
+        # Health check with strategy
+        health_cfg = app_cfg.get('health', {})
+        healthy = await self._check_health_with_strategy(health_cfg, port, app_process)
+        if not healthy:
+            log_tail = self._read_log_tail(log_file, 1000)
+            if app_process.poll() is not None:
+                err = f"App process exited with code {app_process.returncode}"
+            else:
+                err = f"App not responding on port {port}"
+                app_process.terminate()
+            project.app_process = None
+            return {"status": "error", "step": "app.health", "errors": [err, log_tail]}
+
+        project.url = f"http://localhost:{port}"
+        project.status = 'running'
+        self._save_projects()
+
+        logger.info(f"[LIVING_UI:PIPELINE] App ready on port {port}")
+        return {
+            "status": "success",
+            "url": project.url,
+            "port": port,
+        }
+
+    async def import_external_app(
+        self,
+        name: str,
+        description: str,
+        source_path: str,
+        app_runtime: str = 'unknown',
+        install_command: str = '',
+        start_command: str = '',
+        health_strategy: str = 'tcp',
+        health_url: str = '',
+        port_env_var: str = 'PORT',
+    ) -> Dict[str, Any]:
+        """Import an external app as a Living UI project."""
+        project_id = self._generate_id()
+        sanitized_name = self._sanitize_name(name)
+        project_path = self.living_ui_dir / f"{sanitized_name}_{project_id}"
+
+        try:
+            # Copy source to workspace
+            shutil.copytree(source_path, project_path)
+            logger.info(f"[LIVING_UI] Copied external app to {project_path}")
+        except Exception as e:
+            return {"status": "error", "error": f"Failed to copy app: {e}"}
+
+        # Allocate single port
+        port = self._allocate_port()
+
+        # Create config directory and manifest
+        config_dir = project_path / 'config'
+        config_dir.mkdir(exist_ok=True)
+        logs_dir = project_path / 'logs'
+        logs_dir.mkdir(exist_ok=True)
+
+        # Build health config
+        health_cfg: Any = {"strategy": health_strategy}
+        if health_strategy == 'http_get':
+            health_cfg["url"] = health_url or f"http://localhost:{port}"
+            health_cfg["timeout"] = 30
+
+        # Generate manifest
+        manifest = {
+            "id": project_id,
+            "name": name,
+            "version": "1.0.0",
+            "description": description,
+            "projectType": "external",
+            "appRuntime": app_runtime,
+            "livingUIVersion": "1.0",
+            "ports": {"app": port},
+            "pipeline": {
+                "app": {
+                    "cwd": ".",
+                    "install": install_command,
+                    "start": start_command,
+                    "env": {port_env_var: str(port)} if port_env_var else {},
+                    "health": health_cfg,
+                }
+            },
+            "agentAwareness": {"enabled": False, "observationMode": "external"},
+        }
+
+        manifest_path = config_dir / 'manifest.json'
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+
+        project = LivingUIProject(
+            id=project_id,
+            name=name,
+            description=description,
+            path=str(project_path),
+            status='created',
+            port=port,
+            project_type='external',
+            app_runtime=app_runtime,
+        )
+
+        self.projects[project_id] = project
+        self._save_projects()
+
+        logger.info(f"[LIVING_UI] Imported external app: {name} ({project_id})")
+        return {
+            "status": "success",
+            "project": project.to_dict(),
+        }
+
+    async def _check_health_with_strategy(self, health_cfg, port: int, process, timeout: int = 30) -> bool:
+        """Check health using configured strategy (http_get, tcp, process_alive, or URL string)."""
+        if isinstance(health_cfg, str):
+            # Backward compat: plain URL string
+            return await self._wait_for_health_check(health_cfg, timeout=timeout)
+
+        if not isinstance(health_cfg, dict):
+            # No health config — just check if port is listening
+            return await self._wait_for_server(port, timeout=timeout)
+
+        strategy = health_cfg.get('strategy', 'tcp')
+        timeout = health_cfg.get('timeout', timeout)
+
+        if strategy == 'http_get':
+            url = health_cfg.get('url', f'http://localhost:{port}')
+            url = url.replace('{{PORT}}', str(port))
+            return await self._wait_for_health_check(url, timeout=timeout)
+        elif strategy == 'tcp':
+            return await self._wait_for_server(port, timeout=timeout)
+        elif strategy == 'process_alive':
+            await asyncio.sleep(2)
+            return process.poll() is None
+
+        return await self._wait_for_server(port, timeout=timeout)
+
     def validate_bridge_token(self, token: str) -> Optional[str]:
         """
         Validate a bridge token and return the associated project ID.
@@ -2080,6 +2277,15 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         if not project:
             logger.error(f"[LIVING_UI] Project not found: {project_id}")
             return False
+
+        # Stop app process (external/single-process apps)
+        if project.app_process:
+            try:
+                project.app_process.terminate()
+                project.app_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                project.app_process.kill()
+            project.app_process = None
 
         # Stop frontend process
         if project.process:

@@ -1436,6 +1436,11 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             custom_fields = data.get("customFields", {})
             await self._handle_marketplace_install(app_id, app_name, app_description, custom_fields)
 
+        elif msg_type == "living_ui_import":
+            source = data.get("source", "")
+            name = data.get("name", "External App")
+            await self._handle_living_ui_import(source, name)
+
         # WhatsApp QR code flow handlers
         elif msg_type == "whatsapp_start_qr":
             await self._handle_whatsapp_start_qr()
@@ -4083,6 +4088,50 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         await self._broadcast({
             "type": "living_ui_marketplace_install",
             "data": result,
+        })
+
+    async def _handle_living_ui_import(self, source: str, name: str) -> None:
+        """Handle import of an external app — creates a task with the importer skill."""
+        if not source:
+            return
+
+        # Create a task that uses the living-ui-importer skill
+        task_instruction = (
+            f"Import this external app as a Living UI:\n"
+            f"Source: {source}\n"
+            f"Name: {name}\n\n"
+            f"Follow the living-ui-importer skill instructions:\n"
+            f"1. Clone/copy the source code\n"
+            f"2. Detect the app type (Go, Node, Python, etc.) — NEVER use Docker if native build is possible\n"
+            f"3. Determine build/install command, start command, port config, and health check\n"
+            f"4. Call living_ui_import_external with the detected configuration\n"
+            f"5. Launch the app and verify it works\n"
+            f"6. Create LIVING_UI.md documenting the app"
+        )
+
+        task_id = self._controller.agent.task_manager.create_task(
+            task_name=f"Import Living UI: {name}",
+            task_instruction=task_instruction,
+            mode="complex",
+            action_sets=["file_operations", "code_execution", "living_ui", "core"],
+            selected_skills=["living-ui-importer"],
+        )
+
+        if task_id:
+            from app.trigger import Trigger
+            import time
+            trigger = Trigger(
+                fire_at=time.time(),
+                priority=50,
+                next_action_description=f"[Living UI] Import: {name}",
+                session_id=task_id,
+                payload={"type": "living_ui_import", "source": source},
+            )
+            await self._controller.agent.triggers.put(trigger)
+
+        await self._broadcast({
+            "type": "living_ui_import",
+            "data": {"status": "started", "name": name, "source": source},
         })
 
     # =====================

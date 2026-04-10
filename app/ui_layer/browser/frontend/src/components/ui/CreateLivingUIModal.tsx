@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { X, Sparkles, Download, Loader2, Package } from 'lucide-react'
+import { X, Sparkles, Download, Loader2, Package, FolderInput } from 'lucide-react'
 import { Button } from './Button'
 import { useSettingsWebSocket } from '../../pages/Settings/useSettingsWebSocket'
 import type { LivingUICreateRequest } from '../../types'
@@ -40,10 +40,14 @@ function countWords(text: string): number {
 }
 
 export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: CreateLivingUIModalProps) {
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'custom'>('marketplace')
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'custom' | 'import'>('marketplace')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<{ name?: string; description?: string }>({})
+
+  // Import tab state
+  const [importSource, setImportSource] = useState('')
+  const [importing, setImporting] = useState(false)
 
   // Marketplace state
   const { send, onMessage, isConnected } = useSettingsWebSocket()
@@ -233,6 +237,26 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
             <Sparkles size={14} />
             Create Custom
           </button>
+          <button
+            onClick={() => setActiveTab('import')}
+            style={{
+              padding: 'var(--space-2) var(--space-4)',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === 'import' ? '2px solid var(--color-primary)' : '2px solid transparent',
+              color: activeTab === 'import' ? 'var(--text-primary)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              fontWeight: activeTab === 'import' ? 'var(--font-semibold)' : 'var(--font-normal)',
+              fontSize: 'var(--text-sm)',
+              fontFamily: 'inherit',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+            }}
+          >
+            <FolderInput size={14} />
+            Import App
+          </button>
         </div>
 
         {/* Marketplace Tab */}
@@ -397,6 +421,70 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
               </Button>
             </div>
           </form>
+        )}
+
+        {/* Import App Tab */}
+        {activeTab === 'import' && (
+          <div>
+            <div className={styles.modalBody}>
+              <div style={{ marginBottom: 'var(--space-4)' }}>
+                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
+                  Import any existing app — Go, Node.js, Python, Rust, or static sites.
+                  Provide a GitHub URL or local path, and CraftBot will detect the app type,
+                  set up the launch configuration, and add it to your Living UIs.
+                </p>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.label}>
+                  GitHub URL or Local Path <span className={styles.required}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  placeholder="https://github.com/user/repo or /path/to/local/app"
+                  value={importSource}
+                  onChange={e => setImportSource(e.target.value)}
+                />
+                <span className={styles.hint}>
+                  For GitHub repos, the agent will clone the repo. For local paths, it will copy the directory.
+                </span>
+              </div>
+
+              <div style={{
+                padding: 'var(--space-3)', background: 'var(--bg-tertiary)',
+                borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)',
+                color: 'var(--text-muted)', lineHeight: 1.5,
+              }}>
+                <strong>Supported app types:</strong><br />
+                Go (go.mod) · Node.js (package.json) · Python (requirements.txt) · Rust (Cargo.toml) · Docker (Dockerfile) · Static sites (index.html)
+              </div>
+            </div>
+
+            <div className={styles.modalFooter}>
+              <Button variant="secondary" type="button" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                icon={importing ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <FolderInput size={16} />}
+                disabled={!importSource.trim() || importing}
+                onClick={async () => {
+                  setImporting(true)
+                  // Send import request via WebSocket with importer skill
+                  send('living_ui_import', {
+                    source: importSource.trim(),
+                    name: importSource.trim().split('/').pop()?.replace('.git', '') || 'External App',
+                  })
+                  setImporting(false)
+                  setImportSource('')
+                  onClose()
+                }}
+              >
+                {importing ? 'Importing...' : 'Import App'}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>
