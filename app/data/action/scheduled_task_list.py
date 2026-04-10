@@ -1,5 +1,5 @@
 from agent_core import action
-from datetime import datetime
+
 
 @action(
     name="scheduled_task_list",
@@ -23,6 +23,7 @@ from datetime import datetime
 )
 def scheduled_task_list(input_data: dict) -> dict:
     """List all scheduled tasks."""
+    from datetime import datetime
     import app.internal_action_interface as iai
 
     scheduler = iai.InternalActionInterface.scheduler

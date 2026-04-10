@@ -74,6 +74,8 @@ export type WSMessageType =
   | 'dashboard_metrics'
   | 'dashboard_metrics_filter'
   | 'dashboard_filtered_metrics'
+  | 'subscribe_dashboard_metrics'
+  | 'unsubscribe_dashboard_metrics'
   // File operations
   | 'file_list'
   | 'file_read'
@@ -110,6 +112,11 @@ export type WSMessageType =
   | 'local_llm_suggested_models'
   | 'local_llm_pull_model'
   | 'local_llm_pull_progress'
+  // Update
+  | 'check_update'
+  | 'update_check_result'
+  | 'do_update'
+  | 'update_progress'
 
 export interface WSMessage {
   type: WSMessageType
@@ -117,6 +124,7 @@ export interface WSMessage {
 }
 
 export interface InitialState {
+  version?: string
   agentState: AgentState
   guiMode: boolean
   currentTask: { id: string; name: string } | null

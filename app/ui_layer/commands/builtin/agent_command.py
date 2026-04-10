@@ -39,7 +39,8 @@ class AgentCommandWrapper(Command):
 
     @property
     def name(self) -> str:
-        return f"/{self._cmd_name}"
+        cmd = self._cmd_name.lstrip("/")
+        return f"/{cmd}"
 
     @property
     def description(self) -> str:

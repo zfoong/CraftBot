@@ -21,11 +21,26 @@ from agent_core import action
     },
 )
 async def send_telegram_bot_message(input_data: dict) -> dict:
-    from app.external_comms.platforms.telegram_bot import TelegramBotClient
+    from app.external_comms.registry import get_client
     try:
-        client = TelegramBotClient()
-        if not client.has_credentials():
+        client = get_client("telegram_bot")
+        if not client or not client.has_credentials():
             return {"status": "error", "message": "No Telegram bot credential. Use /telegram login first."}
+        # Record to conversation history before sending
+        try:
+            import app.internal_action_interface as iai
+            sm = iai.InternalActionInterface.state_manager
+            if sm:
+                sm.event_stream_manager.record_conversation_message(
+                    "agent message to platform: Telegram",
+                    f"[Sent via Telegram to {input_data['chat_id']}]: {input_data['text']}",
+                )
+                sm._append_to_conversation_history(
+                    "agent",
+                    f"[Sent via Telegram to {input_data['chat_id']}]: {input_data['text']}",
+                )
+        except Exception:
+            pass
         result = await client.send_message(
             input_data["chat_id"],
             input_data["text"],
@@ -302,25 +317,42 @@ async def read_telegram_messages(input_data: dict) -> dict:
 
 @action(
     name="send_telegram_user_message",
-    description="Send a text message via Telegram user account. Use this when replying to Telegram User messages.",
+    description="Send a text message via Telegram user account. IMPORTANT: Use @username (e.g., '@emadtavana7') NOT numeric ID. Use 'self' or 'user' to message the owner's Saved Messages.",
     action_sets=["telegram_user"],
     input_schema={
-        "chat_id": {"type": "string", "description": "Chat ID.", "example": "123"},
+        "chat_id": {"type": "string", "description": "Recipient: @username (preferred), phone number, or 'self' for Saved Messages. Do NOT use numeric IDs.", "example": "@emadtavana7"},
         "text": {"type": "string", "description": "Text.", "example": "Hi"},
     },
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_telegram_user_message(input_data: dict) -> dict:
-    from app.external_comms.platforms.telegram_user import TelegramUserClient
+    from app.external_comms.registry import get_client
     try:
-        client = TelegramUserClient()
-        if not client.has_credentials():
+        client = get_client("telegram_user")
+        if not client or not client.has_credentials():
             return {"status": "error", "message": "No Telegram user credential. Use /telegram login first."}
+        # Record to conversation history before sending
+        try:
+            import app.internal_action_interface as iai
+            sm = iai.InternalActionInterface.state_manager
+            if sm:
+                sm.event_stream_manager.record_conversation_message(
+                    "agent message to platform: Telegram",
+                    f"[Sent via Telegram to {input_data['chat_id']}]: {input_data['text']}",
+                )
+                sm._append_to_conversation_history(
+                    "agent",
+                    f"[Sent via Telegram to {input_data['chat_id']}]: {input_data['text']}",
+                )
+        except Exception:
+            pass
         result = await client.send_message(
             input_data["chat_id"],
             input_data["text"],
         )
-        if "error" in result:
+        if result is None:
+            return {"status": "error", "message": "No response from Telegram client"}
+        if isinstance(result, dict) and "error" in result:
             return {"status": "error", "message": result["error"]}
         return {"status": "success", "result": result}
     except Exception as e:

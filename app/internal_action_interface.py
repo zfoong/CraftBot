@@ -208,7 +208,19 @@ class InternalActionInterface:
         Returns:
             Dict with 'success' (bool), 'files_sent' (int), and optionally 'errors' (list of str)
         """
+        import os
         from app.onboarding import onboarding_manager
+
+        # Validate file paths before passing to UI adapter
+        errors = []
+        for fp in file_paths:
+            if not os.path.exists(fp):
+                errors.append(f"File not found: {fp}")
+            elif os.path.isdir(fp):
+                errors.append(f"Cannot attach directory: {fp}")
+
+        if errors:
+            return {"success": False, "files_sent": 0, "errors": errors}
 
         ui_adapter = InternalActionInterface.ui_adapter
 
@@ -940,7 +952,7 @@ class InternalActionInterface:
             if cls.context_engine:
                 system_prompt, _ = cls.context_engine.make_prompt(
                     user_flags={"query": False, "expected_output": False},
-                    system_flags={"policy": False},
+                    system_flags={},
                 )
                 for call_type in [LLMCallType.ACTION_SELECTION, LLMCallType.GUI_ACTION_SELECTION]:
                     cache_id = cls.llm_interface.create_session_cache(task_id, call_type, system_prompt)

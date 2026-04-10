@@ -17,6 +17,22 @@ async def send_whatsapp_web_text_message(input_data: dict) -> dict:
         client = get_client("whatsapp_web")
         if not client or not client.has_credentials():
             return {"status": "error", "message": "No WhatsApp credential. Please log into whatsapp first."}
+        # Record to conversation history BEFORE sending (ensures correct ordering)
+        try:
+            import app.internal_action_interface as iai
+            sm = iai.InternalActionInterface.state_manager
+            if sm:
+                sm.event_stream_manager.record_conversation_message(
+                    "agent message to platform: WhatsApp",
+                    f"[Sent via WhatsApp to {input_data['to']}]: {input_data['message']}",
+                )
+                sm._append_to_conversation_history(
+                    "agent",
+                    f"[Sent via WhatsApp to {input_data['to']}]: {input_data['message']}",
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"[WA-Action] Failed to record conversation: {e}")
         result = await client.send_message(
             recipient=input_data["to"],
             text=input_data["message"],

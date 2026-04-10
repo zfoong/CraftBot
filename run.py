@@ -6,16 +6,15 @@ Usage:
     python run.py             # Run the agent (browser interface - default)
     python run.py --tui       # Run in TUI mode
     python run.py --cli       # Run in CLI mode
-    python run.py --gui       # Run with GUI mode enabled (AI can control VM)
 
 Options:
-    --gui                     Enable GUI mode (optional, requires: python install.py --gui)
     --tui                     Use TUI (terminal UI) interface instead of browser
     --cli                     Use CLI (command line) interface
     --conda                   Use conda environment (overrides config setting)
     --no-conda                Don't use conda (overrides config setting)
     --frontend-port PORT      Set frontend port (default: 7925)
     --backend-port PORT       Set backend port (default: 7926)
+    --no-open-browser         Start servers but do not auto-open the browser (used by service mode)
 
 Note: The installation method (conda/pip) is saved from install.py and reused here.
 """
@@ -258,6 +257,57 @@ def cleanup_background_processes():
 
 # Register cleanup on exit
 atexit.register(cleanup_background_processes)
+
+
+def _kill_stale_port_process(port: int) -> bool:
+    """Kill any process listening on the given port (stale leftovers from previous runs).
+
+    Returns True if a stale process was found and killed.
+    """
+    if sys.platform != "win32":
+        try:
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for pid_str in result.stdout.strip().split():
+                pid = int(pid_str)
+                if pid != os.getpid():
+                    subprocess.run(["kill", "-9", str(pid)], timeout=5)
+                    return True
+        except Exception:
+            pass
+        return False
+
+    # Windows: parse netstat to find the PID, then taskkill it
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in result.stdout.splitlines():
+            # Match LISTENING lines for our port on any address
+            if f":{port}" in line and "LISTENING" in line:
+                parts = line.split()
+                pid = int(parts[-1])
+                if pid and pid != os.getpid():
+                    subprocess.run(
+                        ["taskkill", "/PID", str(pid), "/F"],
+                        capture_output=True, timeout=10,
+                    )
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _free_ports(*ports: int) -> None:
+    """Kill stale processes on the given ports before startup."""
+    for port in ports:
+        if _kill_stale_port_process(port):
+            # Give the OS a moment to release the socket
+            time.sleep(0.5)
+
 
 def _try_install_nodejs_linux(silent: bool = False) -> bool:
     """
@@ -572,22 +622,37 @@ def launch_frontend(silent: bool = False) -> Optional[subprocess.Popen]:
             return None
 
     # Build command for npm run dev
+    # On Windows, bypass npm/cmd.exe and invoke node directly with the vite script.
+    # This avoids the grandchild node.exe allocating a new console (which Windows
+    # Terminal intercepts and shows as a blank tab).
     if sys.platform == "win32":
-        # On Windows, use cmd.exe to run npm
-        cmd = ["cmd.exe", "/c", "npm", "run", "dev"]
+        node_exe = shutil.which("node")
+        vite_script = os.path.join(FRONTEND_DIR, "node_modules", "vite", "bin", "vite.js")
+        if node_exe and os.path.isfile(vite_script):
+            cmd = [node_exe, vite_script]
+        else:
+            # Fallback: use cmd.exe if node/vite not found directly
+            cmd = ["cmd.exe", "/c", "npm", "run", "dev"]
     else:
         cmd = [npm_cmd, "run", "dev"]
 
     try:
         # Start frontend in background
         # Redirect output to DEVNULL to prevent blocking when buffer fills
-        process = subprocess.Popen(
-            cmd,
+        # Redirect stdin to DEVNULL so npm/vite never blocks waiting for input
+        popen_kwargs = dict(
             cwd=FRONTEND_DIR,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             env=os.environ.copy(),
         )
+        if sys.platform == "win32":
+            # DETACHED_PROCESS + CREATE_NO_WINDOW on the direct node.exe call
+            # ensures no console window is created or inherited
+            DETACHED_PROCESS = 0x00000008
+            popen_kwargs["creationflags"] = DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW
+        process = subprocess.Popen(cmd, **popen_kwargs)
         _background_processes.append(process)
         return process
     except FileNotFoundError:
@@ -974,6 +1039,10 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
             sys.argv = [sys.argv[0]] + pass_args
             from main import main as main_entry
             main_entry()
+        except SystemExit as e:
+            if getattr(e, 'code', None) == 42:
+                print("\n🔄 Restarting CraftBot after update...")
+                os.execv(sys.executable, sys.argv)
         except KeyboardInterrupt:
             print("\nInterrupted.")
             sys.exit(0)
@@ -990,10 +1059,16 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
     else:
         cmd = [sys.executable, "-u", main_script] + pass_args
 
-    # Run in current terminal with all environment variables
+    # Run in current terminal with all environment variables.
+    # If the process exits with code 42, an update was applied — restart.
     try:
-        result = subprocess.run(cmd, cwd=os.path.dirname(main_script), env=os.environ.copy())
-        sys.exit(result.returncode)
+        while True:
+            result = subprocess.run(cmd, cwd=os.path.dirname(main_script), env=os.environ.copy())
+            if result.returncode == 42:
+                print("\n🔄 Restarting CraftBot after update...")
+                time.sleep(2)
+                continue
+            sys.exit(result.returncode)
     except KeyboardInterrupt:
         print("\nInterrupted.")
         sys.exit(0)
@@ -1007,7 +1082,13 @@ if __name__ == "__main__":
     args = set(args_list)
 
     # Parse flags
-    gui_mode = "--gui" in args
+    # [V1.2.2] GUI mode is temporarily disabled in this version.
+    if "--gui" in args:
+        print("\n[!] GUI mode is temporarily disabled in this version (V1.2.2).")
+        print("    This feature is experimental and will be re-enabled in a future release.")
+        print("    Please run without --gui flag.\n")
+        sys.exit(1)
+    gui_mode = False  # "--gui" in args  # [V1.2.2] disabled
     tui_mode = "--tui" in args
     cli_mode = "--cli" in args
     conda_flag = "--conda" in args
@@ -1080,8 +1161,13 @@ if __name__ == "__main__":
         print("Run: python install.py --gui --conda\n")
         sys.exit(1)
 
+    no_open_browser = "--no-open-browser" in args
+
     # Browser mode: start frontend + agent, wait for both, then open browser
     if browser_mode:
+        # Kill stale processes from previous runs that may still hold our ports
+        _free_ports(FRONTEND_PORT, BACKEND_PORT)
+
         # Print browser mode header
         print_browser_header()
 
@@ -1165,7 +1251,8 @@ if __name__ == "__main__":
         # Print ready banner and open browser
         if frontend_ready and backend_ready:
             print_ready_banner(FRONTEND_URL)
-            webbrowser.open(FRONTEND_URL)
+            if not no_open_browser:
+                webbrowser.open(FRONTEND_URL)
         elif not frontend_alive:
             print("\n⚠ Error: Frontend server crashed")
             print("   Check if Node.js and npm are properly installed")
@@ -1178,11 +1265,22 @@ if __name__ == "__main__":
         else:
             # Frontend or backend may still be starting, but proceed anyway
             print_ready_banner(FRONTEND_URL)
-            webbrowser.open(FRONTEND_URL)
+            if not no_open_browser:
+                webbrowser.open(FRONTEND_URL)
 
         # Wait for agent to finish (keeps script running)
+        # If the agent exits with code 42, it means an update was applied
+        # and we need to restart the entire stack (frontend + backend).
         try:
-            agent_process.wait()
+            while True:
+                agent_process.wait()
+                if agent_process.returncode == 42:
+                    print("\n🔄 Restarting CraftBot after update...")
+                    cleanup_background_processes()
+                    time.sleep(2)
+                    # Re-exec run.py so it relaunches frontend + backend
+                    os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
+                break
         except KeyboardInterrupt:
             print("\nShutting down...")
             cleanup_background_processes()

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, KeyboardEvent, useCallback, ChangeEvent, useMemo } from 'react'
-import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply } from 'lucide-react'
+import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply, Mic, MicOff } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useLocation } from 'react-router-dom'
 import { useWebSocket } from '../../contexts/WebSocketContext'
@@ -15,6 +15,22 @@ interface PendingAttachment {
   size: number
   content: string  // base64
 }
+
+const MIC_LANGUAGES = [
+  { code: 'en-US', label: 'EN', full: 'English' },
+  { code: 'ja-JP', label: 'JA', full: '日本語' },
+  { code: 'zh-CN', label: 'ZH', full: '中文 (简体)' },
+  { code: 'zh-TW', label: 'ZH-TW', full: '中文 (繁體)' },
+  { code: 'ko-KR', label: 'KO', full: '한국어' },
+  { code: 'ar-SA', label: 'AR', full: 'العربية' },
+  { code: 'es-ES', label: 'ES', full: 'Español' },
+  { code: 'fr-FR', label: 'FR', full: 'Français' },
+  { code: 'de-DE', label: 'DE', full: 'Deutsch' },
+  { code: 'pt-BR', label: 'PT', full: 'Português' },
+  { code: 'hi-IN', label: 'HI', full: 'हिन्दी' },
+  { code: 'ru-RU', label: 'RU', full: 'Русский' },
+  { code: 'it-IT', label: 'IT', full: 'Italiano' },
+]
 
 // Panel width limits
 const DEFAULT_PANEL_WIDTH = 380
@@ -49,7 +65,20 @@ export function ChatPage() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Input history (terminal-style up/down arrow navigation)
+  const inputHistoryRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
+  const draftRef = useRef('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const [micLang, setMicLang] = useState(() => {
+    const browserLang = navigator.language || 'en-US'
+    return MIC_LANGUAGES.some(l => l.code === browserLang) ? browserLang : 'en-US'
+  })
+  const [langOpen, setLangOpen] = useState(false)
+  const langDropdownRef = useRef<HTMLDivElement>(null)
 
   // Virtualization refs
   const parentRef = useRef<HTMLDivElement>(null)
@@ -104,6 +133,18 @@ export function ChatPage() {
     }
     return lastSeenIdx + 1  // First unread is after last seen
   }, [messages, lastSeenMessageId])
+
+  // Close language dropdown when clicking outside
+  useEffect(() => {
+    if (!langOpen) return
+    const handler = (e: MouseEvent) => {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(e.target as Node)) {
+        setLangOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [langOpen])
 
   // Check if user is scrolled near the bottom
   const isNearBottom = useCallback(() => {
@@ -247,16 +288,84 @@ export function ChatPage() {
     inputRef.current?.focus()
   }, [setReplyTarget])
 
+  const toggleListening = useCallback(() => {
+    if (isListening) {
+      recognitionRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+
+    const SpeechRecognitionAPI = (window as typeof window & { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition
+      || (window as typeof window & { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition
+
+    if (!SpeechRecognitionAPI) {
+      alert('Speech recognition is not supported in this browser.')
+      return
+    }
+
+    const recognition = new SpeechRecognitionAPI()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = micLang
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript
+        }
+      }
+      if (finalTranscript) {
+        setInput(prev => prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + finalTranscript)
+        if (inputRef.current) {
+          inputRef.current.style.height = 'auto'
+          inputRef.current.style.height = inputRef.current.scrollHeight + 'px'
+        }
+      }
+    }
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      setIsListening(false)
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        alert('Microphone access denied. Please allow microphone permission in your browser settings.')
+      }
+    }
+    recognition.onend = () => setIsListening(false)
+
+    recognitionRef.current = recognition
+    recognition.start()
+    setIsListening(true)
+    inputRef.current?.focus()
+  }, [isListening, micLang])
+
+  // Stop mic if component unmounts while listening
+  useEffect(() => {
+    return () => { recognitionRef.current?.abort() }
+  }, [])
+
   const handleSend = () => {
     // Don't send if there are validation errors
     if (!attachmentValidation.valid) return
 
     if (input.trim() || pendingAttachments.length > 0) {
+      // Save to input history
+      if (input.trim()) {
+        inputHistoryRef.current.push(input.trim())
+      }
+      historyIndexRef.current = -1
+      draftRef.current = ''
+
       // Include reply context if replying to a message/task
       const replyContext = replyTarget ? {
         sessionId: replyTarget.sessionId,
         originalMessage: replyTarget.originalContent,
       } : undefined
+
+      // Stop mic if still listening when message is sent
+      if (isListening) {
+        recognitionRef.current?.stop()
+        setIsListening(false)
+      }
 
       sendMessage(
         input.trim(),
@@ -279,6 +388,32 @@ export function ChatPage() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const history = inputHistoryRef.current
+      // Only navigate history when input is empty (or already navigating history)
+      if (history.length === 0) return
+      if (historyIndexRef.current === -1 && input.trim() !== '') return
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) {
+          historyIndexRef.current = history.length - 1
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current--
+        }
+        setInput(history[historyIndexRef.current])
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) return
+        if (historyIndexRef.current < history.length - 1) {
+          historyIndexRef.current++
+          setInput(history[historyIndexRef.current])
+        } else {
+          // Back to empty
+          historyIndexRef.current = -1
+          setInput('')
+        }
+      }
     }
   }
 
@@ -453,6 +588,41 @@ export function ChatPage() {
             onClick={handleAttachClick}
           />
 
+          <div className={styles.micGroup} ref={langDropdownRef}>
+            <button
+              className={`${styles.micCombo} ${isListening ? styles.micComboActive : ''}`}
+              onClick={toggleListening}
+              title={isListening ? 'Stop listening' : 'Voice input'}
+            >
+              <span className={styles.micIconWrap}>
+                {isListening && <span className={styles.micPulseRing} />}
+                {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              </span>
+            </button>
+            <button
+              className={`${styles.langBtn} ${isListening ? styles.langBtnActive : ''}`}
+              onClick={() => !isListening && setLangOpen(o => !o)}
+              title="Speech language"
+              disabled={isListening}
+            >
+              {MIC_LANGUAGES.find(l => l.code === micLang)?.label ?? 'EN'}
+            </button>
+            {langOpen && (
+              <div className={styles.langDropdown}>
+                {MIC_LANGUAGES.map(lang => (
+                  <button
+                    key={lang.code}
+                    className={`${styles.langOption}${micLang === lang.code ? ` ${styles.langOptionActive}` : ''}`}
+                    onClick={() => { setMicLang(lang.code); setLangOpen(false) }}
+                  >
+                    <span className={styles.langCode}>{lang.label}</span>
+                    <span className={styles.langFull}>{lang.full}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className={styles.inputWrapper}>
             {/* Attachment error message */}
             {(attachmentError || !attachmentValidation.valid) && (
@@ -510,14 +680,18 @@ export function ChatPage() {
               </div>
             )}
 
+
+
             <textarea
               ref={inputRef}
-              className={styles.input}
-              placeholder="Type a message..."
+              className={`${styles.input}${isListening ? ` ${styles.inputListening}` : ''}`}
+              placeholder={isListening ? 'Listening... speak now' : 'Type a message...'}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               rows={1}
+              lang={micLang}
+              inputMode="text"
             />
           </div>
 

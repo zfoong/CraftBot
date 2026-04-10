@@ -58,6 +58,10 @@ GetActiveTaskIdHook = Callable[[], Optional[str]]
 OnStreamCreateHook = Callable[[str, Path], None]  # (task_id, temp_dir)
 OnStreamRemoveHook = Callable[[str], None]  # (task_id)
 
+# Session persistence hooks
+OnTaskPersistHook = Callable[["Task"], None]  # (task)
+OnTaskRemovePersistHook = Callable[[str], None]  # (task_id)
+
 # Chatserver hooks (WCA only)
 OnTaskCreatedChatserverHook = Callable[[Task], None]
 OnTodoTransitionHook = Callable[[List[tuple]], None]  # List of (todo, old_status, new_status)
@@ -94,6 +98,9 @@ class TaskManager:
         # Event stream hooks
         on_stream_create: Optional[OnStreamCreateHook] = None,
         on_stream_remove: Optional[OnStreamRemoveHook] = None,
+        # Session persistence hooks
+        on_task_persist: Optional[OnTaskPersistHook] = None,
+        on_task_remove_persist: Optional[OnTaskRemovePersistHook] = None,
         # Chatserver hooks (WCA only)
         on_task_created_chatserver: Optional[OnTaskCreatedChatserverHook] = None,
         on_todo_transition: Optional[OnTodoTransitionHook] = None,
@@ -123,6 +130,10 @@ class TaskManager:
             Event stream hooks:
             on_stream_create: Called to set up event stream for task.
             on_stream_remove: Called to clean up event stream on task end.
+
+            Session persistence hooks:
+            on_task_persist: Called on every task state change to persist task to disk.
+            on_task_remove_persist: Called when task ends to remove persisted data.
 
             Chatserver hooks (WCA only):
             on_task_created_chatserver: POST task to chatserver.
@@ -155,6 +166,10 @@ class TaskManager:
         # Event stream hooks
         self._on_stream_create = on_stream_create
         self._on_stream_remove = on_stream_remove
+
+        # Session persistence hooks
+        self._on_task_persist = on_task_persist
+        self._on_task_remove_persist = on_task_remove_persist
 
         # Chatserver hooks (WCA only, default to None/no-op)
         self._on_task_created_chatserver = on_task_created_chatserver
@@ -328,7 +343,7 @@ class TaskManager:
         try:
             system_prompt, _ = self.context_engine.make_prompt(
                 user_flags={"query": False, "expected_output": False},
-                system_flags={"policy": False},
+                system_flags={},
             )
             for call_type in [
                 LLMCallType.REASONING,
@@ -616,6 +631,13 @@ class TaskManager:
         if self._current_session_id == task.id:
             self._current_session_id = None
 
+        # Remove persisted session data (task + event stream)
+        if self._on_task_remove_persist:
+            try:
+                self._on_task_remove_persist(task.id)
+            except Exception as e:
+                logger.warning(f"[TaskManager] Failed to remove persisted task {task.id}: {e}")
+
         # Clean up session-specific state (multi-task isolation)
         StateSession.end(task.id)
 
@@ -658,9 +680,15 @@ class TaskManager:
                 logger.warning(f"[ONBOARDING] Failed to mark soft onboarding complete: {e}")
 
     def _sync_state_manager(self, task: Optional[Task]) -> None:
-        """Sync task state to the state manager."""
+        """Sync task state to the state manager and persist to disk."""
         if self.state_manager:
             self.state_manager.add_to_active_task(task=task)
+        # Persist task state for crash recovery
+        if task and self._on_task_persist:
+            try:
+                self._on_task_persist(task)
+            except Exception as e:
+                logger.warning(f"[TaskManager] Failed to persist task {task.id}: {e}")
 
     def _log_to_task_history(self, task: Task, note: Optional[str] = None) -> None:
         """Log completed task to TASK_HISTORY.md."""
@@ -729,16 +757,22 @@ class TaskManager:
         except Exception:
             logger.warning(f"[TaskManager] Failed to clean temp dir for {task.id}", exc_info=True)
 
-    def cleanup_all_temp_dirs(self) -> int:
-        """Remove all temporary directories in workspace/tmp/."""
+    def cleanup_all_temp_dirs(self, exclude: Optional[set] = None) -> int:
+        """Remove temporary directories in workspace/tmp/, optionally excluding some.
+
+        Args:
+            exclude: Set of task IDs whose temp directories should be preserved
+                     (e.g., restored tasks that need their workspace).
+        """
         temp_root = self.workspace_root / "tmp"
         if not temp_root.exists():
             return 0
 
+        exclude = exclude or set()
         cleaned_count = 0
         try:
             for item in temp_root.iterdir():
-                if item.is_dir():
+                if item.is_dir() and item.name not in exclude:
                     try:
                         shutil.rmtree(item, ignore_errors=True)
                         cleaned_count += 1

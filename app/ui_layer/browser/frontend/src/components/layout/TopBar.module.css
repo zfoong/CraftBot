@@ -34,6 +34,13 @@
   width: auto;
 }
 
+.versionBadge {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: var(--font-medium);
+  padding: 0 var(--space-1);
+}
+
 .status {
   display: flex;
   align-items: center;

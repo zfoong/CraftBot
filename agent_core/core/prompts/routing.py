@@ -23,6 +23,10 @@ Source Platform: {source_platform}
 {existing_sessions}
 </existing_sessions>
 
+<recent_conversation>
+{recent_conversation}
+</recent_conversation>
+
 <rules>
 1. ROUTE TO EXISTING SESSION when:
    - The message is a response to a question the agent asked (check Recent Activity)
@@ -37,10 +41,14 @@ Source Platform: {source_platform}
 3. CREATE NEW SESSION when:
    - The message is a NEW topic clearly unrelated to any existing task
    - The message doesn't match any existing task's context AND there are multiple active sessions
+   - The message appears to be a follow-up to a COMPLETED task visible in recent conversation history but NOT in existing sessions
 
-IMPORTANT NOTES: 
+IMPORTANT NOTES:
 - If the message has no context, it is very LIKELY it is meant for another task, DO NOT CREATE a new session
 - If there is on-going task waiting for user reply, it is very LIKELY the incoming item is meant for the session
+- However, if recent conversation history shows a completed task matching the message topic, prefer creating a new session over routing to an unrelated active task
+- When the incoming message is ambiguous and could match any session, slightly prefer the most recent conversation topic (latest messages in recent conversation history)
+- People naturally respond to the most recent thing discussed, so an out-of-context reply like "is it good?" most likely refers to the latest topic, not an older one
 </rules>
 
 <output_format>

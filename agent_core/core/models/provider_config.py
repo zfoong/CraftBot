@@ -37,4 +37,8 @@ PROVIDER_CONFIG = {
         api_key_env="MOONSHOT_API_KEY",
         default_base_url="https://api.moonshot.cn/v1",
     ),
+    "grok": ProviderConfig(
+        api_key_env="XAI_API_KEY",
+        default_base_url="https://api.x.ai/v1",
+    ),
 }

@@ -15,6 +15,7 @@ export default defineConfig({
   },
   server: {
     port: parseInt(process.env.VITE_PORT || '7925'),
+    strictPort: true,
     proxy: {
       '/ws': {
         target: `ws://localhost:${process.env.VITE_BACKEND_PORT || '7926'}`,

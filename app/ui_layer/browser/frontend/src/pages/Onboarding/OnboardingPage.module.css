@@ -632,6 +632,41 @@
   flex-shrink: 0;
 }
 
+.installProgressBar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-primary);
+  overflow: hidden;
+}
+
+@keyframes installShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+.installProgressFill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--color-primary) 0%,
+    var(--color-primary) 40%,
+    color-mix(in srgb, var(--color-primary) 60%, white) 50%,
+    var(--color-primary) 60%,
+    var(--color-primary) 100%
+  );
+  background-size: 200% 100%;
+  animation: installShimmer 1.8s linear infinite;
+  transition: width 0.6s ease;
+}
+
+.installPct {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 .installLog {
   display: flex;
   flex-direction: column;

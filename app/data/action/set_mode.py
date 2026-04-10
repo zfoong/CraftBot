@@ -1,46 +1,47 @@
 from agent_core import action
 
-@action(
-    name="set_mode",
-    description="Switch the agent between CLI and GUI modes. CLI mode operates without screen control; GUI mode enables screen interaction capabilities.",
-    mode="ALL",
-    default=True,
-    action_sets=["core"],
-    parallelizable=False,
-    input_schema={
-        "target_mode": {
-            "type": "string",
-            "example": "cli",
-            "description": "Target mode to switch to: 'cli' or 'gui'."
-        }
-    },
-    output_schema={
-        "status": {
-            "type": "string",
-            "example": "ok",
-            "description": "Result status: 'ok' or 'error'."
-        },
-        "gui_mode": {
-            "type": "boolean",
-            "example": False,
-            "description": "Current GUI mode after the operation (True = GUI, False = CLI)."
-        },
-        "message": {
-            "type": "string",
-            "example": "Successfully switched to CLI mode.",
-            "description": "Status message."
-        },
-        "error": {
-            "type": "string",
-            "example": "StateSession not initialized",
-            "description": "Error message (present when status == 'error')."
-        }
-    },
-    test_payload={
-        "target_mode": "cli",
-        "simulated_mode": False
-    }
-)
+# [V1.2.2] GUI mode is temporarily disabled. Uncomment the decorator below to re-enable.
+# @action(
+#     name="set_mode",
+#     description="Switch the agent between CLI and GUI modes. CLI mode operates without screen control; GUI mode enables screen interaction capabilities.",
+#     mode="ALL",
+#     default=True,
+#     action_sets=["core"],
+#     parallelizable=False,
+#     input_schema={
+#         "target_mode": {
+#             "type": "string",
+#             "example": "cli",
+#             "description": "Target mode to switch to: 'cli' or 'gui'."
+#         }
+#     },
+#     output_schema={
+#         "status": {
+#             "type": "string",
+#             "example": "ok",
+#             "description": "Result status: 'ok' or 'error'."
+#         },
+#         "gui_mode": {
+#             "type": "boolean",
+#             "example": False,
+#             "description": "Current GUI mode after the operation (True = GUI, False = CLI)."
+#         },
+#         "message": {
+#             "type": "string",
+#             "example": "Successfully switched to CLI mode.",
+#             "description": "Status message."
+#         },
+#         "error": {
+#             "type": "string",
+#             "example": "StateSession not initialized",
+#             "description": "Error message (present when status == 'error')."
+#         }
+#     },
+#     test_payload={
+#         "target_mode": "cli",
+#         "simulated_mode": False
+#     }
+# )
 def set_mode(input_data: dict) -> dict:
     import os
     import app.internal_action_interface as iai

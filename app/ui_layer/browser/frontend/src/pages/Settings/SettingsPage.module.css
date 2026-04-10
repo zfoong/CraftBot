@@ -1795,6 +1795,139 @@
   margin-top: var(--space-2);
 }
 
+/* Install Ollama banner — shown when Ollama is not detected */
+.ollamaInstallBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius-md);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.ollamaInstallText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+}
+.ollamaInstallText strong {
+  color: var(--text-primary);
+}
+.ollamaInstallText span {
+  color: var(--text-secondary);
+}
+
+.ollamaInstallActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.installOllamaBtn {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-primary);
+  color: white;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  text-align: center;
+  transition: opacity var(--transition-fast);
+}
+.installOllamaBtn:hover {
+  opacity: 0.85;
+}
+
+.retryOllamaBtn {
+  padding: var(--space-1) var(--space-3);
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.retryOllamaBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--text-primary);
+}
+
+.ollamaInstallProgress {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ollamaInstallProgressHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.ollamaInstallPct {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ollamaInstallProgressBar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-primary);
+  overflow: hidden;
+}
+
+@keyframes ollamaInstallShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+.ollamaInstallProgressFill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--color-primary) 0%,
+    var(--color-primary) 40%,
+    color-mix(in srgb, var(--color-primary) 60%, white) 50%,
+    var(--color-primary) 60%,
+    var(--color-primary) 100%
+  );
+  background-size: 200% 100%;
+  animation: ollamaInstallShimmer 1.8s linear infinite;
+  transition: width 0.6s ease;
+}
+
+.ollamaInstallLog {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ollamaInstallLogLine {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .downloadModelBtn {
   font-size: var(--text-sm);
   color: var(--color-primary);
