@@ -793,7 +793,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             # Extract old ports from manifest to do replacement
             manifest_tmp = json.loads(manifest_raw)
             old_ports = manifest_tmp.get('ports', {})
-            old_frontend = str(old_ports.get('frontend', ''))
+            old_frontend = str(old_ports.get('frontend', old_ports.get('app', '')))
             old_backend = str(old_ports.get('backend', ''))
 
             # Replace old ports with current allocated ports in manifest and source files
@@ -2061,15 +2061,24 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
     async def _launch_single_process(
         self, project_id: str, project: 'LivingUIProject', project_path: Path, app_cfg: dict
     ) -> dict:
-        """Launch a single-process app (external apps, Go, Node, etc.)."""
-        cwd = project_path / app_cfg.get('cwd', '.')
-        port = project.port
-        if not port:
-            port = self._allocate_port()
-            project.port = port
+        """Launch a single-process app with sidecar proxy for logging/health."""
+        # Allocate two ports: proxy (user-facing) and app (internal)
+        proxy_port = project.port
+        if not proxy_port:
+            proxy_port = self._allocate_port()
+            project.port = proxy_port
 
-        if not await self._ensure_port_available(port):
-            return {"status": "error", "step": "app.port", "errors": [f"Port {port} occupied"]}
+        app_port = project.backend_port
+        if not app_port:
+            app_port = self._allocate_port()
+            project.backend_port = app_port
+
+        if not await self._ensure_port_available(proxy_port):
+            return {"status": "error", "step": "app.port", "errors": [f"Port {proxy_port} occupied"]}
+        if not await self._ensure_port_available(app_port):
+            return {"status": "error", "step": "app.port", "errors": [f"Port {app_port} occupied"]}
+
+        cwd = project_path / app_cfg.get('cwd', '.')
 
         # Install step (optional)
         install_cmd = app_cfg.get('install', '')
@@ -2079,7 +2088,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             if result["status"] == "error":
                 return result
 
-        # Start the process
+        # Start the app on the internal port
         start_cmd = app_cfg.get('start', '')
         if not start_cmd:
             return {"status": "error", "step": "app.start", "errors": ["No start command in manifest"]}
@@ -2088,44 +2097,76 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         logs_dir.mkdir(parents=True, exist_ok=True)
         log_file = logs_dir / 'app_output.log'
 
-        # Build extra env vars from manifest
+        # Build extra env vars — use app_port for the app itself
         extra_env = {}
         for k, v in app_cfg.get('env', {}).items():
-            extra_env[k] = str(v).replace('{{PORT}}', str(port)).replace('{{BACKEND_PORT}}', str(project.backend_port or port))
+            extra_env[k] = str(v).replace('{{PORT}}', str(app_port)).replace('{{BACKEND_PORT}}', str(app_port))
+        # Always override PORT with the internal app port — manifest may have a stale hardcoded value
+        extra_env['PORT'] = str(app_port)
 
-        # Replace port placeholders in start command
-        start_cmd = start_cmd.replace('{{PORT}}', str(port)).replace('{{BACKEND_PORT}}', str(project.backend_port or port))
+        # Replace port placeholders in start command with internal app port
+        start_cmd = start_cmd.replace('{{PORT}}', str(app_port)).replace('{{BACKEND_PORT}}', str(app_port))
 
         # Generate bridge token
         from uuid import uuid4
         project.bridge_token = str(uuid4())
 
-        app_process = self._start_process(cwd, start_cmd, log_file, port=port, project=project, extra_env=extra_env)
+        app_process = self._start_process(cwd, start_cmd, log_file, port=app_port, project=project, extra_env=extra_env)
         project.app_process = app_process
-        logger.info(f"[LIVING_UI:PIPELINE] App starting on port {port}")
+        logger.info(f"[LIVING_UI:PIPELINE] App starting on internal port {app_port}")
 
-        # Health check with strategy
+        # Health check on the app's internal port
         health_cfg = app_cfg.get('health', {})
-        healthy = await self._check_health_with_strategy(health_cfg, port, app_process)
+        # Replace port placeholders in health URL with app_port
+        if isinstance(health_cfg, dict) and 'url' in health_cfg:
+            health_cfg = dict(health_cfg)
+            health_cfg['url'] = health_cfg['url'].replace('{{PORT}}', str(app_port)).replace('{{BACKEND_PORT}}', str(app_port))
+        elif isinstance(health_cfg, str):
+            health_cfg = health_cfg.replace('{{PORT}}', str(app_port)).replace('{{BACKEND_PORT}}', str(app_port))
+
+        healthy = await self._check_health_with_strategy(health_cfg, app_port, app_process)
         if not healthy:
             log_tail = self._read_log_tail(log_file, 1000)
             if app_process.poll() is not None:
                 err = f"App process exited with code {app_process.returncode}"
             else:
-                err = f"App not responding on port {port}"
+                err = f"App not responding on port {app_port}"
                 app_process.terminate()
             project.app_process = None
             return {"status": "error", "step": "app.health", "errors": [err, log_tail]}
 
-        project.url = f"http://localhost:{port}"
+        logger.info(f"[LIVING_UI:PIPELINE] App healthy on internal port {app_port}")
+
+        # Start the sidecar proxy on the user-facing port
+        sidecar_path = Path(__file__).parent.parent / 'data' / 'living_ui_sidecar' / 'proxy.py'
+        if sidecar_path.exists():
+            sidecar_cmd = f"python \"{sidecar_path}\" --app-port {app_port} --proxy-port {proxy_port}"
+            sidecar_log = logs_dir / 'sidecar_output.log'
+            sidecar_process = self._start_process(project_path, sidecar_cmd, sidecar_log, port=proxy_port, project=project)
+            project.process = sidecar_process  # Store sidecar as frontend process (gets stopped with stop_project)
+            logger.info(f"[LIVING_UI:PIPELINE] Sidecar proxy starting: port {proxy_port} → app port {app_port}")
+
+            # Wait for sidecar to be ready
+            sidecar_healthy = await self._wait_for_health_check(f"http://localhost:{proxy_port}/health", timeout=15)
+            if not sidecar_healthy:
+                logger.warning(f"[LIVING_UI:PIPELINE] Sidecar not responding, app still accessible directly on port {app_port}")
+                project.url = f"http://localhost:{app_port}"
+            else:
+                project.url = f"http://localhost:{proxy_port}"
+                logger.info(f"[LIVING_UI:PIPELINE] Sidecar ready on port {proxy_port}")
+        else:
+            logger.warning("[LIVING_UI:PIPELINE] Sidecar proxy not found, running app without proxy")
+            project.url = f"http://localhost:{app_port}"
+
+        project.backend_url = f"http://localhost:{app_port}"
         project.status = 'running'
         self._save_projects()
 
-        logger.info(f"[LIVING_UI:PIPELINE] App ready on port {port}")
+        logger.info(f"[LIVING_UI:PIPELINE] App ready: {project.url}")
         return {
             "status": "success",
             "url": project.url,
-            "port": port,
+            "port": proxy_port,
         }
 
     async def import_external_app(
@@ -2152,8 +2193,9 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         except Exception as e:
             return {"status": "error", "error": f"Failed to copy app: {e}"}
 
-        # Allocate single port
-        port = self._allocate_port()
+        # Allocate two ports: proxy (user-facing) and app (internal)
+        proxy_port = self._allocate_port()
+        app_port = self._allocate_port()
 
         # Create config directory and manifest
         config_dir = project_path / 'config'
@@ -2161,10 +2203,10 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         logs_dir = project_path / 'logs'
         logs_dir.mkdir(exist_ok=True)
 
-        # Build health config
+        # Build health config — uses app_port (internal)
         health_cfg: Any = {"strategy": health_strategy}
         if health_strategy == 'http_get':
-            health_cfg["url"] = health_url or f"http://localhost:{port}"
+            health_cfg["url"] = health_url or f"http://localhost:{{{{PORT}}}}"
             health_cfg["timeout"] = 30
 
         # Generate manifest
@@ -2176,13 +2218,13 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             "projectType": "external",
             "appRuntime": app_runtime,
             "livingUIVersion": "1.0",
-            "ports": {"app": port},
+            "ports": {"frontend": proxy_port, "backend": app_port},
             "pipeline": {
                 "app": {
                     "cwd": ".",
                     "install": install_command,
                     "start": start_command,
-                    "env": {port_env_var: str(port)} if port_env_var else {},
+                    "env": {port_env_var: "{{PORT}}"} if port_env_var else {},
                     "health": health_cfg,
                 }
             },
@@ -2198,7 +2240,8 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             description=description,
             path=str(project_path),
             status='created',
-            port=port,
+            port=proxy_port,
+            backend_port=app_port,
             project_type='external',
             app_runtime=app_runtime,
         )
