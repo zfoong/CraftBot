@@ -94,7 +94,28 @@ fi
 # Launch the agent in the background
 cd "$AGENT_DIR"
 export GUI_MODE_ENABLED=False
-echo "[e2b-start] Launching python3 run.py --browser ..." | tee -a "$LOG_FILE"
-nohup python3 run.py --browser >> "$LOG_FILE" 2>&1 &
+
+# Diagnostics: check if frontend dist was built during template creation
+FRONTEND_DIST="$AGENT_DIR/app/ui_layer/browser/frontend/dist"
+if [ -d "$FRONTEND_DIST" ]; then
+    echo "[e2b-start] Frontend dist/ found: $(ls "$FRONTEND_DIST" | head -5)" | tee -a "$LOG_FILE"
+else
+    echo "[e2b-start] WARNING: Frontend dist/ NOT found at $FRONTEND_DIST" | tee -a "$LOG_FILE"
+    # Attempt to build frontend if npm is available
+    if command -v npm >/dev/null 2>&1; then
+        echo "[e2b-start] Attempting frontend build..." | tee -a "$LOG_FILE"
+        cd "$AGENT_DIR/app/ui_layer/browser/frontend" \
+            && npm install --legacy-peer-deps >> "$LOG_FILE" 2>&1 \
+            && npm run build >> "$LOG_FILE" 2>&1 \
+            && echo "[e2b-start] Frontend build succeeded" | tee -a "$LOG_FILE" \
+            || echo "[e2b-start] Frontend build FAILED" | tee -a "$LOG_FILE"
+        cd "$AGENT_DIR"
+    else
+        echo "[e2b-start] npm not available, cannot build frontend" | tee -a "$LOG_FILE"
+    fi
+fi
+
+echo "[e2b-start] Launching python3 run.py ..." | tee -a "$LOG_FILE"
+nohup python3 run.py >> "$LOG_FILE" 2>&1 &
 AGENT_PID=$!
 echo "[e2b-start] Agent started with PID ${AGENT_PID}" | tee -a "$LOG_FILE"
