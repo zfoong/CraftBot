@@ -390,6 +390,14 @@ class TUIAdapter(InterfaceAdapter):
             # Run onboarding before starting Textual app
             await self._run_hard_onboarding(onboarding)
 
+        # Trigger soft onboarding if needed (after hard onboarding check)
+        from app.onboarding import onboarding_manager
+        if onboarding_manager.needs_soft_onboarding:
+            import asyncio
+            agent = self._controller.agent
+            if agent:
+                asyncio.create_task(agent.trigger_soft_onboarding())
+
         # Queue initial messages
         from app.config import get_app_version
         await self.chat_updates.put(

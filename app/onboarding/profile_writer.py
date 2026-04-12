@@ -76,7 +76,7 @@ def write_profile_to_user_md(profile_data: Dict[str, Any]) -> bool:
             content = _replace_field(content, "Prefer Proactive Assistance", proactivity)
 
         if isinstance(approval, list) and approval:
-            approval_str = ", ".join(approval)
+            approval_str = _format_approval(approval)
             content = _replace_field(content, "Approval Required For", approval_str)
 
         user_md_path.write_text(content, encoding="utf-8")
@@ -96,6 +96,23 @@ def _replace_field(content: str, field_name: str, value: str) -> str:
     pattern = rf'(\*\*{re.escape(field_name)}:\*\*\s*).*'
     replacement = rf'\1{value}'
     return re.sub(pattern, replacement, content)
+
+
+APPROVAL_DESCRIPTIONS = {
+    "messages": "Ask before sending messages or notifications on user's behalf",
+    "scheduling": "Ask before creating, modifying, or deleting schedules and calendar events",
+    "file_changes": "Ask before creating, modifying, or deleting files on the user's system",
+    "purchases": "Ask before making any purchases, payments, or financial transactions",
+    "all": "Ask for explicit approval before taking any action",
+}
+
+
+def _format_approval(approval: list) -> str:
+    """Convert approval keys to descriptive sentences for the agent."""
+    if "all" in approval:
+        return APPROVAL_DESCRIPTIONS["all"]
+    descriptions = [APPROVAL_DESCRIPTIONS.get(key, key) for key in approval]
+    return "; ".join(descriptions)
 
 
 def _infer_timezone() -> str:

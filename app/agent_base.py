@@ -2138,6 +2138,8 @@ class AgentBase:
 
         logger.info("[RESET] Agent file system reinitialized from templates")
 
+    _soft_onboarding_triggered: bool = False
+
     async def trigger_soft_onboarding(self, reset: bool = False) -> Optional[str]:
         """
         Trigger soft onboarding interview task.
@@ -2155,6 +2157,12 @@ class AgentBase:
         from app.onboarding.soft.task_creator import create_soft_onboarding_task
         from app.trigger import Trigger
         import time
+
+        # Prevent double-triggering (multiple adapters/paths may call this)
+        if not reset and self._soft_onboarding_triggered:
+            logger.debug("[ONBOARDING] Soft onboarding already triggered, skipping")
+            return None
+        self._soft_onboarding_triggered = True
 
         if reset:
             onboarding_manager.reset_soft_onboarding()
@@ -2781,13 +2789,6 @@ class AgentBase:
 
         # Resume triggers for tasks restored from previous session
         await self._schedule_restored_task_triggers()
-
-        # Trigger soft onboarding if needed (BEFORE starting interface)
-        # This ensures agent handles onboarding logic, not the interfaces
-        from app.onboarding import onboarding_manager
-        if onboarding_manager.needs_soft_onboarding:
-            logger.info("[ONBOARDING] Soft onboarding needed, triggering from agent")
-            await self.trigger_soft_onboarding()
 
         # Initialize external communications (WhatsApp, Telegram)
         print_startup_step(8, 8, "Starting communications")
