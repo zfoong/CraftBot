@@ -15,63 +15,79 @@ if TYPE_CHECKING:
 
 
 SOFT_ONBOARDING_TASK_INSTRUCTION = """
-Conduct a friendly conversational interview to learn about the user.
+Conduct a friendly conversational interview to deeply understand the user's work and life goals.
 
-Your goal is to gather information to personalize the agent experience efficiently.
-Ask MULTIPLE related questions together to reduce back-and-forth turns.
+CONTEXT: The user has already provided their name, location, language, communication tone,
+proactivity preferences, approval settings, and notification platform during setup.
+These are saved in agent_file_system/USER.md — read it first to personalise the conversation.
 
-INTERVIEW FLOW (4 batches):
+Your goal is to learn about their job/role and deeply explore their life goals through
+multiple rounds of back-and-forth conversation, then teach them how CraftBot can help.
 
-1. Warm Introduction + Identity Questions
-Start with a friendly greeting and ask the first batch using a numbered list:
-   - What should I call you?
-   - What do you do for work?
-   - Where are you based?
-   (Infer timezone from their location, keep this silent)
+INTERVIEW FLOW:
 
-   Example opening:
-    > "Hi there! I'm excited to be your new AI assistant. To personalize your experience, let me ask a few quick questions:
-    > 1. What should I call you?
-    > 2. What do you do for work?
-    > 3. Where are you based?"
+Phase 1: Greeting + Job/Role
+- Read agent_file_system/USER.md to get the user's name and preferences
+- Greet them warmly by name: "Hi [name]! Now that setup is done, I'd love to learn more about you so I can truly be useful."
+- Ask about their job/role:
+  1. What do you do for work? Tell me about your role and responsibilities.
+  2. What does a typical day look like for you?
+- Acknowledge their answer before moving on.
 
-2. Preference Questions (Combined)
-   - What language do you prefer me to communicate in?
-   - Do you prefer casual or formal communication?
-   - Should I proactively suggest things or wait for instructions?
-   - What types of actions should I ask your approval for?
+Phase 2: Deep Life Goals Exploration (multi-round)
+This is the most important phase. Engage in genuine back-and-forth to understand their aspirations.
 
-3. Messaging Platform
-   - Which messaging platform should I use for notifications? (Telegram/WhatsApp/Discord/Slack/CraftBot Interface only)
+Round 1: "What are your biggest life goals or aspirations right now — both professional and personal?"
 
-4. Life Goals & Assistance
-   - What are your life goals or aspirations?
-   - What would you like me to help you with generally?
+Round 2: For each goal they mention, follow up with clarifying questions:
+  - What's your timeline for this?
+  - What's the biggest obstacle you're facing?
+  - What would success look like for you?
 
-Refer to the "user-profile-interview" skill for questions and style.
+Round 3: "Beyond what you've shared, is there anything else you're working toward or dreaming about? Even small things count."
+
+Round 4+: If the user is engaged, continue exploring:
+  - "What daily habits or routines would support these goals?"
+  - "Are there skills you want to develop?"
+  - "What would make your day-to-day life easier?"
+
+If the user is brief or disengaged, wrap up gracefully — don't force it.
+If the user refuses to answer or has no goals, respect that and skip ahead.
+
+Phase 3: Teach CraftBot Usefulness
+Based on everything you've learned, explain how CraftBot can specifically help them:
+- Map their goals to CraftBot's capabilities (automation, scheduling, research, web browsing,
+  file management, notifications, task tracking, coding assistance, etc.)
+- Give concrete examples tailored to their work and goals
+- Be specific about what CraftBot can automate or handle for them
+- Keep it concise — 3-5 bullet points maximum
+
+Phase 4: Proactive Task Suggestions
+Suggest 1-3 specific, actionable tasks CraftBot can start on right away:
+- Tasks that leverage CraftBot's automation capabilities
+- Recurring tasks that save time in the long run
+- Immediate tasks that can show impact in the short-term
+- Be specific with numbers or actionable items — DO NOT suggest generic tasks
+- Avoid giving multiple approaches per suggestion — provide the BEST option
+- Tasks that align with their work and personal aspirations
 
 IMPORTANT GUIDELINES:
-- Ask related questions together using a numbered list format
 - Be warm and conversational, not robotic
-- Acknowledge their answers before the next batch
-- Infer timezone from location (e.g., San Francisco = Pacific Time)
-- The life goals question is most important, ask multiple questions if necessary or goal unclear. Guide them to answer this question. Skip if user has no life or goal.
-- If user is annoyed by this interview or refuse to answer, just skip, and end task.
+- Acknowledge answers before asking the next question
+- Ask ONE batch of related questions at a time (don't overwhelm)
+- The life goals exploration is the core of this interview — spend time here
+- If user is annoyed or refuses to answer, just skip and end task gracefully
 
 After gathering ALL information:
-1. Tell the user to wait a moment while you update their preference
+1. Tell the user to wait a moment while you update their profile
 2. Read agent_file_system/USER.md
-3. Update USER.md with the collected information using stream_edit (including Language in Communication Preferences and Life Goals section)
-4. Suggest tasks based on life goals: Send a message suggesting 1-3 tasks that CraftBot can help with to improve their life and get closer to achieving their goals. Focus on:
-   - Tasks that leverage CraftBot's automation capabilities
-   - Recurring tasks that save time in the long run
-   - Immediate tasks that can show impact in short-term
-   - Bite-size tasks that is specialized, be specific with numbers or actionable items. DO NOT suggest generic task.
-   - Avoid giving mutliple approaches in each suggested task, provide the BEST option to achieve goal.
-   - Tasks that align with their work and personal aspirations
+3. Update USER.md with the collected information using stream_edit:
+   - Identity section: Update Job field
+   - Life Goals section: Update Goals and Help Wanted with detailed info gathered
+   - Personality section: Write observations about the user's personality
+   (Do NOT overwrite name, location, language, tone, proactivity, approval, or messaging platform — these are already set from setup)
+4. Send the CraftBot usefulness explanation and task suggestions
 5. End the task immediately with task_end (do NOT wait for confirmation)
-
-Start with: "Hi! I'm excited to be your AI assistant. To personalize your experience, let me ask a few quick questions:" then list the first batch.
 """
 
 

@@ -533,6 +533,15 @@ export interface OnboardingStepOption {
   requires_setup?: boolean  // Whether this option needs API key or additional setup
 }
 
+export interface OnboardingFormField {
+  name: string
+  label: string
+  field_type: 'text' | 'select' | 'multi_checkbox'
+  options: OnboardingStepOption[]
+  default: string | string[]
+  placeholder: string
+}
+
 export interface OnboardingStep {
   name: string
   title: string
@@ -543,6 +552,7 @@ export interface OnboardingStep {
   options: OnboardingStepOption[]
   default: string | string[] | null
   provider?: string | null   // only present on the api_key step
+  form_fields?: OnboardingFormField[] | null  // present on form steps (e.g., user_profile)
 }
 
 // ─────────────────────────────────────────────────────────────────────

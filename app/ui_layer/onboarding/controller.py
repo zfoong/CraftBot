@@ -9,6 +9,7 @@ from app.onboarding.interfaces.steps import (
     ProviderStep,
     ApiKeyStep,
     AgentNameStep,
+    UserProfileStep,
     MCPStep,
     SkillsStep,
     HardOnboardingStep,
@@ -67,6 +68,7 @@ class OnboardingFlowController:
         ProviderStep,
         ApiKeyStep,
         AgentNameStep,
+        UserProfileStep,
         MCPStep,
         SkillsStep,
     ]
@@ -287,11 +289,18 @@ class OnboardingFlowController:
             for skill_name in selected_skills:
                 enable_skill(skill_name)
 
-        # Initialize language from OS locale (first launch only)
-        self._initialize_user_language()
+        # Write user profile data to USER.md (replaces _initialize_user_language)
+        user_profile = self._state.collected_data.get("user_profile", {})
+        if user_profile:
+            from app.onboarding.profile_writer import write_profile_to_user_md
+            write_profile_to_user_md(user_profile)
+        else:
+            # Fallback: initialize language from OS locale if profile step was skipped
+            self._initialize_user_language()
 
         # Mark hard onboarding complete
-        onboarding_manager.mark_hard_complete(agent_name=agent_name)
+        user_name = user_profile.get("user_name") if user_profile else None
+        onboarding_manager.mark_hard_complete(user_name=user_name, agent_name=agent_name)
 
         # Trigger soft onboarding now that hard onboarding is done
         # This is needed because the soft onboarding check in agent.run() happens
@@ -362,10 +371,10 @@ class OnboardingFlowController:
         Get comprehensive information about the current step.
 
         Returns:
-            Dictionary with step metadata, options, and progress
+            Dictionary with step metadata, options, progress, and form_fields
         """
         step = self.get_current_step()
-        return {
+        info = {
             "name": step.name,
             "title": step.title,
             "description": step.description,
@@ -376,3 +385,23 @@ class OnboardingFlowController:
             "total_steps": len(self.STEP_CLASSES),
             "progress": self.get_progress_text(),
         }
+
+        # Include form fields if the step has them (e.g., UserProfileStep)
+        form_fields = getattr(step, 'get_form_fields', lambda: [])()
+        if form_fields:
+            info["form_fields"] = [
+                {
+                    "name": f.name,
+                    "label": f.label,
+                    "field_type": f.field_type,
+                    "options": [
+                        {"value": o.value, "label": o.label, "description": o.description, "default": o.default}
+                        for o in f.options
+                    ],
+                    "default": f.default,
+                    "placeholder": f.placeholder,
+                }
+                for f in form_fields
+            ]
+
+        return info
