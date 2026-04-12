@@ -53,8 +53,8 @@ IMPORTANT NOTES:
 
 <output_format>
 Return ONLY a valid JSON object:
-- Route to existing: {{ "action": "route", "session_id": "<session_id>", "reason": "<brief>" }}
-- Create new: {{ "action": "new", "session_id": "new", "reason": "<brief>" }}
+- Route to existing: {{ "reason": "<brief>", "action": "route", "session_id": "<session_id>" }}
+- Create new: {{ "reason": "<brief>", "action": "new", "session_id": "new" }}
 </output_format>
 """
 

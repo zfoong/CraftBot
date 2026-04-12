@@ -967,7 +967,18 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             print(f"[BROWSER ADAPTER] Failed to prepare WebSocket: {e}")
             return ws
         
+        is_first_client = len(self._ws_clients) == 0
         self._ws_clients.add(ws)
+
+        # Trigger soft onboarding on first client connection so the UI
+        # is ready to receive the task creation event.
+        if is_first_client:
+            from app.onboarding import onboarding_manager
+            if onboarding_manager.needs_soft_onboarding:
+                agent = self._controller.agent
+                if agent:
+                    import asyncio
+                    asyncio.create_task(agent.trigger_soft_onboarding())
 
         # Send initial state
         try:
