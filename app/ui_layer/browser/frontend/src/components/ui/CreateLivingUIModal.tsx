@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { X, Sparkles, Download, Loader2, Package, FolderInput } from 'lucide-react'
+import { X, Sparkles, Download, Loader2, Package, FolderInput, Upload } from 'lucide-react'
 import { Button } from './Button'
 import { useSettingsWebSocket } from '../../pages/Settings/useSettingsWebSocket'
 import type { LivingUICreateRequest } from '../../types'
@@ -51,6 +51,30 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
 
   // Marketplace state
   const { send, onMessage, isConnected } = useSettingsWebSocket()
+
+  // Upload ZIP → stage on server → send to agent via WebSocket
+  const handleZipUpload = async (file: File) => {
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const zipName = file.name.replace('.zip', '').replace(/^livingui_/, '').replace(/_[a-f0-9]+$/, '')
+      formData.append('name', zipName)
+      const resp = await fetch('/api/living-ui/import', { method: 'POST', body: formData })
+      const result = await resp.json()
+      if (result.success && result.path) {
+        // File staged — send to agent flow
+        send('living_ui_import', { source: result.path, name: result.name || zipName })
+        onClose()
+      } else {
+        alert(result.error || 'Upload failed')
+      }
+    } catch (err) {
+      alert('Upload failed: ' + (err instanceof Error ? err.message : err))
+    } finally {
+      setImporting(false)
+    }
+  }
   const [apps, setApps] = useState<MarketplaceApp[]>([])
   const [marketplaceLoading, setMarketplaceLoading] = useState(false)
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null)
@@ -255,7 +279,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
             }}
           >
             <FolderInput size={14} />
-            Import App
+            Import
           </button>
         </div>
 
@@ -423,21 +447,13 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
           </form>
         )}
 
-        {/* Import App Tab */}
+        {/* Import Tab — URL/path + ZIP upload */}
         {activeTab === 'import' && (
           <div>
             <div className={styles.modalBody}>
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
-                  Import any existing app — Go, Node.js, Python, Rust, or static sites.
-                  Provide a GitHub URL or local path, and CraftBot will detect the app type,
-                  set up the launch configuration, and add it to your Living UIs.
-                </p>
-              </div>
-
               <div className={styles.formGroup}>
                 <label className={styles.label}>
-                  GitHub URL or Local Path <span className={styles.required}>*</span>
+                  GitHub URL or Local Path
                 </label>
                 <input
                   type="text"
@@ -447,17 +463,61 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
                   onChange={e => setImportSource(e.target.value)}
                 />
                 <span className={styles.hint}>
-                  For GitHub repos, the agent will clone the repo. For local paths, it will copy the directory.
+                  Go · Node.js · Python · Rust · Docker · Static sites
                 </span>
               </div>
 
-              <div style={{
-                padding: 'var(--space-3)', background: 'var(--bg-tertiary)',
-                borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)',
-                color: 'var(--text-muted)', lineHeight: 1.5,
-              }}>
-                <strong>Supported app types:</strong><br />
-                Go (go.mod) · Node.js (package.json) · Python (requirements.txt) · Rust (Cargo.toml) · Docker (Dockerfile) · Static sites (index.html)
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', margin: 'var(--space-3) 0', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--border-primary)' }} />
+                <span>or</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--border-primary)' }} />
+              </div>
+
+              <div
+                style={{
+                  border: '2px dashed var(--border-primary)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: 'var(--space-6) var(--space-4)',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.2s, background 0.2s',
+                }}
+                onClick={() => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.zip'
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (file) handleZipUpload(file)
+                  }
+                  input.click()
+                }}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.background = 'var(--bg-tertiary)' }}
+                onDragLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-primary)'; e.currentTarget.style.background = '' }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  e.currentTarget.style.borderColor = 'var(--border-primary)'
+                  e.currentTarget.style.background = ''
+                  const file = e.dataTransfer.files[0]
+                  if (file && file.name.endsWith('.zip')) handleZipUpload(file)
+                }}
+              >
+                {importing ? (
+                  <>
+                    <Loader2 size={24} style={{ color: 'var(--color-primary)', animation: 'spin 1s linear infinite', marginBottom: 'var(--space-2)' }} />
+                    <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>Importing...</p>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={24} style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-2)' }} />
+                    <p style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--font-medium)', color: 'var(--text-primary)' }}>
+                      Drop a ZIP file here or click to browse
+                    </p>
+                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                      Import a previously exported Living UI
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
@@ -471,7 +531,6 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
                 disabled={!importSource.trim() || importing}
                 onClick={async () => {
                   setImporting(true)
-                  // Send import request via WebSocket with importer skill
                   send('living_ui_import', {
                     source: importSource.trim(),
                     name: importSource.trim().split('/').pop()?.replace('.git', '') || 'External App',

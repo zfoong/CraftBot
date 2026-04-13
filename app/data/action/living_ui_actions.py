@@ -295,3 +295,55 @@ async def living_ui_import_external(input_data: dict) -> dict:
         return result
     except Exception as e:
         return {"status": "error", "message": f"Import failed: {str(e)}"}
+
+
+@action(
+    name="living_ui_import_zip",
+    description=(
+        "Import a Living UI project from a ZIP file. "
+        "The ZIP should contain a previously exported Living UI project. "
+        "A new project ID and ports are allocated automatically. "
+        "After importing, launch the project with living_ui_notify_ready."
+    ),
+    action_sets=["living_ui"],
+    input_schema={
+        "zip_path": {"type": "string", "description": "Absolute path to the ZIP file.", "example": "/path/to/project.zip"},
+        "name": {"type": "string", "description": "Display name for the imported project (optional, auto-detected from manifest).", "example": "My App"},
+    },
+    output_schema={
+        "status": {"type": "string", "example": "success"},
+        "project_id": {"type": "string", "example": "a1b2c3d4"},
+        "message": {"type": "string"},
+    },
+)
+async def living_ui_import_zip(input_data: dict) -> dict:
+    """Import a Living UI project from a ZIP file."""
+    try:
+        from app.living_ui import get_living_ui_manager
+        manager = get_living_ui_manager()
+        if not manager:
+            return {"status": "error", "message": "Living UI manager not available."}
+
+        zip_path = input_data.get("zip_path", "")
+        name = input_data.get("name", "")
+
+        if not zip_path:
+            return {"status": "error", "message": "zip_path is required."}
+
+        project = await manager.import_project_zip(zip_path, name)
+
+        # Clean up the ZIP file after successful import
+        import os
+        try:
+            os.unlink(zip_path)
+        except Exception:
+            pass
+
+        return {
+            "status": "success",
+            "project_id": project.id,
+            "message": f"Imported '{project.name}' ({project.id}). Call living_ui_notify_ready to launch it.",
+            "project": project.to_dict(),
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"ZIP import failed: {str(e)}"}

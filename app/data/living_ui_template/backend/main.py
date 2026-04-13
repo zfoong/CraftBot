@@ -24,16 +24,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup, start health checker."""
-    from health_checker import start_health_checker, stop_health_checker
-
+    """Initialize database on startup."""
     logger.info("[Backend] Initializing database...")
     await init_db()
     logger.info("[Backend] Database initialized")
-    start_health_checker(port={{BACKEND_PORT}})
-    logger.info("[Backend] Health checker started")
     yield
-    stop_health_checker()
     logger.info("[Backend] Shutting down...")
 
 

@@ -898,6 +898,10 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         self._app.router.add_get("/api/theme.css", self._theme_css_handler)
         self._app.router.add_get("/api/workspace/{path:.*}", self._workspace_file_handler)
 
+        # Living UI export/import routes
+        self._app.router.add_get("/api/living-ui/{project_id}/export", self._living_ui_export_handler)
+        self._app.router.add_post("/api/living-ui/import", self._living_ui_import_handler)
+
         # Integration bridge routes (Living UI → external APIs)
         from app.living_ui.integration_bridge import IntegrationBridge
         self._integration_bridge = IntegrationBridge(self._living_ui_manager)
@@ -2148,6 +2152,74 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
                     "error": str(e),
                 },
             })
+
+    async def _living_ui_export_handler(self, request: 'web.Request') -> 'web.Response':
+        """HTTP handler: download a Living UI project as a ZIP file."""
+        from aiohttp import web
+        project_id = request.match_info['project_id']
+        try:
+            zip_path = self._living_ui_manager.export_project_zip(project_id)
+            project = self._living_ui_manager.get_project(project_id)
+            filename = f"{project.name.replace(' ', '_')}.zip" if project else f"{project_id}.zip"
+
+            response = web.FileResponse(
+                zip_path,
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"',
+                    'Content-Type': 'application/zip',
+                },
+            )
+            # Schedule cleanup after response is sent
+            response._zip_cleanup_path = zip_path
+            return response
+        except (ValueError, FileNotFoundError) as e:
+            return web.json_response({"error": str(e)}, status=404)
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Export error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _living_ui_import_handler(self, request: 'web.Request') -> 'web.Response':
+        """HTTP handler: stage a ZIP file upload and return the temp path.
+
+        The frontend then sends a living_ui_import WebSocket message with
+        the path so the agent handles extraction via the importer skill.
+        """
+        from aiohttp import web
+        try:
+            import tempfile
+            reader = await request.multipart()
+            zip_path = None
+            name = ''
+
+            async for part in reader:
+                if part.name == 'name':
+                    name = (await part.read()).decode('utf-8')
+                elif part.name == 'file':
+                    # Save uploaded file to a staging location
+                    staging_dir = Path(self._living_ui_manager.living_ui_dir) / '_staging'
+                    staging_dir.mkdir(parents=True, exist_ok=True)
+                    tmp = tempfile.NamedTemporaryFile(
+                        suffix='.zip', prefix='import_', dir=str(staging_dir), delete=False
+                    )
+                    while True:
+                        chunk = await part.read_chunk()
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+                    tmp.close()
+                    zip_path = tmp.name
+
+            if not zip_path:
+                return web.json_response({"error": "No ZIP file uploaded"}, status=400)
+
+            return web.json_response({
+                "success": True,
+                "path": zip_path,
+                "name": name,
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Upload staging error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_living_ui_state_update(self, data: Dict[str, Any]) -> None:
         """Handle state update from a Living UI for agent awareness."""
@@ -4091,23 +4163,37 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         })
 
     async def _handle_living_ui_import(self, source: str, name: str) -> None:
-        """Handle import of an external app — creates a task with the importer skill."""
+        """Handle import of an external app or ZIP — creates a task with the importer skill."""
         if not source:
             return
 
-        # Create a task that uses the living-ui-importer skill
-        task_instruction = (
-            f"Import this external app as a Living UI:\n"
-            f"Source: {source}\n"
-            f"Name: {name}\n\n"
-            f"Follow the living-ui-importer skill instructions:\n"
-            f"1. Clone/copy the source code\n"
-            f"2. Detect the app type (Go, Node, Python, etc.) — NEVER use Docker if native build is possible\n"
-            f"3. Determine build/install command, start command, port config, and health check\n"
-            f"4. Call living_ui_import_external with the detected configuration\n"
-            f"5. Launch the app and verify it works\n"
-            f"6. Create LIVING_UI.md documenting the app"
-        )
+        is_zip = source.lower().endswith('.zip')
+
+        if is_zip:
+            task_instruction = (
+                f"Import this Living UI project from a ZIP file:\n"
+                f"ZIP path: {source}\n"
+                f"Name: {name}\n\n"
+                f"Steps:\n"
+                f"1. Call living_ui_import_zip to extract and register the project\n"
+                f"2. Review the project structure and manifest\n"
+                f"3. Install dependencies if needed\n"
+                f"4. Launch the app and verify it works\n"
+                f"5. Clean up the ZIP file after successful import"
+            )
+        else:
+            task_instruction = (
+                f"Import this external app as a Living UI:\n"
+                f"Source: {source}\n"
+                f"Name: {name}\n\n"
+                f"Follow the living-ui-importer skill instructions:\n"
+                f"1. Clone/copy the source code\n"
+                f"2. Detect the app type (Go, Node, Python, etc.) — NEVER use Docker if native build is possible\n"
+                f"3. Determine build/install command, start command, port config, and health check\n"
+                f"4. Call living_ui_import_external with the detected configuration\n"
+                f"5. Launch the app and verify it works\n"
+                f"6. Create LIVING_UI.md documenting the app"
+            )
 
         task_id = self._controller.agent.task_manager.create_task(
             task_name=f"Import Living UI: {name}",

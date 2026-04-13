@@ -290,14 +290,8 @@ def _check_system_files() -> List[Dict[str, Any]]:
         else:
             checks.append({"name": "logging_setup", "status": "pass"})
 
-        if "health_checker" not in content and "start_health_checker" not in content:
-            checks.append({
-                "name": "health_checker",
-                "status": "fail",
-                "error": "main.py is missing health checker. Add: from health_checker import start_health_checker, stop_health_checker and call them in the lifespan handler",
-            })
-        else:
-            checks.append({"name": "health_checker", "status": "pass"})
+        # Health checker is handled by the manager watchdog — no longer required in main.py
+        checks.append({"name": "health_checker", "status": "pass"})
     else:
         checks.append({"name": "main_py", "status": "fail", "error": "main.py not found"})
 

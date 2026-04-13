@@ -16,8 +16,10 @@ import os
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 import uuid
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -1411,20 +1413,14 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             logger.warning(f"[LIVING_UI] No backend directory for {project_id}")
             return True  # Not an error, just no backend
 
-        # Check if backend is already running
+        # If backend port is occupied, allocate a new one instead of killing
         backend_port = project.backend_port
         if backend_port and self._is_port_in_use(backend_port):
-            # Verify it's responding
-            health_url = f"http://localhost:{backend_port}/health"
-            if await self._wait_for_health_check(health_url, timeout=2):
-                logger.info(f"[LIVING_UI] Backend already running on port {backend_port}")
-                project.backend_url = f"http://localhost:{backend_port}"
-                return True
-            else:
-                # Port in use but not responding - kill and restart
-                logger.warning(f"[LIVING_UI] Port {backend_port} in use but not responding, killing...")
-                self._kill_process_on_port(backend_port)
-                await asyncio.sleep(1)
+            logger.info(f"[LIVING_UI] Port {backend_port} occupied, allocating a new port...")
+            self._release_port(backend_port)
+            backend_port = self._allocate_port()
+            project.backend_port = backend_port
+            logger.info(f"[LIVING_UI] Allocated new backend port: {backend_port}")
 
         # Allocate port if needed
         if not backend_port:
@@ -1524,11 +1520,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             return False
 
         if project.backend_process:
-            try:
-                project.backend_process.terminate()
-                project.backend_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                project.backend_process.kill()
+            self._terminate_process(project.backend_process)
             project.backend_process = None
 
         # Also try to kill by port in case process reference is stale
@@ -1538,6 +1530,25 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         project.backend_url = None
         logger.info(f"[LIVING_UI] Stopped backend for {project_id}")
         return True
+
+    def _terminate_process(self, process: subprocess.Popen) -> None:
+        """Terminate a subprocess, killing the entire process tree on Windows."""
+        try:
+            if os.name == 'nt':
+                # On Windows with shell=True, terminate() only kills cmd.exe,
+                # not the child python/uvicorn. Kill the whole tree via taskkill.
+                subprocess.run(
+                    ['taskkill', '/T', '/F', '/PID', str(process.pid)],
+                    capture_output=True, shell=True
+                )
+            else:
+                process.terminate()
+            process.wait(timeout=5)
+        except (subprocess.TimeoutExpired, Exception):
+            try:
+                process.kill()
+            except Exception:
+                pass
 
     def _kill_process_on_port(self, port: int) -> bool:
         """
@@ -1575,18 +1586,22 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                     text=True,
                     shell=True
                 )
+                killed = False
                 for line in result.stdout.split('\n'):
                     if f':{port}' in line and 'LISTENING' in line:
                         parts = line.split()
                         if len(parts) >= 5:
                             pid = parts[-1]
+                            # /T kills entire process tree (shell + child processes)
                             subprocess.run(
-                                ['taskkill', '/F', '/PID', pid],
+                                ['taskkill', '/T', '/F', '/PID', pid],
                                 capture_output=True,
                                 shell=True
                             )
-                            logger.info(f"[LIVING_UI] Killed process {pid} on port {port}")
-                            return True
+                            logger.info(f"[LIVING_UI] Killed process tree {pid} on port {port}")
+                            killed = True
+                if killed:
+                    return True
             except Exception as e:
                 logger.warning(f"[LIVING_UI] Failed to kill process on port {port}: {e}")
             return False
@@ -2323,20 +2338,12 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
         # Stop app process (external/single-process apps)
         if project.app_process:
-            try:
-                project.app_process.terminate()
-                project.app_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                project.app_process.kill()
+            self._terminate_process(project.app_process)
             project.app_process = None
 
         # Stop frontend process
         if project.process:
-            try:
-                project.process.terminate()
-                project.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                project.process.kill()
+            self._terminate_process(project.process)
             project.process = None
 
         # Also kill by port in case process reference is stale
@@ -2402,6 +2409,141 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
     def list_projects(self) -> List[LivingUIProject]:
         """List all projects."""
         return list(self.projects.values())
+
+    def export_project_zip(self, project_id: str) -> Path:
+        """Export a Living UI project as a ZIP file.
+
+        Returns the path to the temporary ZIP file. Caller is responsible
+        for cleanup after serving the file.
+        """
+        project = self.projects.get(project_id)
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
+
+        project_path = Path(project.path)
+        if not project_path.exists():
+            raise FileNotFoundError(f"Project directory not found: {project_path}")
+
+        # Create a temp ZIP
+        tmp = tempfile.NamedTemporaryFile(
+            suffix='.zip', prefix=f'livingui_{self._sanitize_name(project.name)}_',
+            delete=False,
+        )
+        tmp.close()
+        zip_path = Path(tmp.name)
+
+        skip_dirs = {'node_modules', '__pycache__', '.git', 'dist', 'build', 'logs', '.venv', 'venv'}
+        skip_suffixes = {'.pyc', '.pyo', '.log', '.db', '.sqlite', '.sqlite3'}
+        skip_names = {'.env', '.env.local', '.env.production', '.last_launch',
+                      'credentials.json', 'token.json'}
+
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(project_path):
+                dirs[:] = [d for d in dirs if d not in skip_dirs]
+                for f in files:
+                    file_path = Path(root) / f
+                    if file_path.suffix in skip_suffixes or file_path.name in skip_names:
+                        continue
+                    zf.write(file_path, file_path.relative_to(project_path))
+
+        logger.info(f"[LIVING_UI] Exported project '{project.name}' to {zip_path}")
+        return zip_path
+
+    async def import_project_zip(self, zip_path: str, name: str = '') -> 'LivingUIProject':
+        """Import a Living UI project from a ZIP file.
+
+        The ZIP should contain a project directory structure with at least
+        a config/manifest.json. A new project ID and ports are allocated.
+        """
+        zip_file = Path(zip_path)
+        if not zip_file.exists():
+            raise FileNotFoundError(f"ZIP file not found: {zip_path}")
+
+        # Extract to a temp directory first to inspect contents
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with zipfile.ZipFile(zip_file, 'r') as zf:
+                zf.extractall(tmp_dir)
+
+            tmp_path = Path(tmp_dir)
+
+            # Check if files are nested inside a single directory
+            entries = list(tmp_path.iterdir())
+            if len(entries) == 1 and entries[0].is_dir():
+                extracted_root = entries[0]
+            else:
+                extracted_root = tmp_path
+
+            # Read manifest if it exists
+            manifest_path = extracted_root / 'config' / 'manifest.json'
+            manifest = {}
+            if manifest_path.exists():
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+                except Exception:
+                    pass
+
+            # Determine project name
+            if not name:
+                name = manifest.get('name', zip_file.stem.replace('livingui_', '').rsplit('_', 1)[0])
+            if not name:
+                name = 'imported_project'
+
+            # Generate new ID and project path
+            project_id = self._generate_id()
+            sanitized_name = self._sanitize_name(name)
+            project_path = self.living_ui_dir / f"{sanitized_name}_{project_id}"
+
+            # Copy to Living UI workspace
+            shutil.copytree(extracted_root, project_path)
+
+        # Allocate new ports
+        frontend_port = self._allocate_port()
+        backend_port = self._allocate_port()
+
+        # Update manifest with new ID and ports
+        manifest_path = project_path / 'config' / 'manifest.json'
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+                old_id = manifest.get('id', '')
+                old_port = str(manifest.get('ports', {}).get('frontend', manifest.get('ports', {}).get('app', '')))
+                old_backend = str(manifest.get('ports', {}).get('backend', ''))
+
+                manifest_raw = manifest_path.read_text(encoding='utf-8')
+                if old_id:
+                    manifest_raw = manifest_raw.replace(old_id, project_id)
+                if old_port and old_port != str(frontend_port):
+                    manifest_raw = manifest_raw.replace(old_port, str(frontend_port))
+                if old_backend and old_backend != str(backend_port):
+                    manifest_raw = manifest_raw.replace(old_backend, str(backend_port))
+
+                manifest_path.write_text(manifest_raw, encoding='utf-8')
+                manifest = json.loads(manifest_raw)
+            except Exception as e:
+                logger.warning(f"[LIVING_UI] Could not update imported manifest: {e}")
+
+        # Determine project type from manifest
+        project_type = manifest.get('projectType', 'native')
+        app_runtime = manifest.get('appRuntime')
+        description = manifest.get('description', '')
+
+        project = LivingUIProject(
+            id=project_id,
+            name=name,
+            description=description,
+            path=str(project_path),
+            status='ready',
+            port=frontend_port,
+            backend_port=backend_port,
+            project_type=project_type,
+            app_runtime=app_runtime,
+        )
+
+        self.projects[project_id] = project
+        self._save_projects()
+
+        logger.info(f"[LIVING_UI] Imported project '{name}' ({project_id}) from ZIP")
+        return project
 
     def get_project_url(self, project_id: str) -> Optional[str]:
         """Get the URL for a running project."""

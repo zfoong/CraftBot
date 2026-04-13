@@ -10,6 +10,7 @@ import {
   Plus,
   Check,
   ChevronRight,
+  Download,
 } from 'lucide-react'
 import { Button, Badge, ConfirmModal } from '../../components/ui'
 import { useConfirmModal } from '../../hooks'
@@ -391,6 +392,14 @@ export function LivingUISettings() {
                       ) : (project.status === 'stopped' || project.status === 'error') ? (
                         <Button size="sm" variant="primary" icon={actionInProgress === project.id ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={14} />} onClick={() => handleLaunch(project.id)} disabled={actionInProgress === project.id}>Launch</Button>
                       ) : null}
+                      <Button size="sm" variant="ghost" icon={<Download size={14} />} onClick={() => {
+                        const link = document.createElement('a')
+                        link.href = `/api/living-ui/${project.id}/export`
+                        link.download = ''
+                        document.body.appendChild(link)
+                        link.click()
+                        document.body.removeChild(link)
+                      }}>Export</Button>
                       <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} onClick={() => handleDelete(project)} disabled={actionInProgress === project.id} />
                     </div>
                   </div>
