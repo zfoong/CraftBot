@@ -1,6 +1,7 @@
 {
   "auto_load": true,
   "enabled_skills": [
+    "cli-anything",
     "docx",
     "pdf",
     "playwright-mcp",
