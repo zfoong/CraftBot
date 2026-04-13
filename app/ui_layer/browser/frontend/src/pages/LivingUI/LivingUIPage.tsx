@@ -16,6 +16,7 @@ import { Button } from '../../components/ui/Button'
 import { IconButton } from '../../components/ui/IconButton'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { Chat } from '../../components/Chat'
+import { getOrCreateIframe, showIframe, hideIframe, refreshIframe, removeIframe } from './iframePool'
 import type { LivingUIProject } from '../../types'
 import styles from './LivingUIPage.module.css'
 
@@ -34,7 +35,7 @@ export function LivingUIPage() {
   const [showChat, setShowChat] = useState(true)
   const [panelWidth, setPanelWidth] = useState(350)
   const [isResizing, setIsResizing] = useState(false)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const iframePlaceholderRef = useRef<HTMLDivElement>(null)
 
   // Find the current project
   const project = livingUIProjects.find(p => p.id === projectId)
@@ -48,6 +49,38 @@ export function LivingUIPage() {
       setActiveLivingUI(null)
     }
   }, [projectId, setActiveLivingUI])
+
+  // Persistent iframe — lives in a pool on document.body, positioned over the placeholder
+  useEffect(() => {
+    if (!projectId || project?.status !== 'running' || !project?.url) {
+      if (projectId) hideIframe(projectId)
+      return
+    }
+
+    getOrCreateIframe(projectId, project.url)
+
+    const updatePosition = () => {
+      if (iframePlaceholderRef.current && projectId) {
+        showIframe(projectId, iframePlaceholderRef.current.getBoundingClientRect())
+      }
+    }
+
+    // Track container size/position changes
+    const observer = new ResizeObserver(updatePosition)
+    if (iframePlaceholderRef.current) {
+      observer.observe(iframePlaceholderRef.current)
+    }
+    window.addEventListener('resize', updatePosition)
+
+    // Initial position
+    updatePosition()
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updatePosition)
+      if (projectId) hideIframe(projectId)
+    }
+  }, [projectId, project?.status, project?.url])
 
   const handleLaunch = () => {
     if (projectId) {
@@ -63,14 +96,15 @@ export function LivingUIPage() {
 
   const handleDelete = () => {
     if (projectId) {
+      removeIframe(projectId)
       deleteLivingUI(projectId)
       navigate('/')
     }
   }
 
   const handleRefresh = () => {
-    if (iframeRef.current) {
-      iframeRef.current.src = iframeRef.current.src
+    if (projectId) {
+      refreshIframe(projectId)
     }
   }
 
@@ -173,12 +207,7 @@ export function LivingUIPage() {
         {/* Living UI Iframe */}
         <div className={styles.iframeContainer}>
           {project.status === 'running' && project.url ? (
-            <iframe
-              ref={iframeRef}
-              src={project.url}
-              className={styles.iframe}
-              title={project.name}
-            />
+            <div ref={iframePlaceholderRef} className={styles.iframe} />
           ) : project.status === 'creating' ? (
             <div className={styles.loading}>
               <Loader2 size={32} className={styles.spinner} />
