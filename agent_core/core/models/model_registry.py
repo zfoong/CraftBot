@@ -36,7 +36,7 @@ MODEL_REGISTRY = {
     },
     "deepseek": {
         InterfaceType.LLM: "deepseek-chat",
-        InterfaceType.VLM: "deepseek-chat",
+        InterfaceType.VLM: None,
         InterfaceType.EMBEDDING: None,
     },
     "moonshot": {
@@ -46,7 +46,7 @@ MODEL_REGISTRY = {
     },
     "grok": {
         InterfaceType.LLM: "grok-3",
-        InterfaceType.VLM: "grok-2-vision-1212",
+        InterfaceType.VLM: "grok-4-0709",
         InterfaceType.EMBEDDING: None,
     },
 }

@@ -259,7 +259,7 @@ class VLMInterface:
             return cleaned
         except Exception as e:
             logger.error(f"[ERROR] {e}")
-            return ""
+            raise
 
     async def generate_response_async(
         self,
@@ -451,7 +451,6 @@ class VLMInterface:
             "messages": messages,
             "temperature": self.temperature,
             "max_tokens": 2048,
-            "response_format": {"type": "json_object"},
         }
         headers = {
             "Content-Type": "application/json",
