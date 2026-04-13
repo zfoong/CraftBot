@@ -698,16 +698,24 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
 
       case 'living_ui_ready': {
-        const { projectId, url, port } = msg.data as { projectId: string; url: string; port: number }
-        setState(prev => ({
-          ...prev,
-          livingUICreating: null,
-          livingUIProjects: prev.livingUIProjects.map(p =>
-            p.id === projectId
-              ? { ...p, status: 'running', url, port }
-              : p
-          ),
-        }))
+        const readyData = msg.data as { projectId: string; url: string; port: number }
+        setState(prev => {
+          const exists = prev.livingUIProjects.some(p => p.id === readyData.projectId)
+          if (exists) {
+            return {
+              ...prev,
+              livingUICreating: null,
+              livingUIProjects: prev.livingUIProjects.map(p =>
+                p.id === readyData.projectId
+                  ? { ...p, status: 'running' as const, url: readyData.url, port: readyData.port }
+                  : p
+              ),
+            }
+          }
+          // Project not in list yet — refresh the full list from server
+          wsRef.current?.send(JSON.stringify({ type: 'living_ui_list' }))
+          return { ...prev, livingUICreating: null }
+        })
         break
       }
 
