@@ -1001,3 +1001,77 @@ class InternalActionInterface:
             "available_sets": available_sets,
             "current_sets": current_sets,
         }
+
+    @classmethod
+    def list_skills(cls) -> Dict[str, Any]:
+        """
+        List all enabled skills with their names and descriptions.
+
+        Returns:
+            Dictionary with skill names mapped to descriptions.
+        """
+        from agent_core.core.impl.skill.manager import skill_manager
+
+        skills = skill_manager.list_skills_for_selection()
+        return {"skills": skills}
+
+    @classmethod
+    def use_skill(cls, skill_name: str) -> Dict[str, Any]:
+        """
+        Activate a skill for the current task, replacing the current skill
+        in the system prompt. Invalidates and re-creates LLM session caches
+        so the updated system prompt takes effect.
+
+        Args:
+            skill_name: Name of the skill to activate.
+
+        Returns:
+            Dictionary with success status and skill details.
+        """
+        if cls.task_manager is None:
+            raise RuntimeError("InternalActionInterface not initialized with TaskManager.")
+
+        from agent_core.core.impl.skill.manager import skill_manager
+
+        # Validate skill exists and is enabled
+        skill = skill_manager.get_skill(skill_name)
+        if not skill:
+            return {"success": False, "error": f"Skill '{skill_name}' not found."}
+        if not skill.enabled:
+            return {"success": False, "error": f"Skill '{skill_name}' is not enabled."}
+
+        # Get current task and save previous skills
+        task = cls.task_manager.get_task()
+        if not task:
+            return {"success": False, "error": "No active task."}
+
+        previous_skills = list(task.selected_skills)
+
+        # Replace selected skills
+        task.selected_skills = [skill_name]
+
+        # Add skill-recommended action sets (if any new ones)
+        added_action_sets = []
+        recommended_sets = skill_manager.get_skill_action_sets([skill_name])
+        if recommended_sets:
+            current_sets = set(task.action_sets)
+            new_sets = [s for s in recommended_sets if s not in current_sets]
+            if new_sets:
+                cls.add_action_sets(new_sets)  # This also invalidates caches
+                added_action_sets = new_sets
+            else:
+                # No new action sets but system prompt still changed — invalidate caches
+                cls._invalidate_action_selection_caches()
+        else:
+            # No recommended sets — still need to invalidate for skill change
+            cls._invalidate_action_selection_caches()
+
+        logger.info(f"[SKILL] Activated skill '{skill_name}' (replaced: {previous_skills})")
+
+        return {
+            "success": True,
+            "active_skill": skill_name,
+            "skill_description": skill.description,
+            "previous_skills": previous_skills,
+            "added_action_sets": added_action_sets,
+        }
