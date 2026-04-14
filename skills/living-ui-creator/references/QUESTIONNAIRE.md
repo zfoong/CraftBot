@@ -59,6 +59,43 @@ based on the project description and ask in batches of 2-4.
 - Should some users have admin privileges?
 - Do users need to collaborate or share data?
 
+## Expanding Vague Answers
+
+When the user gives a brief or vague reply, expand it into specific features and **confirm with the user** before documenting in LIVING_UI.md.
+
+### Common Expansions
+
+| User says | Expand to |
+|-----------|-----------|
+| "basic user stuff" / "user management" | Login, signup, user profiles, member list, role-based access (admin/member), password change |
+| "normal layout" / "standard layout" | Left sidebar for navigation, main content area, responsive, top header with app name + user menu |
+| "simple dashboard" / "basic dashboard" | Stat cards (3-4 key metrics), recent activity list, quick-action buttons |
+| "basic CRUD" / "the usual" | Create, read, update, delete with confirmation dialogs, search/filter, sort by date |
+| "make it look good" / "clean design" | Modern minimal style, system theme (light/dark), CraftBot design tokens, card-based layout, no gradients |
+| "basic settings" / "settings page" | User profile edit, theme toggle, notification preferences, account deletion |
+| "notifications" / "alerts" | Toast notifications for CRUD feedback, email-style notification center for async events |
+| "basic search" / "search" | Text search across primary fields, filter dropdowns for status/category/tags, clear filters button |
+| "drag and drop" | Reorderable items via drag, column-to-column for kanban, visual drop indicator |
+| "sharing" / "collaboration" | Membership system (invite by code), per-resource access control, member list, owner/admin/member roles |
+| "comments" | Per-item comment thread, author + timestamp, no threading (flat), delete own comments |
+| "tags" / "labels" | Colored tag chips, create/delete tags, filter by tag, multi-tag per item |
+| "calendar view" | Monthly grid showing items by due date, click to view/edit, overdue highlighting |
+| "dark mode" | System theme preference toggle (light/dark/auto), persisted in localStorage |
+
+### How to Confirm
+
+After expanding, confirm with the user in a natural way:
+
+> "Got it! By 'basic user stuff' I'll set up:
+> - Login & signup (email + password)
+> - User profiles (edit name, email, change password)
+> - Member list (see who's in the project)
+> - Roles: admin (manage everything) and member (standard access)
+>
+> Sound right, or would you add/remove anything?"
+
+**Never proceed with vague answers as-is.** Always expand, always confirm.
+
 ## Safe Assumptions
 
 The agent can assume the following unless the user says otherwise:

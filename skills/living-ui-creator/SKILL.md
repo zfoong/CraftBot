@@ -148,6 +148,7 @@ Use `send_message` with `wait_for_user_reply=True` to ask questions and wait for
 - Batch 1 MUST cover data/features. Batch 2 MUST cover design/visual preferences.
 - If the user gives short or vague answers, DO NOT skip Batch 2. Instead, offer specific choices (e.g., "Would you prefer a card grid or a kanban column layout?").
 - If the user explicitly says "just build it" or "skip the questions" — then and ONLY then can you stop early. A short answer to one question is NOT "skip."
+- **EXPAND VAGUE ANSWERS**: When a user gives a brief or vague reply (e.g., "basic user stuff", "normal layout", "simple dashboard"), you MUST expand it into specific features, then confirm with the user before proceeding. See "Expanding Vague Answers" in [QUESTIONNAIRE.md](references/QUESTIONNAIRE.md) for common mappings.
 
 **Process:**
 
@@ -162,7 +163,12 @@ Use `send_message` with `wait_for_user_reply=True` to ask questions and wait for
    - Offer concrete choices rather than open-ended questions (e.g., "Card grid like Pinterest, or columns like Trello?")
    - Use `send_message` with `wait_for_user_reply=True`
 4. **Batch 3 (optional)** — only if significant gaps remain after Batch 2
-5. **Fill gaps with assumptions** — after gathering answers:
+5. **Expand vague answers** — after each batch, review the user's responses:
+   - If any answer is vague ("basic", "normal", "simple", "standard", "the usual"), expand it into concrete features using the mappings in QUESTIONNAIRE.md
+   - Confirm your expansion: "By 'basic user stuff' I'll include: login/signup, user profiles, member list, and role-based access (admin/member). Does that sound right?"
+   - Wait for user to confirm or correct before proceeding
+   - Document the **expanded** version in LIVING_UI.md, not the vague original
+6. **Fill gaps with assumptions** — after gathering answers:
    - State your assumptions explicitly to the user
    - See "Safe Assumptions" in QUESTIONNAIRE.md for defaults
 6. **Document in LIVING_UI.md (MANDATORY)** — you MUST fill in the Requirements section NOW, before moving to Phase 1:
