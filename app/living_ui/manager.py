@@ -2392,6 +2392,9 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             logger.error(f"[LIVING_UI] Project not found: {project_id}")
             return False
 
+        # Stop tunnel if active
+        await self.stop_tunnel(project_id)
+
         # Stop if running
         if project.status == 'running':
             await self.stop_project(project_id)
