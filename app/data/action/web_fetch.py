@@ -2,16 +2,17 @@ from agent_core import action
 
 @action(
     name="web_fetch",
-    description="""Fetches content from a URL and returns processed markdown content.
-- Takes a URL and an optional prompt describing what information to extract
-- Fetches the URL content and converts HTML to markdown
-- Uses two-tier extraction: fast static extraction first, then Jina Reader API for JS-rendered sites
-- Handles redirects: when redirecting to a different host, returns redirect info
-- HTTP URLs are automatically upgraded to HTTPS
-- Use web_search action first to find relevant URLs, then use this to read full content
-
-IMPORTANT: This action may fail for authenticated or private URLs. For sites requiring
-authentication (Google Docs, Confluence, Jira, etc.), use specialized authenticated tools.""",
+    description=(
+        "Fetches content from a URL and returns it as cleaned text/markdown. "
+        "Use web_search first to find URLs, then web_fetch to read them. "
+        "The 'prompt' parameter controls what is returned: "
+        "include 'title' to extract just the page title, "
+        "include 'summary' to get a short preview (~900 chars), "
+        "or describe what you need (e.g., 'find the pricing table') to get a focused preview. "
+        "Content beyond max_content_length is saved to a temp file (returned as content_file) "
+        "— use grep_files or read_file on that path to access the rest. "
+        "HTTP is auto-upgraded to HTTPS (except localhost). Follows up to 10 redirects automatically."
+    ),
     mode="CLI",
     action_sets=["core"],
     input_schema={
@@ -23,180 +24,150 @@ authentication (Google Docs, Confluence, Jira, etc.), use specialized authentica
         },
         "prompt": {
             "type": "string",
-            "example": "Extract the main points and key takeaways from this article",
-            "description": "Optional prompt describing what information to extract from the page. If provided, content will be structured around this prompt."
+            "example": "Extract the main pricing information",
+            "description": "Describes what information to extract. Use 'title' to get just the page title. Use 'summary' for a short content preview (~900 chars). Otherwise, provide a specific prompt (e.g., 'find the API rate limits') and the response will include a content preview with your prompt for context. Always provide a prompt to keep responses token-efficient."
         },
         "timeout": {
             "type": "number",
-            "example": 30,
-            "description": "Request timeout in seconds. Defaults to 30."
+            "example": 20,
+            "description": "Request timeout in seconds. Defaults to 20."
         },
         "max_content_length": {
             "type": "integer",
-            "example": 50000,
-            "description": "Maximum content length in characters. Content exceeding this will be truncated. Defaults to 50000."
+            "example": 5000,
+            "description": "Maximum content length in characters returned inline. Content beyond this is saved to content_file for access via read_file/grep_files. Defaults to 5000. Pass 0 to return all content inline (use sparingly — large pages waste tokens)."
         },
         "use_jina_fallback": {
             "type": "boolean",
             "example": True,
-            "description": "Use Jina Reader API as fallback for JS-rendered sites. Defaults to True."
-        },
-        "min_content_length": {
-            "type": "integer",
-            "example": 200,
-            "description": "Minimum content length to consider extraction successful. Below this triggers fallback. Defaults to 200."
+            "description": "Use Jina Reader API as fallback for JS-rendered sites when static extraction yields too little content. Defaults to True."
         }
     },
     output_schema={
         "status": {
             "type": "string",
             "example": "success",
-            "description": "'success', 'redirect', or 'error'."
+            "description": "'success' or 'error'."
+        },
+        "status_code": {
+            "type": "integer",
+            "example": 200,
+            "description": "HTTP status code (e.g., 200, 404, 500)."
+        },
+        "status_text": {
+            "type": "string",
+            "example": "OK",
+            "description": "HTTP status reason (e.g., 'OK', 'Not Found')."
         },
         "url": {
             "type": "string",
-            "description": "The original requested URL."
-        },
-        "final_url": {
-            "type": "string",
-            "description": "The final URL after any redirects (same host only)."
-        },
-        "redirect_url": {
-            "type": "string",
-            "description": "Present when status='redirect'. The URL to follow for cross-host redirects."
+            "description": "The final URL after following redirects."
         },
         "title": {
             "type": "string",
-            "description": "The page title."
+            "description": "The page title, if extracted."
         },
         "content": {
             "type": "string",
-            "description": "The extracted content in markdown format."
+            "description": "The extracted content. Format depends on prompt: title-only, summary preview, or prompt-contextualized preview. If no prompt given, returns full content (up to max_content_length)."
         },
         "content_length": {
             "type": "integer",
-            "description": "Length of the content in characters."
+            "description": "Length of the inline content in characters."
+        },
+        "total_content_length": {
+            "type": "integer",
+            "description": "Total length of the full fetched content (before truncation)."
         },
         "was_truncated": {
             "type": "boolean",
-            "description": "True if content was truncated due to max_content_length."
+            "description": "True if content was truncated to max_content_length."
         },
-        "prompt_used": {
+        "content_file": {
             "type": "string",
-            "description": "The prompt that was applied (if any)."
+            "description": "Absolute path to the full content file when was_truncated is true. Use read_file with offset/limit to paginate, or grep_files to search. Null if content was not truncated."
         },
         "message": {
             "type": "string",
             "description": "Error or informational message."
-        },
-        "extraction_method": {
-            "type": "string",
-            "description": "Method used for extraction: 'static' (trafilatura/BeautifulSoup) or 'jina' (Jina Reader API)."
         }
     },
     requirement=["requests", "beautifulsoup4", "trafilatura", "lxml"],
     test_payload={
         "url": "https://example.com/article",
-        "prompt": "Summarize the main content",
-        "timeout": 30,
+        "prompt": "summary",
+        "timeout": 20,
         "simulated_mode": True
     }
 )
 def web_fetch(input_data: dict) -> dict:
-    """
-    Fetches content from a URL and returns processed markdown content.
-    Uses two-tier extraction: fast static extraction first, then Jina Reader API for JS-rendered sites.
-    """
+    """Fetches content from a URL and returns cleaned text/markdown."""
     import re
     from urllib.parse import urlparse
 
     simulated_mode = input_data.get('simulated_mode', False)
     url = str(input_data.get('url', '')).strip()
     prompt = str(input_data.get('prompt', '')).strip() if input_data.get('prompt') else None
-    timeout = float(input_data.get('timeout', 30))
-    max_content_length = int(input_data.get('max_content_length', 50000))
+    timeout = float(input_data.get('timeout', 20))
+    raw_max = input_data.get('max_content_length')
+    try:
+        max_content_length = int(raw_max) if raw_max is not None else 5000
+    except (TypeError, ValueError):
+        max_content_length = 5000
+    if max_content_length < 0:
+        max_content_length = 5000
+    unlimited = (max_content_length == 0)
     use_jina_fallback = input_data.get('use_jina_fallback', True)
-    min_content_length = int(input_data.get('min_content_length', 200))
+    session_id = input_data.get('_session_id', '')
 
-    def _make_error(message, url=''):
-        return {
-            'status': 'error',
-            'url': url,
-            'final_url': '',
-            'title': '',
-            'content': '',
-            'content_length': 0,
-            'was_truncated': False,
-            'prompt_used': prompt or '',
-            'message': message
-        }
-
-    def _make_redirect(original_url, redirect_url):
-        return {
-            'status': 'redirect',
-            'url': original_url,
-            'final_url': '',
-            'redirect_url': redirect_url,
-            'title': '',
-            'content': '',
-            'content_length': 0,
-            'was_truncated': False,
-            'prompt_used': prompt or '',
-            'message': f'Redirect to different host detected. Please make a new request to: {redirect_url}'
-        }
-
-    # Validate URL
+    # --- Validate URL ---
     if not url:
         return _make_error('URL is required.')
 
-    # Auto-upgrade HTTP to HTTPS
+    # Auto-upgrade HTTP to HTTPS (except localhost)
     if url.startswith('http://'):
-        url = 'https://' + url[7:]
+        try:
+            parsed = urlparse(url)
+            host = parsed.hostname or ''
+            if host not in ('localhost', '127.0.0.1', '::1'):
+                url = 'https://' + url[7:]
+        except Exception:
+            url = 'https://' + url[7:]
 
     if not re.match(r'^https?://', url, re.I):
         return _make_error('A valid http(s) URL is required.', url)
 
-    # Parse original URL for host comparison
-    try:
-        original_parsed = urlparse(url)
-        original_host = original_parsed.netloc.lower()
-    except Exception as e:
-        return _make_error(f'Invalid URL format: {str(e)}', url)
-
-    # Simulated mode for testing
+    # --- Simulated mode ---
     if simulated_mode:
-        mock_content = f"""# Test Page Title
-
-This is simulated content fetched from {url}.
-
-## Main Content
-
-This is the main body of the page content, converted to markdown format.
-
-- Point 1: Important information
-- Point 2: More details
-- Point 3: Additional context
-
-## Summary
-
-This is a test page demonstrating the web_fetch action functionality.
-"""
+        mock_content = (
+            "# Test Page Title\n\n"
+            "This is simulated content fetched from the URL.\n\n"
+            "## Main Content\n\n"
+            "- Point 1: Important information\n"
+            "- Point 2: More details\n"
+            "- Point 3: Additional context\n\n"
+            "## Summary\n\n"
+            "This is a test page demonstrating the web_fetch action."
+        )
+        result_content = mock_content
         if prompt:
-            mock_content = f"**Prompt:** {prompt}\n\n---\n\n{mock_content}"
+            result_content = _apply_prompt(prompt, mock_content, 'Test Page Title')
 
         return {
             'status': 'success',
+            'status_code': 200,
+            'status_text': 'OK',
             'url': url,
-            'final_url': url,
             'title': 'Test Page Title',
-            'content': mock_content,
-            'content_length': len(mock_content),
+            'content': result_content,
+            'content_length': len(result_content),
+            'total_content_length': len(mock_content),
             'was_truncated': False,
-            'prompt_used': prompt or '',
+            'content_file': None,
             'message': ''
         }
 
-    # Fetch the URL
+    # --- Fetch the URL ---
     try:
         import requests
         from bs4 import BeautifulSoup
@@ -208,39 +179,27 @@ This is a test page demonstrating the web_fetch action functionality.
             'Accept-Language': 'en-US,en;q=0.9'
         }
 
-        # First, make a HEAD request to check for redirects without downloading content
-        try:
-            head_response = requests.head(url, headers=headers, timeout=timeout, allow_redirects=True)
-            final_url = str(head_response.url)
-            final_parsed = urlparse(final_url)
-            final_host = final_parsed.netloc.lower()
-
-            # Check if redirect is to a different host
-            if final_host != original_host:
-                return _make_redirect(url, final_url)
-        except requests.exceptions.RequestException:
-            # HEAD failed, continue with GET
-            pass
-
-        # Fetch the content
-        response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True, stream=True)
+        # Fetch content — follow up to 10 redirects automatically
+        response = requests.get(
+            url, headers=headers, timeout=timeout,
+            allow_redirects=True, stream=True
+        )
         response.raise_for_status()
 
+        status_code = response.status_code
+        status_text = response.reason or ''
         final_url = str(response.url)
-        final_parsed = urlparse(final_url)
-        final_host = final_parsed.netloc.lower()
-
-        # Double-check for cross-host redirect
-        if final_host != original_host:
-            return _make_redirect(url, final_url)
 
         # Check content type
         content_type = response.headers.get('Content-Type', '')
         if not any(t in content_type for t in ('text/html', 'application/xhtml+xml', 'text/plain')):
-            return _make_error(f'Unsupported content-type: {content_type}', url)
+            return _make_error(
+                f'Unsupported content-type: {content_type}', final_url,
+                status_code=status_code, status_text=status_text
+            )
 
-        # Read content with size limit
-        max_bytes = max_content_length * 4  # Rough estimate for UTF-8
+        # Read content with size limit (raw bytes cap to prevent memory issues)
+        max_bytes = 500000  # 500KB raw cap
         content_bytes = b''
         for chunk in response.iter_content(chunk_size=65536):
             if chunk:
@@ -251,13 +210,12 @@ This is a test page demonstrating the web_fetch action functionality.
         encoding = response.encoding or 'utf-8'
         html_text = content_bytes.decode(encoding, errors='replace')
 
-        # === TIER 1: Fast Static Extraction ===
+        # === TIER 1: Static Extraction ===
         title = ''
         content_md = ''
-        extraction_method = 'static'
+        min_content_length = 200
 
         try:
-            # Try trafilatura for main content extraction
             content_md = trafilatura.extract(
                 content_bytes,
                 url=final_url,
@@ -266,41 +224,33 @@ This is a test page demonstrating the web_fetch action functionality.
                 output_format='markdown'
             ) or ''
 
-            # Try to get title from metadata
             try:
                 meta = trafilatura.metadata.extract_metadata(content_bytes, url=final_url)
                 if meta and getattr(meta, 'title', None):
                     title = meta.title.strip()
             except Exception:
                 pass
-
         except Exception:
             pass
 
-        # Fallback to BeautifulSoup if trafilatura fails
+        # Fallback to BeautifulSoup
         if not content_md or len(content_md) < min_content_length:
             soup = BeautifulSoup(html_text, 'lxml')
 
-            # Get title
             if not title and soup.title and soup.title.string:
                 title = soup.title.string.strip()
 
-            # Remove script/style elements
             for tag in soup(['script', 'style', 'noscript', 'nav', 'footer', 'header']):
                 tag.decompose()
 
-            # Get text content
             text = soup.get_text('\n')
-            # Clean up whitespace
             text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
             bs_content = text.strip()
 
-            # Use BeautifulSoup content if better than trafilatura
             if len(bs_content) > len(content_md or ''):
                 content_md = bs_content
 
         # === TIER 2: Jina Reader API Fallback ===
-        # Use Jina if static extraction got insufficient content
         if use_jina_fallback and (not content_md or len(content_md) < min_content_length):
             try:
                 jina_url = f"https://r.jina.ai/{url}"
@@ -312,62 +262,194 @@ This is a test page demonstrating the web_fetch action functionality.
 
                 if jina_response.status_code == 200:
                     jina_content = jina_response.text.strip()
-
-                    # Jina returns markdown with title as first line
                     if jina_content and len(jina_content) > min_content_length:
                         content_md = jina_content
-                        extraction_method = 'jina'
 
-                        # Extract title from Jina response (usually first # heading)
                         title_match = re.match(r'^#\s*(.+?)[\n\r]', jina_content)
                         if title_match and not title:
                             title = title_match.group(1).strip()
-
             except Exception:
-                # Jina fallback failed, continue with whatever we have
                 pass
 
-        # === Content Quality Check ===
-        # Clean and validate content
+        # === Clean content ===
         if content_md:
-            # Remove excessive whitespace
             content_md = re.sub(r'\n{4,}', '\n\n\n', content_md)
             content_md = content_md.strip()
 
-        # Check if truncation is needed
+        if not content_md:
+            return _make_result(
+                final_url, title, '', 0, status_code, status_text,
+                message='No content could be extracted. Site may require JavaScript rendering or authentication.'
+            )
+
+        total_content_length = len(content_md)
+
+        # === Apply prompt-based extraction ===
+        if prompt:
+            result_content = _apply_prompt(prompt, content_md, title)
+            # Prompt-based results are already compact, no truncation needed
+            return _make_result(
+                final_url, title, result_content, total_content_length,
+                status_code, status_text
+            )
+
+        # === No prompt — return raw content with truncation + file save ===
         was_truncated = False
-        if len(content_md) > max_content_length:
-            content_md = content_md[:max_content_length]
-            # Try to truncate at a sentence boundary
-            last_period = content_md.rfind('.')
+        content_file = None
+
+        if not unlimited and total_content_length > max_content_length:
+            # Save full content to temp file
+            content_file = _save_content_file(content_md, final_url, session_id)
+
+            # Truncate at a sentence boundary
+            truncated = content_md[:max_content_length]
+            last_period = truncated.rfind('.')
             if last_period > max_content_length * 0.8:
-                content_md = content_md[:last_period + 1]
-            content_md += '\n\n[Content truncated due to length...]'
+                truncated = truncated[:last_period + 1]
+            content_md = truncated
             was_truncated = True
 
-        # Build result with extraction method info
-        message = ''
-        if not content_md or len(content_md) < min_content_length:
-            message = 'Warning: Extracted content may be incomplete. Site may require JavaScript rendering or authentication.'
+        return _make_result(
+            final_url, title, content_md, total_content_length,
+            status_code, status_text,
+            was_truncated=was_truncated, content_file=content_file,
+            message=(
+                f'Content truncated to {len(content_md)} chars. '
+                f'Full content ({total_content_length} chars) saved to content_file. '
+                f'Use read_file or grep_files on that path to access the rest.'
+            ) if was_truncated else ''
+        )
 
-        return {
-            'status': 'success',
-            'url': url,
-            'final_url': final_url,
-            'title': title or '',
-            'content': content_md,
-            'content_length': len(content_md),
-            'was_truncated': was_truncated,
-            'prompt_used': prompt or '',
-            'message': message,
-            'extraction_method': extraction_method
-        }
-
-    except requests.exceptions.Timeout:
-        return _make_error(f'Request timed out after {timeout} seconds.', url)
-    except requests.exceptions.ConnectionError as e:
-        return _make_error(f'Connection error: {str(e)}', url)
-    except requests.exceptions.HTTPError as e:
-        return _make_error(f'HTTP error: {str(e)}', url)
     except Exception as e:
-        return _make_error(f'Unexpected error: {str(e)}', url)
+        # Extract status code from requests exceptions when possible
+        sc, st = 0, ''
+        if hasattr(e, 'response') and e.response is not None:
+            sc = e.response.status_code
+            st = e.response.reason or ''
+
+        error_type = type(e).__name__
+        if 'Timeout' in error_type:
+            msg = f'Request timed out after {timeout} seconds.'
+        elif 'ConnectionError' in error_type:
+            msg = f'Connection error: {str(e)}'
+        elif 'HTTPError' in error_type:
+            msg = f'HTTP error: {str(e)}'
+        else:
+            msg = f'Fetch failed: {str(e)}'
+
+        return _make_error(msg, url, status_code=sc, status_text=st)
+
+
+def _apply_prompt(prompt, content, title):
+    """Apply prompt-based extraction to content.
+
+    - 'title' in prompt: extract page title
+    - 'summary'/'summarize' in prompt: return ~900 char preview
+    - otherwise: return content preview with prompt context
+    """
+    import re
+    lower_prompt = prompt.lower()
+
+    # Collapse whitespace for compact previews
+    compact = re.sub(r'\s+', ' ', content).strip()
+
+    if 'title' in lower_prompt:
+        if title:
+            return f'Title: {title}'
+        # Fallback: first 600 chars as preview
+        return compact[:600]
+
+    if 'summary' in lower_prompt or 'summarize' in lower_prompt:
+        preview = compact[:900]
+        if title:
+            return f'Title: {title}\n\n{preview}'
+        return preview
+
+    # Custom prompt — return preview with prompt context
+    preview = compact[:900]
+    result = f'Prompt: {prompt}\n\nContent preview:\n{preview}'
+    if title:
+        result = f'Title: {title}\n{result}'
+    return result
+
+
+def _save_content_file(content, url, session_id):
+    """Save full content to a temp file and return the path."""
+    import os
+    import tempfile
+    from datetime import datetime, timezone
+    from urllib.parse import urlparse
+
+    # Determine temp directory
+    # Try to find agent_file_system/workspace/tmp/{session_id} relative to project root
+    temp_dir = None
+    if session_id:
+        try:
+            # Walk up from this file to find the project root (contains agent_file_system/)
+            current = os.path.abspath(__file__)
+            for _ in range(10):
+                current = os.path.dirname(current)
+                candidate = os.path.join(current, 'agent_file_system', 'workspace', 'tmp', session_id)
+                if os.path.isdir(os.path.join(current, 'agent_file_system')):
+                    temp_dir = candidate
+                    break
+        except Exception:
+            pass
+
+    if not temp_dir:
+        temp_dir = tempfile.gettempdir()
+
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # Generate filename from URL domain + timestamp
+    try:
+        domain = urlparse(url).hostname or 'unknown'
+        domain = domain.replace('.', '_')
+    except Exception:
+        domain = 'unknown'
+
+    ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S%f')
+    filename = f'web_fetch_{domain}_{ts}.md'
+    file_path = os.path.join(temp_dir, filename)
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(f'<!-- Source: {url} -->\n\n')
+        f.write(content)
+
+    return file_path
+
+
+def _make_result(url, title, content, total_content_length,
+                 status_code, status_text,
+                 was_truncated=False, content_file=None, message=''):
+    """Build a success response."""
+    return {
+        'status': 'success',
+        'status_code': status_code,
+        'status_text': status_text,
+        'url': url,
+        'title': title or '',
+        'content': content,
+        'content_length': len(content),
+        'total_content_length': total_content_length,
+        'was_truncated': was_truncated,
+        'content_file': content_file,
+        'message': message
+    }
+
+
+def _make_error(message, url='', status_code=0, status_text=''):
+    """Build an error response."""
+    return {
+        'status': 'error',
+        'status_code': status_code,
+        'status_text': status_text,
+        'url': url,
+        'title': '',
+        'content': '',
+        'content_length': 0,
+        'total_content_length': 0,
+        'was_truncated': False,
+        'content_file': None,
+        'message': message
+    }

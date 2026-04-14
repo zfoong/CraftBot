@@ -205,8 +205,8 @@ File Reading Best Practices:
   * Default reads first 2000 lines - check has_more to know if more exists
   * Use offset to skip to specific line numbers
   * Use limit to control how many lines to read
-- To find specific content in large files:
-  1. Use grep_files with keywords to locate relevant sections
+- To find specific content in files:
+  1. Use grep_files with a regex pattern to locate relevant sections (use output_mode='content' for lines with line numbers, or 'files_with_matches' to discover files first)
   2. Note the line numbers from grep results
   3. Use read_file with appropriate offset to read that section
 - DO NOT repeatedly read entire large files - use targeted reading with offset/limit
