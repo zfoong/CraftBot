@@ -534,22 +534,16 @@ function ShareSection({ projectId, port, send, onMessage }: {
             <Square size={12} />
           </Button>
         </div>
-      ) : providers.length > 0 ? (
+      ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <Globe size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Public:</span>
-          {providers.map(p => (
-            <Button key={p} size="sm" variant="secondary" onClick={() => handleStartTunnel(p)} disabled={tunnelLoading}
-              icon={tunnelLoading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Globe size={12} />}
-              style={{ fontSize: 'var(--text-xs)', padding: '2px 8px' }}
-            >
-              {p}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-          Install <code>cloudflared</code> or <code>ngrok</code> for public sharing
+          <Button size="sm" variant="secondary" onClick={() => handleStartTunnel('cloudflared')} disabled={tunnelLoading}
+            icon={tunnelLoading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Globe size={12} />}
+            style={{ fontSize: 'var(--text-xs)', padding: '2px 8px' }}
+          >
+            {tunnelLoading ? 'Starting...' : 'Create Tunnel'}
+          </Button>
         </div>
       )}
     </div>

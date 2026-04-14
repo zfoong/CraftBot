@@ -2593,14 +2593,83 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             return None
         return f"http://{ip}:{port}"
 
+    # Cloudflared binary download URLs per platform
+    _CLOUDFLARED_URLS = {
+        'win32': 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe',
+        'darwin': 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz',
+        'linux': 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64',
+    }
+
+    def _get_cloudflared_path(self) -> Optional[str]:
+        """Find cloudflared — check PATH first, then our local bin directory."""
+        system_path = shutil.which('cloudflared')
+        if system_path:
+            return system_path
+        # Check our local bin
+        import sys
+        ext = '.exe' if sys.platform == 'win32' else ''
+        local_bin = Path(__file__).parent.parent / 'bin' / f'cloudflared{ext}'
+        if local_bin.exists():
+            return str(local_bin)
+        return None
+
+    def is_cloudflared_available(self) -> bool:
+        return self._get_cloudflared_path() is not None
+
+    async def install_cloudflared(self) -> bool:
+        """Download cloudflared binary to CraftBot's bin directory."""
+        import sys
+        import urllib.request
+
+        platform_key = sys.platform
+        if platform_key not in self._CLOUDFLARED_URLS:
+            logger.error(f"[LIVING_UI] Unsupported platform for cloudflared: {platform_key}")
+            return False
+
+        url = self._CLOUDFLARED_URLS[platform_key]
+        bin_dir = Path(__file__).parent.parent / 'bin'
+        bin_dir.mkdir(parents=True, exist_ok=True)
+
+        ext = '.exe' if platform_key == 'win32' else ''
+        target = bin_dir / f'cloudflared{ext}'
+
+        logger.info(f"[LIVING_UI] Downloading cloudflared from {url}...")
+        try:
+            if platform_key == 'darwin':
+                # macOS comes as .tgz
+                import tarfile
+                import io
+                req = urllib.request.Request(url, headers={'User-Agent': 'CraftBot'})
+                resp = urllib.request.urlopen(req, timeout=60)
+                data = resp.read()
+                with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as tar:
+                    for member in tar.getmembers():
+                        if 'cloudflared' in member.name:
+                            f = tar.extractfile(member)
+                            if f:
+                                target.write_bytes(f.read())
+                                break
+            else:
+                req = urllib.request.Request(url, headers={'User-Agent': 'CraftBot'})
+                resp = urllib.request.urlopen(req, timeout=60)
+                target.write_bytes(resp.read())
+
+            # Make executable on unix
+            if platform_key != 'win32':
+                target.chmod(0o755)
+
+            logger.info(f"[LIVING_UI] cloudflared installed at {target}")
+            return True
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Failed to download cloudflared: {e}")
+            if target.exists():
+                target.unlink()
+            return False
+
     @staticmethod
     def get_available_tunnel_providers() -> List[str]:
-        """Check which tunnel providers are installed."""
-        providers = []
-        for cmd in ['cloudflared', 'ngrok']:
-            if shutil.which(cmd):
-                providers.append(cmd)
-        return providers
+        """Always return cloudflared — it can be auto-installed."""
+        return ['cloudflared']
 
     async def start_tunnel(self, project_id: str, provider: str = 'cloudflared') -> Optional[str]:
         """Start a tunnel for remote access. Returns the public URL."""
@@ -2611,33 +2680,26 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         # Stop existing tunnel if any
         await self.stop_tunnel(project_id)
 
-        port = project.port
+        # Use backend port — it serves both API and frontend static files
+        port = project.backend_port or project.port
 
-        if provider == 'cloudflared':
-            if not shutil.which('cloudflared'):
-                logger.error("[LIVING_UI] cloudflared not found in PATH")
+        # Auto-install cloudflared if not available
+        cloudflared = self._get_cloudflared_path()
+        if not cloudflared:
+            logger.info("[LIVING_UI] cloudflared not found, auto-installing...")
+            success = await self.install_cloudflared()
+            if not success:
                 return None
-            proc = subprocess.Popen(
-                ['cloudflared', 'tunnel', '--url', f'http://localhost:{port}'],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
-            )
-            # Parse URL from cloudflared stderr output
-            url = await self._parse_cloudflare_url(proc)
+            cloudflared = self._get_cloudflared_path()
+            if not cloudflared:
+                return None
 
-        elif provider == 'ngrok':
-            if not shutil.which('ngrok'):
-                logger.error("[LIVING_UI] ngrok not found in PATH")
-                return None
-            proc = subprocess.Popen(
-                ['ngrok', 'http', str(port)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
-            )
-            # Query ngrok API for tunnel URL
-            url = await self._parse_ngrok_url()
-        else:
-            return None
+        proc = subprocess.Popen(
+            [cloudflared, 'tunnel', '--url', f'http://localhost:{port}'],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+        )
+        url = await self._parse_cloudflare_url(proc)
 
         if url:
             project.tunnel_process = proc
@@ -2683,24 +2745,6 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             logger.error(f"[LIVING_UI] Error parsing cloudflare URL: {e}")
             return None
 
-    async def _parse_ngrok_url(self, timeout: int = 10) -> Optional[str]:
-        """Query ngrok's local API for the tunnel URL."""
-        import urllib.request
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                resp = urllib.request.urlopen('http://localhost:4040/api/tunnels', timeout=2)
-                data = json.loads(resp.read().decode())
-                tunnels = data.get('tunnels', [])
-                for t in tunnels:
-                    if t.get('proto') == 'https':
-                        return t['public_url']
-                if tunnels:
-                    return tunnels[0].get('public_url')
-            except Exception:
-                pass
-            await asyncio.sleep(1)
-        return None
 
     async def auto_launch_projects(self, project_ids: List[str] = None) -> None:
         """Auto-launch projects on startup.

@@ -108,8 +108,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 _DIST_DIR = Path(__file__).parent.parent / "dist"
-if _DIST_DIR.exists():
-    # Serve config/manifest.json for frontend port detection
+_DIST_ASSETS = _DIST_DIR / "assets"
+if _DIST_DIR.exists() and _DIST_ASSETS.exists():
     _CONFIG_DIR = Path(__file__).parent.parent / "config"
 
     @app.get("/config/manifest.json")
@@ -119,10 +119,8 @@ if _DIST_DIR.exists():
             return FileResponse(manifest)
         return {"error": "manifest not found"}
 
-    # Serve static assets from dist/
-    app.mount("/assets", StaticFiles(directory=str(_DIST_DIR / "assets")), name="assets")
+    app.mount("/assets", StaticFiles(directory=str(_DIST_ASSETS)), name="assets")
 
-    # SPA fallback — serve index.html for all non-API routes
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
         file_path = _DIST_DIR / path
