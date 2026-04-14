@@ -83,6 +83,7 @@ class LivingUIProject:
             'logCleanup': self.log_cleanup,
             'projectType': self.project_type,
             'appRuntime': self.app_runtime,
+            'tunnelUrl': self.tunnel_url,
         }
 
 
@@ -482,6 +483,18 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                             project_type=project_data.get('projectType', 'native'),
                             app_runtime=project_data.get('appRuntime'),
                         )
+                        # Check if saved tunnel URL is still reachable
+                        saved_tunnel = project_data.get('tunnelUrl')
+                        if saved_tunnel:
+                            try:
+                                import urllib.request
+                                req = urllib.request.Request(saved_tunnel, method='HEAD')
+                                urllib.request.urlopen(req, timeout=3)
+                                project.tunnel_url = saved_tunnel
+                                logger.info(f"[LIVING_UI] Tunnel still active for '{project.name}': {saved_tunnel}")
+                            except Exception:
+                                logger.info(f"[LIVING_UI] Tunnel expired for '{project.name}', clearing")
+                                project.tunnel_url = None
                         # Reset status to stopped for all loaded projects
                         project.status = 'stopped' if project.status == 'running' else project.status
                         self.projects[project.id] = project
@@ -2613,36 +2626,34 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             return str(local_bin)
         return None
 
-    def is_cloudflared_available(self) -> bool:
-        return self._get_cloudflared_path() is not None
+    async def _ensure_cloudflared(self) -> Optional[str]:
+        """Find cloudflared or auto-install it. Returns the binary path or None."""
+        path = self._get_cloudflared_path()
+        if path:
+            return path
 
-    async def install_cloudflared(self) -> bool:
-        """Download cloudflared binary to CraftBot's bin directory."""
+        logger.info("[LIVING_UI] cloudflared not found, auto-installing...")
         import sys
         import urllib.request
 
         platform_key = sys.platform
         if platform_key not in self._CLOUDFLARED_URLS:
-            logger.error(f"[LIVING_UI] Unsupported platform for cloudflared: {platform_key}")
-            return False
+            logger.error(f"[LIVING_UI] Unsupported platform: {platform_key}")
+            return None
 
-        url = self._CLOUDFLARED_URLS[platform_key]
         bin_dir = Path(__file__).parent.parent / 'bin'
         bin_dir.mkdir(parents=True, exist_ok=True)
-
         ext = '.exe' if platform_key == 'win32' else ''
         target = bin_dir / f'cloudflared{ext}'
 
-        logger.info(f"[LIVING_UI] Downloading cloudflared from {url}...")
         try:
+            url = self._CLOUDFLARED_URLS[platform_key]
+            req = urllib.request.Request(url, headers={'User-Agent': 'CraftBot'})
+            resp = urllib.request.urlopen(req, timeout=60)
+
             if platform_key == 'darwin':
-                # macOS comes as .tgz
-                import tarfile
-                import io
-                req = urllib.request.Request(url, headers={'User-Agent': 'CraftBot'})
-                resp = urllib.request.urlopen(req, timeout=60)
-                data = resp.read()
-                with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as tar:
+                import tarfile, io
+                with tarfile.open(fileobj=io.BytesIO(resp.read()), mode='r:gz') as tar:
                     for member in tar.getmembers():
                         if 'cloudflared' in member.name:
                             f = tar.extractfile(member)
@@ -2650,65 +2661,73 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                                 target.write_bytes(f.read())
                                 break
             else:
-                req = urllib.request.Request(url, headers={'User-Agent': 'CraftBot'})
-                resp = urllib.request.urlopen(req, timeout=60)
                 target.write_bytes(resp.read())
 
-            # Make executable on unix
             if platform_key != 'win32':
                 target.chmod(0o755)
 
             logger.info(f"[LIVING_UI] cloudflared installed at {target}")
-            return True
+            return str(target)
         except Exception as e:
             logger.error(f"[LIVING_UI] Failed to download cloudflared: {e}")
             if target.exists():
                 target.unlink()
-            return False
-
-    @staticmethod
-    def get_available_tunnel_providers() -> List[str]:
-        """Always return cloudflared — it can be auto-installed."""
-        return ['cloudflared']
-
-    async def start_tunnel(self, project_id: str, provider: str = 'cloudflared') -> Optional[str]:
-        """Start a tunnel for remote access. Returns the public URL."""
-        project = self.projects.get(project_id)
-        if not project or project.status != 'running' or not project.port:
             return None
 
-        # Stop existing tunnel if any
+    async def start_tunnel(self, project_id: str, provider: str = 'cloudflared') -> Optional[str]:
+        """Start a cloudflare tunnel for remote access. Returns the public URL."""
+        logger.info(f"[LIVING_UI] start_tunnel called for {project_id}")
+        project = self.projects.get(project_id)
+        if not project or project.status != 'running':
+            logger.warning(f"[LIVING_UI] Cannot start tunnel: project={project is not None}, status={project.status if project else 'N/A'}")
+            return None
+
+        logger.info(f"[LIVING_UI] Stopping any existing tunnel...")
         await self.stop_tunnel(project_id)
 
-        # Use backend port — it serves both API and frontend static files
+        # Kill any orphan cloudflared processes from previous sessions
+        logger.info("[LIVING_UI] Killing orphan cloudflared processes...")
+        try:
+            if os.name == 'nt':
+                subprocess.run(
+                    ['powershell', '-Command', 'Stop-Process -Name cloudflared -Force -ErrorAction SilentlyContinue'],
+                    capture_output=True, timeout=5
+                )
+            else:
+                subprocess.run(['pkill', '-f', 'cloudflared'], capture_output=True)
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning(f"[LIVING_UI] Failed to kill orphan cloudflared: {e}")
+        logger.info("[LIVING_UI] Orphan cleanup done")
+
         port = project.backend_port or project.port
+        if not port:
+            return None
 
-        # Auto-install cloudflared if not available
-        cloudflared = self._get_cloudflared_path()
+        cloudflared = await self._ensure_cloudflared()
         if not cloudflared:
-            logger.info("[LIVING_UI] cloudflared not found, auto-installing...")
-            success = await self.install_cloudflared()
-            if not success:
-                return None
-            cloudflared = self._get_cloudflared_path()
-            if not cloudflared:
-                return None
+            logger.error("[LIVING_UI] cloudflared binary not found")
+            return None
 
+        logger.info(f"[LIVING_UI] Starting cloudflared: {cloudflared} tunnel --url http://localhost:{port}")
         proc = subprocess.Popen(
             [cloudflared, 'tunnel', '--url', f'http://localhost:{port}'],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
         )
+        logger.info(f"[LIVING_UI] cloudflared started, PID={proc.pid}, parsing URL...")
         url = await self._parse_cloudflare_url(proc)
+        logger.info(f"[LIVING_UI] cloudflared URL parse result: {url}")
 
         if url:
             project.tunnel_process = proc
             project.tunnel_url = url
+            self._save_projects()
             logger.info(f"[LIVING_UI] Tunnel started for {project.name}: {url}")
             return url
         else:
             self._terminate_process(proc)
-            logger.error(f"[LIVING_UI] Failed to get tunnel URL from {provider}")
+            logger.error(f"[LIVING_UI] Failed to get tunnel URL")
             return None
 
     async def stop_tunnel(self, project_id: str) -> None:
@@ -2720,30 +2739,47 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             self._terminate_process(project.tunnel_process)
             project.tunnel_process = None
         project.tunnel_url = None
+        self._save_projects()
         logger.info(f"[LIVING_UI] Tunnel stopped for {project.name}")
 
-    async def _parse_cloudflare_url(self, proc: subprocess.Popen, timeout: int = 15) -> Optional[str]:
-        """Parse the public URL from cloudflared stderr output."""
+    async def _parse_cloudflare_url(self, proc: subprocess.Popen, timeout: int = 30) -> Optional[str]:
+        """Parse the public URL from cloudflared output."""
         import re
-        loop = asyncio.get_event_loop()
-        try:
-            def _read():
-                deadline = time.time() + timeout
-                while time.time() < deadline:
-                    line = proc.stderr.readline()
-                    if not line:
-                        if proc.poll() is not None:
-                            break
-                        continue
-                    text = line.decode('utf-8', errors='replace')
-                    match = re.search(r'https://[a-zA-Z0-9-]+\.trycloudflare\.com', text)
+        import threading
+
+        url_result = [None]
+        pattern = re.compile(r'https://[a-zA-Z0-9-]+\.trycloudflare\.com')
+
+        def _read_stream(stream):
+            try:
+                for line_bytes in stream:
+                    text = line_bytes.decode('utf-8', errors='replace')
+                    match = pattern.search(text)
                     if match:
-                        return match.group(0)
-                return None
-            return await loop.run_in_executor(None, _read)
-        except Exception as e:
-            logger.error(f"[LIVING_UI] Error parsing cloudflare URL: {e}")
-            return None
+                        url_result[0] = match.group(0)
+                        return
+            except Exception:
+                pass
+
+        # Read both stdout and stderr in parallel threads
+        t1 = threading.Thread(target=_read_stream, args=(proc.stdout,), daemon=True)
+        t2 = threading.Thread(target=_read_stream, args=(proc.stderr,), daemon=True)
+        t1.start()
+        t2.start()
+
+        # Wait for either thread to find the URL
+        deadline = time.time() + timeout
+        while time.time() < deadline and url_result[0] is None:
+            if proc.poll() is not None and url_result[0] is None:
+                break
+            await asyncio.sleep(0.5)
+
+        if url_result[0]:
+            logger.info(f"[LIVING_UI] Parsed cloudflare URL: {url_result[0]}")
+        else:
+            logger.error("[LIVING_UI] Failed to parse cloudflare URL within timeout")
+
+        return url_result[0]
 
 
     async def auto_launch_projects(self, project_ids: List[str] = None) -> None:

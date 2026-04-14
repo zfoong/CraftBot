@@ -462,7 +462,6 @@ function ShareSection({ projectId, port, send, onMessage }: {
 }) {
   const [lanUrl, setLanUrl] = useState<string | null>(null)
   const [tunnelUrl, setTunnelUrl] = useState<string | null>(null)
-  const [providers, setProviders] = useState<string[]>([])
   const [tunnelLoading, setTunnelLoading] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
 
@@ -474,7 +473,6 @@ function ShareSection({ projectId, port, send, onMessage }: {
       if (data.projectId === projectId) {
         setLanUrl(data.lanUrl)
         setTunnelUrl(data.tunnelUrl)
-        setProviders(data.availableProviders || [])
       }
     })
     const unsub2 = onMessage('living_ui_tunnel_status', (data: any) => {
@@ -493,6 +491,7 @@ function ShareSection({ projectId, port, send, onMessage }: {
   }
 
   const handleStartTunnel = (provider: string) => {
+    console.log('[ShareSection] Starting tunnel:', projectId, provider)
     setTunnelLoading(true)
     send('living_ui_tunnel_start', { projectId, provider })
   }
@@ -538,12 +537,18 @@ function ShareSection({ projectId, port, send, onMessage }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <Globe size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Public:</span>
-          <Button size="sm" variant="secondary" onClick={() => handleStartTunnel('cloudflared')} disabled={tunnelLoading}
-            icon={tunnelLoading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Globe size={12} />}
-            style={{ fontSize: 'var(--text-xs)', padding: '2px 8px' }}
+          <button
+            onClick={() => handleStartTunnel('cloudflared')}
+            disabled={tunnelLoading}
+            style={{
+              fontSize: 'var(--text-xs)', padding: '4px 12px',
+              background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
+              borderRadius: 'var(--radius-md)', cursor: 'pointer', color: 'var(--text-primary)',
+              fontFamily: 'inherit',
+            }}
           >
             {tunnelLoading ? 'Starting...' : 'Create Tunnel'}
-          </Button>
+          </button>
         </div>
       )}
     </div>

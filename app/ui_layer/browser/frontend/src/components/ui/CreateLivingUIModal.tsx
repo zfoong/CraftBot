@@ -221,66 +221,29 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-primary)', padding: '0 var(--space-4)' }}>
-          <button
-            onClick={() => setActiveTab('marketplace')}
-            style={{
-              padding: 'var(--space-2) var(--space-4)',
-              background: 'none',
-              border: 'none',
-              borderBottom: activeTab === 'marketplace' ? '2px solid var(--color-primary)' : '2px solid transparent',
-              color: activeTab === 'marketplace' ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              fontWeight: activeTab === 'marketplace' ? 'var(--font-semibold)' : 'var(--font-normal)',
-              fontSize: 'var(--text-sm)',
-              fontFamily: 'inherit',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-            }}
-          >
-            <Package size={14} />
-            Marketplace
-          </button>
-          <button
-            onClick={() => setActiveTab('custom')}
-            style={{
-              padding: 'var(--space-2) var(--space-4)',
-              background: 'none',
-              border: 'none',
-              borderBottom: activeTab === 'custom' ? '2px solid var(--color-primary)' : '2px solid transparent',
-              color: activeTab === 'custom' ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              fontWeight: activeTab === 'custom' ? 'var(--font-semibold)' : 'var(--font-normal)',
-              fontSize: 'var(--text-sm)',
-              fontFamily: 'inherit',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-            }}
-          >
-            <Sparkles size={14} />
-            Create Custom
-          </button>
-          <button
-            onClick={() => setActiveTab('import')}
-            style={{
-              padding: 'var(--space-2) var(--space-4)',
-              background: 'none',
-              border: 'none',
-              borderBottom: activeTab === 'import' ? '2px solid var(--color-primary)' : '2px solid transparent',
-              color: activeTab === 'import' ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              fontWeight: activeTab === 'import' ? 'var(--font-semibold)' : 'var(--font-normal)',
-              fontSize: 'var(--text-sm)',
-              fontFamily: 'inherit',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-            }}
-          >
-            <FolderInput size={14} />
-            Import
-          </button>
+          {([
+            { id: 'marketplace' as const, label: 'Marketplace', icon: <Package size={14} /> },
+            { id: 'custom' as const, label: 'Create Custom', icon: <Sparkles size={14} /> },
+            { id: 'import' as const, label: 'Import', icon: <FolderInput size={14} /> },
+          ]).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                padding: 'var(--space-2) var(--space-4)',
+                background: 'none', border: 'none',
+                borderBottom: activeTab === tab.id ? '2px solid var(--color-primary)' : '2px solid transparent',
+                color: activeTab === tab.id ? 'var(--text-primary)' : 'var(--text-muted)',
+                cursor: 'pointer',
+                fontWeight: activeTab === tab.id ? 'var(--font-semibold)' : 'var(--font-normal)',
+                fontSize: 'var(--text-sm)', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+              }}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Marketplace Tab */}

@@ -148,6 +148,25 @@ def change_password(
 # Membership — link users to resources (projects, boards, teams, etc.)
 # ============================================================================
 
+def _check_membership(db: Session, user: User, resource_type: str, resource_id: int,
+                      required_roles: tuple = None) -> None:
+    """Verify user has access to a resource. Raises 403 if not.
+
+    Args:
+        required_roles: If set, user must have one of these roles (e.g., ("owner", "admin")).
+                       If None, any membership is sufficient.
+    """
+    if user.role == "admin":
+        return  # Global admins bypass all checks
+    membership = db.query(Membership).filter_by(
+        user_id=user.id, resource_type=resource_type, resource_id=resource_id
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this resource")
+    if required_roles and membership.role not in required_roles:
+        raise HTTPException(status_code=403, detail=f"Requires role: {' or '.join(required_roles)}")
+
+
 @router.get("/members/{resource_type}/{resource_id}")
 def get_members(
     resource_type: str,
@@ -156,14 +175,7 @@ def get_members(
     db: Session = Depends(get_db),
 ):
     """Get all members of a resource. Caller must be a member."""
-    # Verify caller is a member (or admin)
-    if user.role != "admin":
-        is_member = db.query(Membership).filter_by(
-            user_id=user.id, resource_type=resource_type, resource_id=resource_id
-        ).first()
-        if not is_member:
-            raise HTTPException(status_code=403, detail="Not a member of this resource")
-
+    _check_membership(db, user, resource_type, resource_id)
     members = db.query(Membership).filter_by(
         resource_type=resource_type, resource_id=resource_id
     ).all()
@@ -184,15 +196,8 @@ def add_member(
     db: Session = Depends(get_db),
 ):
     """Add a user to a resource. Caller must be owner/admin of the resource."""
-    # Check caller has permission (owner/admin of resource, or global admin)
-    if user.role != "admin":
-        caller_membership = db.query(Membership).filter_by(
-            user_id=user.id, resource_type=resource_type, resource_id=resource_id
-        ).first()
-        if not caller_membership or caller_membership.role not in ("owner", "admin"):
-            raise HTTPException(status_code=403, detail="Only owners/admins can add members")
+    _check_membership(db, user, resource_type, resource_id, ("owner", "admin"))
 
-    # Check if already a member
     existing = db.query(Membership).filter_by(
         user_id=data.user_id, resource_type=resource_type, resource_id=resource_id
     ).first()
@@ -220,12 +225,8 @@ def remove_member(
     db: Session = Depends(get_db),
 ):
     """Remove a user from a resource. Caller must be owner/admin or removing themselves."""
-    if user.id != user_id and user.role != "admin":
-        caller_membership = db.query(Membership).filter_by(
-            user_id=user.id, resource_type=resource_type, resource_id=resource_id
-        ).first()
-        if not caller_membership or caller_membership.role not in ("owner", "admin"):
-            raise HTTPException(status_code=403, detail="Only owners/admins can remove members")
+    if user.id != user_id:
+        _check_membership(db, user, resource_type, resource_id, ("owner", "admin"))
 
     membership = db.query(Membership).filter_by(
         user_id=user_id, resource_type=resource_type, resource_id=resource_id
@@ -256,12 +257,7 @@ def create_invite(
     db: Session = Depends(get_db),
 ):
     """Create an invite link for a resource. Caller must be owner/admin."""
-    if user.role != "admin":
-        caller_membership = db.query(Membership).filter_by(
-            user_id=user.id, resource_type=data.resource_type, resource_id=data.resource_id
-        ).first()
-        if not caller_membership or caller_membership.role not in ("owner", "admin"):
-            raise HTTPException(status_code=403, detail="Only owners/admins can create invites")
+    _check_membership(db, user, data.resource_type, data.resource_id, ("owner", "admin"))
 
     invite = Invite.create(
         resource_type=data.resource_type,

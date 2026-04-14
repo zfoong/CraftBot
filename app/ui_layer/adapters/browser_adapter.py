@@ -2257,22 +2257,21 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             logger.error(f"[LIVING_UI] Error handling state update: {e}")
 
     async def _handle_living_ui_sharing_info(self, project_id: str) -> None:
-        """Return sharing info (LAN URL, tunnel URL, available providers)."""
+        """Return sharing info (LAN URL, tunnel URL)."""
         lan_url = self._living_ui_manager.get_lan_url(project_id)
         project = self._living_ui_manager.get_project(project_id)
-        providers = self._living_ui_manager.get_available_tunnel_providers()
         await self._broadcast({
             "type": "living_ui_sharing_info",
             "data": {
                 "projectId": project_id,
                 "lanUrl": lan_url,
                 "tunnelUrl": project.tunnel_url if project else None,
-                "availableProviders": providers,
             },
         })
 
     async def _handle_living_ui_tunnel_start(self, project_id: str, provider: str) -> None:
         """Start a tunnel for a Living UI project."""
+        logger.info(f"[LIVING_UI] Tunnel start requested: project={project_id}, provider={provider}")
         try:
             url = await self._living_ui_manager.start_tunnel(project_id, provider)
             await self._broadcast({
@@ -2285,6 +2284,7 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
                 },
             })
         except Exception as e:
+            logger.error(f"[LIVING_UI] Tunnel start error: {e}", exc_info=True)
             await self._broadcast({
                 "type": "living_ui_tunnel_status",
                 "data": {
