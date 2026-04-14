@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 """
 Profiler Module - Comprehensive performance tracking for the agent.
 

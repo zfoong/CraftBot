@@ -236,6 +236,75 @@ class GeminiClient:
             "cached_tokens": cached_tokens,
         }
 
+    def generate_multimodal_multi_image(
+        self,
+        model: str,
+        *,
+        text: str,
+        image_bytes_list: List[bytes],
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        json_mode: bool = False,
+    ) -> Dict[str, Any]:
+        """Generate text from a prompt that contains multiple inline images.
+
+        Args:
+            model: Model identifier
+            text: The text prompt
+            image_bytes_list: List of PNG/JPEG image data
+            system_prompt: Optional system instruction
+            temperature: Sampling temperature
+            json_mode: If True, enforce JSON output format
+
+        Returns:
+            Dict with generation results and token counts
+        """
+        parts: List[Dict[str, Any]] = [{"text": text}]
+        
+        for image_bytes in image_bytes_list:
+            inline_data = {
+                "mimeType": "image/jpeg",
+                "data": base64.b64encode(image_bytes).decode("utf-8"),
+            }
+            parts.append({"inlineData": inline_data})
+
+        contents = [{"role": "user", "parts": parts}]
+
+        payload: Dict[str, Any] = {"contents": contents}
+        if system_prompt:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_prompt}],
+            }
+
+        generation_config: Dict[str, Any] = {}
+        if temperature is not None:
+            generation_config["temperature"] = temperature
+        if json_mode:
+            generation_config["responseMimeType"] = "application/json"
+        if generation_config:
+            payload["generationConfig"] = generation_config
+
+        response = self._post_json(
+            f"{_normalise_model_name(model)}:generateContent", payload
+        )
+
+        # Extract token usage from usageMetadata
+        usage_metadata = response.get("usageMetadata", {})
+        total_tokens = usage_metadata.get("totalTokenCount", 0)
+        prompt_tokens = usage_metadata.get("promptTokenCount", 0)
+        completion_tokens = usage_metadata.get("candidatesTokenCount", 0)
+        cached_tokens = usage_metadata.get("cachedContentTokenCount", 0)
+
+        content = self._extract_text(response)
+
+        return {
+            "tokens_used": total_tokens,
+            "content": content,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "cached_tokens": cached_tokens,
+        }
+
     def embed_text(self, model: str, *, text: str) -> List[float]:
         """Fetch an embedding vector for the supplied text.
 
