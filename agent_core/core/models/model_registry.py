@@ -15,8 +15,8 @@ MODEL_REGISTRY = {
         InterfaceType.EMBEDDING: "text-embedding-004",
     },
     "anthropic": {
-        InterfaceType.LLM: "claude-sonnet-4-6",
-        InterfaceType.VLM: "claude-sonnet-4-6",
+        InterfaceType.LLM: "claude-sonnet-4-5-20250929",
+        InterfaceType.VLM: "claude-sonnet-4-5-20250929",
         InterfaceType.EMBEDDING: None,  # Anthropic does not provide native embedding models
     },
     "byteplus": {
