@@ -57,6 +57,8 @@ class LivingUIProject:
     project_type: str = 'native'  # 'native' or 'external'
     app_runtime: Optional[str] = None  # 'go', 'node', 'python', 'rust', 'docker', 'static'
     bridge_token: str = ""  # Ephemeral token for integration bridge (NOT serialized)
+    tunnel_url: Optional[str] = None  # Public tunnel URL (NOT serialized)
+    tunnel_process: Optional[subprocess.Popen] = None  # Tunnel process (NOT serialized)
     process: Optional[subprocess.Popen] = None  # Frontend process
     backend_process: Optional[subprocess.Popen] = None  # Backend process
     app_process: Optional[subprocess.Popen] = None  # Single process for external apps
@@ -2550,6 +2552,154 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         project = self.projects.get(project_id)
         if project and project.status == 'running':
             return project.url
+        return None
+
+    # ------------------------------------------------------------------
+    # LAN & Tunnel sharing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def get_lan_ip() -> Optional[str]:
+        """Get the machine's LAN IP address."""
+        try:
+            # Connect to a public IP to determine the right interface
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(1)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            try:
+                return socket.gethostbyname(socket.gethostname())
+            except Exception:
+                return None
+
+    def get_lan_url(self, project_id: str) -> Optional[str]:
+        """Get the LAN-accessible URL for a running project.
+
+        Uses the backend port since the backend also serves the frontend
+        static files — single port for everything.
+        """
+        project = self.projects.get(project_id)
+        if not project or project.status != 'running':
+            return None
+        # Prefer backend port (serves both API + frontend static files)
+        port = project.backend_port or project.port
+        if not port:
+            return None
+        ip = self.get_lan_ip()
+        if not ip or ip.startswith('127.'):
+            return None
+        return f"http://{ip}:{port}"
+
+    @staticmethod
+    def get_available_tunnel_providers() -> List[str]:
+        """Check which tunnel providers are installed."""
+        providers = []
+        for cmd in ['cloudflared', 'ngrok']:
+            if shutil.which(cmd):
+                providers.append(cmd)
+        return providers
+
+    async def start_tunnel(self, project_id: str, provider: str = 'cloudflared') -> Optional[str]:
+        """Start a tunnel for remote access. Returns the public URL."""
+        project = self.projects.get(project_id)
+        if not project or project.status != 'running' or not project.port:
+            return None
+
+        # Stop existing tunnel if any
+        await self.stop_tunnel(project_id)
+
+        port = project.port
+
+        if provider == 'cloudflared':
+            if not shutil.which('cloudflared'):
+                logger.error("[LIVING_UI] cloudflared not found in PATH")
+                return None
+            proc = subprocess.Popen(
+                ['cloudflared', 'tunnel', '--url', f'http://localhost:{port}'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+            )
+            # Parse URL from cloudflared stderr output
+            url = await self._parse_cloudflare_url(proc)
+
+        elif provider == 'ngrok':
+            if not shutil.which('ngrok'):
+                logger.error("[LIVING_UI] ngrok not found in PATH")
+                return None
+            proc = subprocess.Popen(
+                ['ngrok', 'http', str(port)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+            )
+            # Query ngrok API for tunnel URL
+            url = await self._parse_ngrok_url()
+        else:
+            return None
+
+        if url:
+            project.tunnel_process = proc
+            project.tunnel_url = url
+            logger.info(f"[LIVING_UI] Tunnel started for {project.name}: {url}")
+            return url
+        else:
+            self._terminate_process(proc)
+            logger.error(f"[LIVING_UI] Failed to get tunnel URL from {provider}")
+            return None
+
+    async def stop_tunnel(self, project_id: str) -> None:
+        """Stop the tunnel for a project."""
+        project = self.projects.get(project_id)
+        if not project:
+            return
+        if project.tunnel_process:
+            self._terminate_process(project.tunnel_process)
+            project.tunnel_process = None
+        project.tunnel_url = None
+        logger.info(f"[LIVING_UI] Tunnel stopped for {project.name}")
+
+    async def _parse_cloudflare_url(self, proc: subprocess.Popen, timeout: int = 15) -> Optional[str]:
+        """Parse the public URL from cloudflared stderr output."""
+        import re
+        loop = asyncio.get_event_loop()
+        try:
+            def _read():
+                deadline = time.time() + timeout
+                while time.time() < deadline:
+                    line = proc.stderr.readline()
+                    if not line:
+                        if proc.poll() is not None:
+                            break
+                        continue
+                    text = line.decode('utf-8', errors='replace')
+                    match = re.search(r'https://[a-zA-Z0-9-]+\.trycloudflare\.com', text)
+                    if match:
+                        return match.group(0)
+                return None
+            return await loop.run_in_executor(None, _read)
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error parsing cloudflare URL: {e}")
+            return None
+
+    async def _parse_ngrok_url(self, timeout: int = 10) -> Optional[str]:
+        """Query ngrok's local API for the tunnel URL."""
+        import urllib.request
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                resp = urllib.request.urlopen('http://localhost:4040/api/tunnels', timeout=2)
+                data = json.loads(resp.read().decode())
+                tunnels = data.get('tunnels', [])
+                for t in tunnels:
+                    if t.get('proto') == 'https':
+                        return t['public_url']
+                if tunnels:
+                    return tunnels[0].get('public_url')
+            except Exception:
+                pass
+            await asyncio.sleep(1)
         return None
 
     async def auto_launch_projects(self, project_ids: List[str] = None) -> None:

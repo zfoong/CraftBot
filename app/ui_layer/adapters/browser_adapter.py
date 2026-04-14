@@ -1513,6 +1513,19 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
         elif msg_type == "living_ui_state_update":
             await self._handle_living_ui_state_update(data)
 
+        elif msg_type == "living_ui_tunnel_start":
+            project_id = data.get("projectId", "")
+            provider = data.get("provider", "cloudflared")
+            await self._handle_living_ui_tunnel_start(project_id, provider)
+
+        elif msg_type == "living_ui_tunnel_stop":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_tunnel_stop(project_id)
+
+        elif msg_type == "living_ui_sharing_info":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_sharing_info(project_id)
+
     async def _handle_dashboard_metrics_filter(self, period: str) -> None:
         """Handle filtered metrics request for specific time period."""
         try:
@@ -2242,6 +2255,57 @@ A quick Q&A will now begin to understand your preferences and serve you better:"
             })
         except Exception as e:
             logger.error(f"[LIVING_UI] Error handling state update: {e}")
+
+    async def _handle_living_ui_sharing_info(self, project_id: str) -> None:
+        """Return sharing info (LAN URL, tunnel URL, available providers)."""
+        lan_url = self._living_ui_manager.get_lan_url(project_id)
+        project = self._living_ui_manager.get_project(project_id)
+        providers = self._living_ui_manager.get_available_tunnel_providers()
+        await self._broadcast({
+            "type": "living_ui_sharing_info",
+            "data": {
+                "projectId": project_id,
+                "lanUrl": lan_url,
+                "tunnelUrl": project.tunnel_url if project else None,
+                "availableProviders": providers,
+            },
+        })
+
+    async def _handle_living_ui_tunnel_start(self, project_id: str, provider: str) -> None:
+        """Start a tunnel for a Living UI project."""
+        try:
+            url = await self._living_ui_manager.start_tunnel(project_id, provider)
+            await self._broadcast({
+                "type": "living_ui_tunnel_status",
+                "data": {
+                    "projectId": project_id,
+                    "tunnelUrl": url,
+                    "success": url is not None,
+                    "error": None if url else f"Failed to start {provider} tunnel",
+                },
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "living_ui_tunnel_status",
+                "data": {
+                    "projectId": project_id,
+                    "tunnelUrl": None,
+                    "success": False,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_tunnel_stop(self, project_id: str) -> None:
+        """Stop a tunnel for a Living UI project."""
+        await self._living_ui_manager.stop_tunnel(project_id)
+        await self._broadcast({
+            "type": "living_ui_tunnel_status",
+            "data": {
+                "projectId": project_id,
+                "tunnelUrl": None,
+                "success": True,
+            },
+        })
 
     async def broadcast_living_ui_ready(self, project_id: str, url: str, port: int) -> bool:
         """

@@ -11,6 +11,10 @@ import {
   Check,
   ChevronRight,
   Download,
+  Share2,
+  Copy,
+  Globe,
+  Wifi,
 } from 'lucide-react'
 import { Button, Badge, ConfirmModal } from '../../components/ui'
 import { useConfirmModal } from '../../hooks'
@@ -430,6 +434,11 @@ export function LivingUISettings() {
                       <input type="checkbox" className={styles.toggle} checked={project.logCleanup} onChange={e => send('living_ui_project_setting_update', { projectId: project.id, setting: 'logCleanup', value: e.target.checked })} />
                     </div>
                   </div>
+
+                  {/* Sharing Section */}
+                  {project.status === 'running' && (
+                    <ShareSection projectId={project.id} port={project.port} send={send} onMessage={onMessage} />
+                  )}
                 </div>
               ))
             )}
@@ -438,6 +447,111 @@ export function LivingUISettings() {
       </div>
 
       <ConfirmModal {...confirmModalProps} />
+    </div>
+  )
+}
+
+
+// ── Share Section (per-project) ──────────────────────────────────
+
+function ShareSection({ projectId, port, send, onMessage }: {
+  projectId: string
+  port: number | null
+  send: (type: string, data: any) => void
+  onMessage: (type: string, handler: (data: any) => void) => () => void
+}) {
+  const [lanUrl, setLanUrl] = useState<string | null>(null)
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null)
+  const [providers, setProviders] = useState<string[]>([])
+  const [tunnelLoading, setTunnelLoading] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  // Fetch sharing info on mount
+  useEffect(() => {
+    send('living_ui_sharing_info', { projectId })
+
+    const unsub1 = onMessage('living_ui_sharing_info', (data: any) => {
+      if (data.projectId === projectId) {
+        setLanUrl(data.lanUrl)
+        setTunnelUrl(data.tunnelUrl)
+        setProviders(data.availableProviders || [])
+      }
+    })
+    const unsub2 = onMessage('living_ui_tunnel_status', (data: any) => {
+      if (data.projectId === projectId) {
+        setTunnelUrl(data.tunnelUrl)
+        setTunnelLoading(false)
+      }
+    })
+    return () => { unsub1(); unsub2() }
+  }, [projectId, send, onMessage])
+
+  const handleCopy = (url: string, label: string) => {
+    navigator.clipboard.writeText(url)
+    setCopied(label)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const handleStartTunnel = (provider: string) => {
+    setTunnelLoading(true)
+    send('living_ui_tunnel_start', { projectId, provider })
+  }
+
+  const handleStopTunnel = () => {
+    send('living_ui_tunnel_stop', { projectId })
+    setTunnelUrl(null)
+  }
+
+  return (
+    <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border-primary)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+        <Share2 size={14} style={{ color: 'var(--text-muted)' }} />
+        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)' }}>Share</span>
+      </div>
+
+      {/* LAN URL */}
+      {lanUrl && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+          <Wifi size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>LAN:</span>
+          <code style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{lanUrl}</code>
+          <Button size="sm" variant="ghost" onClick={() => handleCopy(lanUrl, 'lan')} style={{ padding: '2px 6px' }}>
+            {copied === 'lan' ? <Check size={12} /> : <Copy size={12} />}
+          </Button>
+        </div>
+      )}
+
+      {/* Tunnel URL */}
+      {tunnelUrl ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+          <Globe size={12} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>Public:</span>
+          <code style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tunnelUrl}</code>
+          <Button size="sm" variant="ghost" onClick={() => handleCopy(tunnelUrl, 'tunnel')} style={{ padding: '2px 6px' }}>
+            {copied === 'tunnel' ? <Check size={12} /> : <Copy size={12} />}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={handleStopTunnel} style={{ padding: '2px 6px', color: 'var(--color-error)' }}>
+            <Square size={12} />
+          </Button>
+        </div>
+      ) : providers.length > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <Globe size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Public:</span>
+          {providers.map(p => (
+            <Button key={p} size="sm" variant="secondary" onClick={() => handleStartTunnel(p)} disabled={tunnelLoading}
+              icon={tunnelLoading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Globe size={12} />}
+              style={{ fontSize: 'var(--text-xs)', padding: '2px 8px' }}
+            >
+              {p}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+          Install <code>cloudflared</code> or <code>ngrok</code> for public sharing
+        </div>
+      )}
     </div>
   )
 }

@@ -100,6 +100,37 @@ async def capture_frontend_logs(data: _FrontendLogBatch):
     return {"status": "ok", "count": len(data.entries)}
 
 
+# ============================================================================
+# Serve frontend static files (built by Vite) — enables single-port access
+# for LAN/tunnel sharing. Must be registered LAST (catch-all).
+# ============================================================================
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+_DIST_DIR = Path(__file__).parent.parent / "dist"
+if _DIST_DIR.exists():
+    # Serve config/manifest.json for frontend port detection
+    _CONFIG_DIR = Path(__file__).parent.parent / "config"
+
+    @app.get("/config/manifest.json")
+    async def serve_manifest():
+        manifest = _CONFIG_DIR / "manifest.json"
+        if manifest.exists():
+            return FileResponse(manifest)
+        return {"error": "manifest not found"}
+
+    # Serve static assets from dist/
+    app.mount("/assets", StaticFiles(directory=str(_DIST_DIR / "assets")), name="assets")
+
+    # SPA fallback — serve index.html for all non-API routes
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str):
+        file_path = _DIST_DIR / path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(_DIST_DIR / "index.html")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port={{BACKEND_PORT}})
