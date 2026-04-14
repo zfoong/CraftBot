@@ -66,6 +66,8 @@ async def start_task(input_data: dict) -> dict:
     # Extract original user query and platform for logging to the new task's event stream
     original_query = input_data.get("_original_query")
     original_platform = input_data.get("_original_platform")
+    # Extract pre-selected skills (from skill slash commands like /pdf, /docx)
+    pre_selected_skills = input_data.get("_pre_selected_skills")
 
     if not task_name:
         return {
@@ -105,6 +107,7 @@ async def start_task(input_data: dict) -> dict:
             session_id=session_id,
             original_query=original_query,
             original_platform=original_platform,
+            pre_selected_skills=pre_selected_skills,
         )
         return {
             "status": "success",

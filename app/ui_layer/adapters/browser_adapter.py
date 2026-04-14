@@ -1321,6 +1321,11 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             description = data.get("description", "")
             await self._handle_skill_template(name, description)
 
+        elif msg_type == "skill_run":
+            name = data.get("name", "")
+            args_text = data.get("args", "")
+            await self._handle_skill_run(name, args_text)
+
         # Integration handlers
         elif msg_type == "integration_list":
             await self._handle_integration_list()
@@ -3196,9 +3201,10 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "name": name,
                 },
             })
-            # Refresh the list
+            # Refresh the list and sync skill commands
             if success:
                 await self._handle_skill_list()
+                self._controller.sync_skill_commands()
         except Exception as e:
             await self._broadcast({
                 "type": "skill_enable",
@@ -3221,9 +3227,10 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "name": name,
                 },
             })
-            # Refresh the list
+            # Refresh the list and sync skill commands
             if success:
                 await self._handle_skill_list()
+                self._controller.sync_skill_commands()
         except Exception as e:
             await self._broadcast({
                 "type": "skill_disable",
@@ -3245,15 +3252,37 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "message": message,
                 },
             })
-            # Refresh the list
+            # Refresh the list and sync skill commands
             if success:
                 await self._handle_skill_list()
+                self._controller.sync_skill_commands()
         except Exception as e:
             await self._broadcast({
                 "type": "skill_reload",
                 "data": {
                     "success": False,
                     "error": str(e),
+                },
+            })
+
+    async def _handle_skill_run(self, name: str, args_text: str = "") -> None:
+        """Run a skill by invoking it through the controller."""
+        try:
+            await self._controller.invoke_skill(name, args_text, self._adapter_id)
+            await self._broadcast({
+                "type": "skill_run",
+                "data": {
+                    "success": True,
+                    "name": name,
+                },
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "skill_run",
+                "data": {
+                    "success": False,
+                    "error": str(e),
+                    "name": name,
                 },
             })
 
