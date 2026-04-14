@@ -105,6 +105,9 @@ class UIController:
         # Register agent-provided commands
         self._register_agent_commands()
 
+        # Register enabled skills as slash commands
+        self._register_skill_commands()
+
     # ─────────────────────────────────────────────────────────────────────
     # Properties
     # ─────────────────────────────────────────────────────────────────────
@@ -548,6 +551,112 @@ class UIController:
         for name, cmd_info in self._agent.get_commands().items():
             wrapped = AgentCommandWrapper(self, name, cmd_info)
             self._command_registry.register(wrapped)
+
+    def _register_skill_commands(self) -> None:
+        """Register enabled skills as slash commands."""
+        from app.ui_layer.commands.builtin.skill_invoke import SkillInvokeCommand
+
+        try:
+            from agent_core.core.impl.skill.manager import skill_manager
+            from agent_core.utils.logger import logger
+
+            for skill in skill_manager.get_enabled_skills():
+                cmd_name = f"/{skill.name}"
+                if self._command_registry.has(cmd_name):
+                    logger.warning(
+                        f"[SKILLS] Cannot register {cmd_name} as command — "
+                        f"name conflicts with existing command"
+                    )
+                    continue
+                cmd = SkillInvokeCommand(
+                    self,
+                    skill.name,
+                    skill.description,
+                    argument_hint=skill.metadata.argument_hint,
+                )
+                self._command_registry.register(cmd)
+
+            logger.info(
+                f"[SKILLS] Registered {len(skill_manager.get_enabled_skills())} "
+                f"skill commands"
+            )
+        except Exception as e:
+            # Skill system may not be initialized yet at startup
+            pass
+
+    def sync_skill_commands(self) -> None:
+        """Re-synchronize skill slash commands with current enabled skills."""
+        from app.ui_layer.commands.builtin.skill_invoke import SkillInvokeCommand
+
+        # Remove all existing skill-invoke commands
+        for cmd_name in list(self._command_registry.get_command_names()):
+            cmd = self._command_registry.get(cmd_name)
+            if isinstance(cmd, SkillInvokeCommand):
+                self._command_registry.unregister(cmd_name)
+
+        # Re-register from current skill state
+        self._register_skill_commands()
+
+    async def invoke_skill(
+        self,
+        skill_name: str,
+        args_text: str,
+        adapter_id: str = "",
+    ) -> None:
+        """
+        Invoke a skill by routing through the agent's message handler.
+
+        Emits appropriate UI events and sends the message to the agent
+        with a skill hint so the LLM selects the correct skill.
+
+        Args:
+            skill_name: Name of the skill to invoke
+            args_text: User-provided arguments (may be empty)
+            adapter_id: ID of the adapter that initiated the invocation
+        """
+        # Emit system message
+        if args_text:
+            sys_msg = f"Invoking skill '{skill_name}': {args_text}"
+        else:
+            sys_msg = f"Invoking skill '{skill_name}'..."
+
+        self._event_bus.emit(
+            UIEvent(
+                type=UIEventType.SYSTEM_MESSAGE,
+                data={"message": sys_msg},
+                source_adapter=adapter_id,
+            )
+        )
+
+        # Emit state change
+        self._event_bus.emit(
+            UIEvent(
+                type=UIEventType.AGENT_STATE_CHANGED,
+                data={
+                    "state": AgentStateType.WORKING.value,
+                    "status_message": "Agent is working...",
+                },
+                source_adapter=adapter_id,
+            )
+        )
+
+        # Build task text for the agent
+        if args_text:
+            task_text = args_text
+        else:
+            task_text = (
+                f"User invoked the {skill_name} skill. "
+                f"Ask user for further requirement if the skill requires context."
+            )
+
+        # Route to agent with pre_selected_skills in payload
+        payload = {
+            "text": task_text,
+            "sender": {"id": adapter_id or "user", "type": "user"},
+            "gui_mode": self._state_store.state.gui_mode,
+            "pre_selected_skills": [skill_name],
+        }
+        await self._agent._handle_chat_message(payload)
 
     # ─────────────────────────────────────────────────────────────────────
     # Utility Methods

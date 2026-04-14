@@ -12,6 +12,7 @@ from app.ui_layer.commands.builtin.cred import CredCommand
 from app.ui_layer.commands.builtin.integrations import IntegrationCommand
 from app.ui_layer.commands.builtin.update import UpdateCommand
 from app.ui_layer.commands.builtin.agent_command import AgentCommandWrapper
+from app.ui_layer.commands.builtin.skill_invoke import SkillInvokeCommand
 
 __all__ = [
     "HelpCommand",
@@ -26,4 +27,5 @@ __all__ = [
     "IntegrationCommand",
     "UpdateCommand",
     "AgentCommandWrapper",
+    "SkillInvokeCommand",
 ]

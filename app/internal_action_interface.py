@@ -302,6 +302,7 @@ class InternalActionInterface:
         session_id: Optional[str] = None,
         original_query: Optional[str] = None,
         original_platform: Optional[str] = None,
+        pre_selected_skills: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Create a new task with automatic skill and action set selection.
@@ -319,6 +320,9 @@ class InternalActionInterface:
                            event stream before the task_start event.
             original_platform: Optional platform where the original message came from
                               (e.g., "CraftBot TUI", "Telegram", "Whatsapp").
+            pre_selected_skills: Optional list of skill names to use directly,
+                                bypassing LLM skill selection. Used when skills are
+                                invoked explicitly via slash commands (e.g., /pdf).
 
         Returns:
             Dictionary with task_id, action_sets, action_count, and selected_skills.
@@ -330,12 +334,27 @@ class InternalActionInterface:
         # Each task's stream is created when the task starts and cleaned up when the task ends.
         # Stream lifecycle is managed by TaskManager via on_stream_create/on_stream_remove hooks.
 
-        # Select skills and action sets in a single LLM call (optimized)
-        # Skills are selected first, then action sets with knowledge of skill recommendations
-        selected_skills, all_action_sets = await cls._select_skills_and_action_sets_via_llm(
-            task_name, task_description, source_platform=original_platform
-        )
-        logger.info(f"[TASK] Auto-selected skills for '{task_name}': {selected_skills}")
+        if pre_selected_skills:
+            # Skills explicitly selected via slash command — skip LLM skill selection
+            # but still select action sets (including skill-recommended ones)
+            selected_skills = pre_selected_skills
+            # Get action sets recommended by pre-selected skills
+            from agent_core.core.impl.skill.manager import skill_manager
+            from app.action.action_set import action_set_manager
+
+            skill_action_sets = skill_manager.get_skill_action_sets(selected_skills)
+            # Also run LLM action set selection for additional sets needed
+            llm_action_sets = await cls._select_action_sets_via_llm(task_name, task_description)
+            # Merge: skill-recommended + LLM-selected (deduplicated)
+            all_action_sets = list(dict.fromkeys(skill_action_sets + llm_action_sets))
+            logger.info(f"[TASK] Pre-selected skills (via command): {selected_skills}")
+        else:
+            # Select skills and action sets in a single LLM call (optimized)
+            # Skills are selected first, then action sets with knowledge of skill recommendations
+            selected_skills, all_action_sets = await cls._select_skills_and_action_sets_via_llm(
+                task_name, task_description, source_platform=original_platform
+            )
+            logger.info(f"[TASK] Auto-selected skills for '{task_name}': {selected_skills}")
         logger.info(f"[TASK] Final action sets: {all_action_sets}")
 
         # Create task with selected skills and action sets

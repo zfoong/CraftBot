@@ -105,6 +105,7 @@ class TriggerData:
     is_self_message: bool = False  # True when the user sent themselves a message
     contact_id: str | None = None  # Sender/chat ID from external platform
     channel_id: str | None = None  # Channel/group ID from external platform
+    payload: dict | None = None  # Full trigger payload for passing extra data
 
 class AgentBase:
     """
@@ -603,6 +604,7 @@ class AgentBase:
             is_self_message=payload.get("is_self_message", False),
             contact_id=payload.get("contact_id", ""),
             channel_id=payload.get("channel_id", ""),
+            payload=payload,
         )
 
     def _extract_user_message_from_trigger(self, trigger: Trigger) -> Optional[str]:
@@ -1104,6 +1106,9 @@ class AgentBase:
             if action.name == "task_start":
                 params["_original_query"] = trigger_data.user_message or trigger_data.query
                 params["_original_platform"] = trigger_data.platform
+                # Pass pre-selected skills from skill slash commands (e.g., /pdf, /docx)
+                if trigger_data.payload and trigger_data.payload.get("pre_selected_skills"):
+                    params["_pre_selected_skills"] = trigger_data.payload["pre_selected_skills"]
 
         action_names = [a[0].name for a in actions_with_input]
         logger.info(f"[ACTION] Ready to run {len(actions_with_input)} action(s): {action_names}")
@@ -1809,6 +1814,10 @@ class AgentBase:
                 trigger_payload["is_self_message"] = payload.get("is_self_message", False)
                 trigger_payload["contact_id"] = payload.get("contact_id", "")
                 trigger_payload["channel_id"] = payload.get("channel_id", "")
+
+            # Carry pre-selected skills from skill slash commands (e.g., /pdf, /docx)
+            if payload.get("pre_selected_skills"):
+                trigger_payload["pre_selected_skills"] = payload["pre_selected_skills"]
 
             # Include platform in the action description so the LLM picks
             # the correct platform-specific send action for replies.
@@ -2632,9 +2641,17 @@ class AgentBase:
             skills_config_path = PROJECT_ROOT / "app" / "config" / "skills_config.json"
             if skills_config_path.exists():
                 from app.skill import skill_manager
+
+                async def _reload_skills_and_sync():
+                    """Reload skills and sync skill slash commands."""
+                    result = await skill_manager.reload()
+                    if self.ui_controller:
+                        self.ui_controller.sync_skill_commands()
+                    return result
+
                 config_watcher.register(
                     skills_config_path,
-                    skill_manager.reload,
+                    _reload_skills_and_sync,
                     name="skills_config.json"
                 )
 

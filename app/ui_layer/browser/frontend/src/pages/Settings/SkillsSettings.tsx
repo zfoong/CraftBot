@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Loader2,
   Plus,
@@ -6,6 +7,7 @@ import {
   RotateCcw,
   X,
   Wrench,
+  Play,
 } from 'lucide-react'
 import { Button, Badge, ConfirmModal } from '../../components/ui'
 import { useToast } from '../../contexts/ToastContext'
@@ -32,6 +34,7 @@ interface SkillInfo extends SkillConfig {
 export function SkillsSettings() {
   const { send, onMessage, isConnected } = useSettingsWebSocket()
   const { showToast } = useToast()
+  const navigate = useNavigate()
 
   // State
   const [skills, setSkills] = useState<SkillConfig[]>([])
@@ -150,6 +153,12 @@ export function SkillsSettings() {
           showToast('error', d.error || 'Failed to get skill info')
         }
       }),
+      onMessage('skill_run', (data: unknown) => {
+        const d = data as { success: boolean; name?: string; error?: string }
+        if (!d.success) {
+          showToast('error', d.error || 'Failed to run skill')
+        }
+      }),
     ]
 
     send('skill_list')
@@ -183,6 +192,12 @@ export function SkillsSettings() {
 
   const handleViewSkill = (name: string) => {
     send('skill_info', { name })
+  }
+
+  const handleRunSkill = (name: string) => {
+    send('skill_run', { name })
+    setViewingSkill(null)
+    navigate('/chat')
   }
 
   const handleInstallSkill = () => {
@@ -533,6 +548,15 @@ export function SkillsSettings() {
               <Button variant="secondary" onClick={() => setViewingSkill(null)}>
                 Close
               </Button>
+              {viewingSkill.enabled && (
+                <Button
+                  variant="primary"
+                  onClick={() => handleRunSkill(viewingSkill.name)}
+                  icon={<Play size={14} />}
+                >
+                  Run Skill
+                </Button>
+              )}
               <Button
                 variant={viewingSkill.enabled ? 'danger' : 'primary'}
                 onClick={() => {
