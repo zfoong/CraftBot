@@ -2435,7 +2435,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         skip_dirs = {'node_modules', '__pycache__', '.git', 'dist', 'build', 'logs', '.venv', 'venv'}
         skip_suffixes = {'.pyc', '.pyo', '.log', '.db', '.sqlite', '.sqlite3'}
         skip_names = {'.env', '.env.local', '.env.production', '.last_launch',
-                      'credentials.json', 'token.json'}
+                      'credentials.json', 'token.json', '.jwt_secret'}
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(project_path):

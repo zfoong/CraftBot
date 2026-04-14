@@ -24,6 +24,15 @@ engine = create_engine(
     echo=False,  # Set to True for SQL debugging
 )
 
+# Enable WAL mode for better concurrent read/write performance (multi-user)
+from sqlalchemy import event
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
+
 # Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

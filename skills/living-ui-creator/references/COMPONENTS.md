@@ -195,3 +195,36 @@ interface TableColumn<T> {
 - Always provide `label` for form inputs
 - Use `aria-label` for icon-only buttons
 - Keyboard: Tab, Enter, Space, Escape supported
+
+---
+
+## Icons (lucide-react)
+
+Use `lucide-react` for icons — it's pre-installed. Tree-shakeable, only imports what you use.
+
+```tsx
+import { Search, Plus, Trash2, Edit, Settings, ChevronRight } from 'lucide-react'
+
+<Search size={16} />
+<Button icon={<Plus size={14} />}>Add Item</Button>
+```
+
+Browse icons at https://lucide.dev/icons. NEVER use emoji for UI icons — use lucide-react instead.
+
+---
+
+## Toast Notifications (react-toastify)
+
+Use `react-toastify` for user feedback — it's pre-installed and the `<ToastContainer />` is already in `App.tsx`.
+
+```tsx
+import { toast } from 'react-toastify'
+
+toast.success('Item created successfully')
+toast.error('Failed to save changes')
+toast.info('Changes saved')
+toast.warn('This action cannot be undone')
+```
+
+**Use toasts for:** CRUD feedback, API errors, important state changes.
+**Don't use toasts for:** Validation errors (show inline), loading states (use spinners).

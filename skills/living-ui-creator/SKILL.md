@@ -47,11 +47,21 @@ Before coding, determine what your app needs:
 | Agent sees visually | `GET /api/ui-screenshot` |
 | Agent triggers actions | `POST /api/action` |
 | Complex UI state | Multiple frontend components |
+| Multiple users with own data | Add auth module from `app/data/living_ui_modules/auth/` |
+| User roles (admin/member) | Auth module + role checks in routes |
 
 **Default:** Most apps need all layers (DB + Backend + Frontend).
 **Agent APIs are built-in** - no extra work needed.
 
 See [MVC-A.md](references/MVC-A.md) for detailed architecture guidance.
+
+## Multi-User / Auth Support
+
+If the app needs multiple users, login, teams, or shared data:
+1. Read `app/data/living_ui_modules/auth/README.md` for the full integration guide
+2. Copy the module files into your project and wire them up as documented
+
+**When to add auth:** user mentioned "multiple users", "team", "sharing", "login", or the app manages per-user data (task tracker, CRM, project manager). If unsure, ask during Phase 0.
 
 ## Directory Structure
 
@@ -85,116 +95,16 @@ project_root/
 └── LIVING_UI.md                # Project documentation - UPDATE THIS
 ```
 
-## UI Component Presets (MANDATORY)
+## UI Components (MANDATORY)
 
-**CRITICAL:** Living UI includes pre-built components with professional styling. You MUST use these for ALL standard UI elements. Do NOT create custom buttons, inputs, cards, modals, or alerts. Do NOT write custom CSS for elements that have a preset component. The preset components use CraftBot's design tokens and ensure visual consistency.
+Use preset components for ALL standard UI elements — `Button`, `Card`, `Input`, `Modal`, `Alert`, `Table`, etc.
+Do NOT create custom buttons, inputs, cards, or write custom CSS for standard elements.
 
-**If you need a button, use `<Button>`. If you need a card, use `<Card>`. If you need an input, use `<Input>`. No exceptions.**
-
-### Import
 ```typescript
 import { Button, Card, Input, Alert, Table, Modal } from './components/ui'
 ```
 
-### Available Components
-
-| Category | Components |
-|----------|------------|
-| **Forms** | `Input`, `Textarea`, `Select`, `Checkbox`, `Toggle` |
-| **Buttons** | `Button` (variants: primary, secondary, danger, ghost) |
-| **Layout** | `Card`, `Container`, `Divider` |
-| **Feedback** | `Alert`, `Badge`, `EmptyState` |
-| **Data** | `Table`, `List`, `ListItem` |
-| **Overlays** | `Modal`, `Tabs`, `TabList`, `Tab`, `TabPanel` |
-
-### Quick Examples
-
-```tsx
-// Button variants
-<Button variant="primary">Save</Button>
-<Button variant="danger">Delete</Button>
-<Button variant="ghost" size="sm">Cancel</Button>
-
-// Form with validation
-<Input label="Email" type="email" error="Invalid email" />
-<Select label="Role" options={[{value: 'admin', label: 'Admin'}]} />
-
-// Alert
-<Alert variant="success" title="Saved!">Changes have been saved.</Alert>
-
-// Table
-<Table
-  columns={[
-    { key: 'name', header: 'Name' },
-    { key: 'status', header: 'Status', render: (item) => <Badge>{item.status}</Badge> }
-  ]}
-  data={items}
-/>
-
-// Modal
-<Modal open={show} onClose={() => setShow(false)} title="Confirm">
-  Are you sure?
-</Modal>
-```
-
-### Best Practices
-
-**DO:**
-- Use preset components for ALL standard UI needs — buttons, inputs, cards, modals, alerts, tables
-- Customize via props (variant, size, etc.), not custom CSS
-- Combine preset components for complex layouts
-- Use `global.css` design tokens (e.g., `var(--color-primary)`) for any custom styling needed
-
-**DON'T — these will result in an ugly, inconsistent UI:**
-- Create custom buttons, inputs, cards, or modals (use the presets)
-- Write inline styles or custom CSS for standard elements
-- Use raw HTML elements like `<button>` or `<input>` (use `<Button>` and `<Input>`)
-- Pick arbitrary colors (use design tokens from `global.css`)
-- Build your own alert, notification, or modal system (use presets + react-toastify)
-
-See [COMPONENTS.md](references/COMPONENTS.md) for full component reference.
-
-### Icons (lucide-react)
-
-Use `lucide-react` for icons — it's pre-installed. Tree-shakeable, only imports what you use.
-
-```tsx
-import { Search, Plus, Trash2, Edit, Settings, ChevronRight } from 'lucide-react'
-
-<Search size={16} />
-<Button icon={<Plus size={14} />}>Add Item</Button>
-```
-
-Browse icons at https://lucide.dev/icons. NEVER use emoji for UI icons — use lucide-react instead.
-
-### Toast Notifications (react-toastify)
-
-Use `react-toastify` for user feedback — it's pre-installed and the `<ToastContainer />` is already in `App.tsx`.
-
-```tsx
-import { toast } from 'react-toastify'
-
-// Success — auto-dismisses after 3 seconds
-toast.success('Item created successfully')
-
-// Error — auto-dismisses after 3 seconds
-toast.error('Failed to save changes')
-
-// Info
-toast.info('Changes saved')
-
-// Warning
-toast.warn('This action cannot be undone')
-```
-
-**Always use toasts for:**
-- CRUD operation feedback (created, updated, deleted)
-- Error messages from failed API calls
-- Important state changes the user should know about
-
-**Don't use toasts for:**
-- Validation errors (show inline next to the field instead)
-- Loading states (use spinners/skeletons)
+See [COMPONENTS.md](references/COMPONENTS.md) for full reference, icons (lucide-react), and toasts (react-toastify).
 
 ## Agent API (Built-in)
 
@@ -434,29 +344,9 @@ If any step fails, the action returns the specific errors. Fix them and call aga
 living_ui_notify_ready(project_id="<PROJECT_ID from task instruction>")
 ```
 
-## Debugging & Logs
+## Debugging
 
-When something goes wrong, check these log files in the project directory:
-
-| Log File | Contains |
-|----------|----------|
-| `backend/logs/subprocess_output.log` | Uvicorn startup output, crashes, stack traces |
-| `backend/logs/backend_*.log` | Backend app-level logs (requests, errors, SQL) |
-| `backend/logs/frontend_console.log` | Frontend console errors, warnings, app logs, and network requests (fetch method, URL, status, request/response bodies) |
-| `backend/logs/health_status.json` | Health checker status (last check, failures) |
-| `backend/logs/test_discovery.json` | Pre-launch test results (imports, routes, models) |
-| `backend/logs/test_results.json` | External smoke test results |
-| `logs/frontend_output.log` | Vite preview server output |
-
-**Read these logs first** when debugging launch failures or runtime issues.
-
-## Common Mistakes
-
-- **Relative imports** — NEVER use `from . import models` or `from .models import ...` in backend code. Use absolute imports: `from models import ...`
-- **Double /api prefix** — Routes in `routes.py` should NOT have `/api` prefix (e.g., use `@router.get("/items")` not `@router.get("/api/items")`). The prefix is added by `main.py`'s `include_router`.
-- **Running servers manually** — NEVER start uvicorn, npm run dev, or npm run preview. The pipeline handles this.
-
-See [TROUBLESHOOTING.md](references/TROUBLESHOOTING.md) for more debugging help.
+When something goes wrong, read the log files and check [TROUBLESHOOTING.md](references/TROUBLESHOOTING.md).
 
 ## Files Summary
 
@@ -469,71 +359,13 @@ See [TROUBLESHOOTING.md](references/TROUBLESHOOTING.md) for more debugging help.
 | `frontend/AppController.ts` | State management | Connect UI to backend |
 | `LIVING_UI.md` | Documentation | Document your app |
 
-## Quality Standards
+## Quality & Completion
 
-Every Living UI must meet these standards:
+See [STANDARDS.md](references/STANDARDS.md) for quality requirements and [VERIFY.md](references/VERIFY.md) for the pre-launch checklist.
 
-### Must Have (Blocking)
-- [ ] Data persists across page refreshes
-- [ ] UI is responsive (works at 320px mobile width)
-- [ ] Loading states for async operations
-- [ ] Error handling with user feedback
-- [ ] No console errors
-- [ ] Build succeeds (exit code 0)
+## External Integrations
 
-### Should Have (Quality)
-- [ ] Empty states when no data
-- [ ] Confirmation for destructive actions
-- [ ] Keyboard navigation works
-- [ ] Consistent visual design
-
-See [STANDARDS.md](references/STANDARDS.md) for complete quality checklist.
-
-## Completion Checklist
-
-Before calling `living_ui_notify_ready`:
-
-- [ ] Backend models defined in `backend/models.py` (absolute imports only)
-- [ ] Backend routes added in `backend/routes.py` (no `/api` prefix on route paths)
-- [ ] Frontend types defined in `frontend/types.ts`
-- [ ] UI components built in `frontend/components/`
-- [ ] Controller methods connect UI to backend
-- [ ] `LIVING_UI.md` documentation updated
-- [ ] **Verified project_id from task instruction** (NOT task session ID)
-- [ ] **CALLED `living_ui_notify_ready` action** (pipeline handles build/test/launch)
-
-## External Integrations (Google, Discord, Slack, etc.)
-
-CraftBot has connected external services (Gmail, YouTube, Discord, Slack, Notion, etc.).
-Living UIs can access these through a built-in integration bridge — **do NOT build OAuth flows, API key management, or credential storage yourself.**
-
-The template includes `backend/services/integration_client.py`. Use it:
-
-```python
-from services.integration_client import integration
-
-# Check what integrations are connected
-integrations = await integration.get_integrations()
-# [{"id": "google_workspace", "connected": true}, {"id": "slack", "connected": true}, ...]
-
-# Make an authenticated API call (CraftBot injects credentials automatically)
-result = await integration.request(
-    integration="google_workspace",
-    method="GET",
-    url="https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
-)
-if result.get("status") == 200:
-    channels = result["data"]
-```
-
-**Available integrations:** google_workspace (Gmail, Calendar, Drive, YouTube), slack, discord, notion, telegram, github, jira, linkedin, twitter, outlook, whatsapp
-
-**Rules:**
-- NEVER implement OAuth or credential management — the bridge handles all auth
-- NEVER ask users for API keys — CraftBot already has their connected accounts
-- NEVER store tokens or secrets in the Living UI code or database
-- Use `integration.available` to check if the bridge is connected before making calls
-- Show a helpful message if an integration is not connected (e.g., "Connect Google in CraftBot settings")
+CraftBot has connected services (Google, Discord, Slack, etc.). Living UIs access them via a built-in bridge — never build OAuth or store credentials yourself. See [INTEGRATIONS.md](references/INTEGRATIONS.md).
 
 ## FORBIDDEN Actions
 
@@ -556,9 +388,12 @@ if result.get("status") == 200:
 
 ## References
 
+- [UI Components](references/COMPONENTS.md) - Preset components, icons, toasts
+- [External Integrations](references/INTEGRATIONS.md) - Integration bridge (Google, Discord, etc.)
+- [Auth Module](../../data/living_ui_modules/auth/README.md) - Multi-user auth, membership, invites
 - [Requirement Questionnaire](references/QUESTIONNAIRE.md) - Reference questions for Phase 0
 - [MVC-A Architecture](references/MVC-A.md) - When to use each layer, agent data access methods
 - [Quality Standards](references/STANDARDS.md) - Professional standards for Living UIs
 - [Code Examples](references/EXAMPLES.md) - Complete code examples for each phase
 - [Verification Checklist](references/VERIFY.md) - QA checklist before launch (REQUIRED)
-- [Troubleshooting](references/TROUBLESHOOTING.md) - Debug common issues
+- [Troubleshooting](references/TROUBLESHOOTING.md) - Debug common issues, log files

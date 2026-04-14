@@ -4,6 +4,31 @@ Quick diagnostics and fixes for common Living UI issues.
 
 ---
 
+## Log Files
+
+When something goes wrong, check these log files in the project directory:
+
+| Log File | Contains |
+|----------|----------|
+| `backend/logs/subprocess_output.log` | Uvicorn startup output, crashes, stack traces |
+| `backend/logs/backend_*.log` | Backend app-level logs (requests, errors, SQL) |
+| `backend/logs/frontend_console.log` | Frontend console errors, warnings, app logs, and network requests |
+| `backend/logs/test_discovery.json` | Pre-launch test results (imports, routes, models) |
+| `backend/logs/test_results.json` | External smoke test results |
+| `logs/frontend_output.log` | Vite preview server output |
+
+**Read these logs first** when debugging launch failures or runtime issues.
+
+---
+
+## Common Mistakes
+
+- **Relative imports** — NEVER use `from . import models` or `from .models import ...` in backend code. Use absolute imports: `from models import ...`
+- **Double /api prefix** — Routes in `routes.py` should NOT have `/api` prefix (e.g., use `@router.get("/items")` not `@router.get("/api/items")`). The prefix is added by `main.py`'s `include_router`.
+- **Running servers manually** — NEVER start uvicorn, npm run dev, or npm run preview. The pipeline handles this.
+
+---
+
 ## Quick Diagnostics
 
 ### 1. Backend Check

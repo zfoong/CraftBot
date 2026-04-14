@@ -52,6 +52,13 @@ based on the project description and ask in batches of 2-4.
 - How important is mobile responsiveness? (primary mobile use, desktop-first, or both equally?)
 - Any specific interactions? (hover previews, inline editing, keyboard shortcuts)
 
+## Category 6: Users & Access
+
+- Will multiple people use this app, each with their own data?
+- Do you need user accounts (login/register)?
+- Should some users have admin privileges?
+- Do users need to collaborate or share data?
+
 ## Safe Assumptions
 
 The agent can assume the following unless the user says otherwise:
