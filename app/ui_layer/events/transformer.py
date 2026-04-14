@@ -283,21 +283,26 @@ class EventTransformer:
 
     @classmethod
     def _python_str_to_json(cls, python_str: str) -> str:
-        """Convert Python dict/list string representation to JSON.
+        """Convert a JSON or Python dict/list string to pretty-printed JSON.
 
-        Uses ast.literal_eval to safely parse Python literals,
-        then json.dumps to convert to proper JSON.
+        Tries json.loads first (handles pretty-printed JSON with null/true/false),
+        falls back to ast.literal_eval for legacy Python dict repr (None/True/False).
         """
         import ast
         import json
 
+        # Try JSON first (handles pretty-printed JSON from _to_pretty_json)
         try:
-            # Parse Python literal (dict, list, etc.)
+            parsed = json.loads(python_str)
+            return json.dumps(parsed, indent=2, ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Fallback: Python literal (legacy format)
+        try:
             parsed = ast.literal_eval(python_str)
-            # Convert to JSON string
-            return json.dumps(parsed)
+            return json.dumps(parsed, indent=2, ensure_ascii=False)
         except (ValueError, SyntaxError):
-            # If parsing fails, return original string
             return python_str
 
     @classmethod

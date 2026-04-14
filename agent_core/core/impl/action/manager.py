@@ -32,6 +32,15 @@ from agent_core.utils.logger import logger
 
 nest_asyncio.apply()
 
+
+def _to_pretty_json(value: Any) -> str:
+    """Serialize a value to pretty-printed JSON for readable logs and event streams."""
+    try:
+        return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
 # Type aliases for hooks
 OnActionStartHook = Callable[[str, Any, Dict, str, str], Any]  # (run_id, action, inputs, parent_id, started_at) -> awaitable
 OnActionEndHook = Callable[[str, Any, Dict, str, str, str], Any]  # (run_id, action, outputs, status, parent_id, ended_at) -> awaitable
@@ -205,10 +214,11 @@ class ActionManager:
         # Log to event stream
         # Only pass session_id when is_running_task=True (task stream exists)
         # When no task exists, use global stream by not passing task_id
+        pretty_input = _to_pretty_json(input_data)
         self._log_event_stream(
             is_gui_task=is_gui_task,
             event_type="action_start",
-            event=f"Running action {action.name} with input: {input_data}.",
+            event=f"Running action {action.name} with input: {pretty_input}.",
             display_message=f"Running {action.display_name}",
             action_name=action.name,
             session_id=session_id if is_running_task else None,
@@ -293,10 +303,11 @@ class ActionManager:
         # Only pass session_id when is_running_task=True (task stream exists)
         output_has_error = outputs and outputs.get("status") == "error"
         display_status = "failed" if (status == "error" or output_has_error) else "completed"
+        pretty_output = _to_pretty_json(outputs)
         self._log_event_stream(
             is_gui_task=is_gui_task,
             event_type="action_end",
-            event=f"Action {action.name} completed with output: {outputs}.",
+            event=f"Action {action.name} completed with output: {pretty_output}.",
             display_message=f"{action.display_name} → {display_status}",
             action_name=action.name,
             session_id=session_id if is_running_task else None,
