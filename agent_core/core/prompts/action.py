@@ -198,6 +198,7 @@ Critical Rules:
 - When all todos completed BUT the user sends a NEW question or request, do NOT end the task. Add new todos for the follow-up and continue working.
 - If unrecoverable error, use 'task_end' with status 'abort'.
 - You must provide concrete parameter values for the action's input_schema.
+- When setting wait_for_user_reply=true on a send message action, the message MUST end with an explicit question (e.g., "Does this look good?" or "Would you like any changes?"). The agent will pause and wait for user input — if the message is a statement without a question, the user won't know a reply is expected and the task will hang indefinitely.
 
 File Reading Best Practices:
 - read_file returns content with line numbers in cat -n format
