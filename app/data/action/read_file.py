@@ -130,7 +130,26 @@ def read_file(input_data: dict) -> dict:
             'message': 'file_path is required.'
         }
 
-    if not os.path.isfile(file_path):
+    # Resolve symlinks and normalize path to prevent traversal attacks
+    resolved_path = os.path.realpath(file_path)
+
+    # Block access to sensitive system files and directories
+    _BLOCKED_PREFIXES = ('/etc/shadow', '/etc/gshadow')
+    _BLOCKED_DIRS = ('.credentials', '.ssh', '.gnupg', '.aws')
+    path_parts = resolved_path.replace('\\', '/').split('/')
+    if any(resolved_path.startswith(p) for p in _BLOCKED_PREFIXES) or \
+       any(part in _BLOCKED_DIRS for part in path_parts):
+        return {
+            'status': 'error',
+            'content': '',
+            'total_lines': 0,
+            'lines_returned': 0,
+            'offset': 0,
+            'has_more': False,
+            'message': f'Access denied: {file_path} is in a restricted location.'
+        }
+
+    if not os.path.isfile(resolved_path):
         return {
             'status': 'error',
             'content': '',
@@ -142,7 +161,7 @@ def read_file(input_data: dict) -> dict:
         }
 
     try:
-        with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+        with open(resolved_path, 'r', encoding=encoding, errors='replace') as f:
             all_lines = f.readlines()
 
         total_lines = len(all_lines)
