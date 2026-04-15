@@ -171,34 +171,37 @@ def send_http_requests(input_data: dict) -> dict:
         return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Invalid or missing URL.'}
 
     # SSRF protection: block requests to private/internal networks and cloud metadata
-    try:
-        from urllib.parse import urlparse as _urlparse
-        import ipaddress as _ipaddress
-        import socket as _socket
-        _parsed = _urlparse(url)
+    from urllib.parse import urlparse as _urlparse
+    import ipaddress as _ipaddress
+    import socket as _socket
+
+    def _is_url_ssrf_safe(check_url: str) -> str | None:
+        """Return an error message if the URL targets a blocked host, or None if safe."""
+        _parsed = _urlparse(check_url)
         _hostname = _parsed.hostname or ''
-        # Block cloud metadata endpoints
         _BLOCKED_HOSTS = {'169.254.169.254', 'metadata.google.internal', 'metadata.internal'}
         if _hostname in _BLOCKED_HOSTS:
-            return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Blocked: requests to cloud metadata endpoints are not allowed.'}
-        # Resolve hostname and check for private IPs
+            return 'Blocked: requests to cloud metadata endpoints are not allowed.'
         try:
             _resolved = _socket.getaddrinfo(_hostname, None)
             for _family, _type, _proto, _canonname, _sockaddr in _resolved:
                 _ip = _ipaddress.ip_address(_sockaddr[0])
                 if _ip.is_private or _ip.is_loopback or _ip.is_link_local:
-                    return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':f'Blocked: requests to private/internal addresses ({_hostname}) are not allowed.'}
+                    return f'Blocked: requests to private/internal addresses ({_hostname}) are not allowed.'
         except (_socket.gaierror, ValueError):
-            pass  # Let the request library handle DNS resolution errors
-    except Exception:
-        pass  # Best-effort SSRF check; don't block on parsing failures
+            return f'Blocked: could not resolve hostname ({_hostname}).'
+        return None
+
+    ssrf_error = _is_url_ssrf_safe(url)
+    if ssrf_error:
+        return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message': ssrf_error}
     if json_body is not None and data_body is not None:
         return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Provide either json or data, not both.'}
     if not isinstance(headers, dict) or not isinstance(params, dict):
         return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'headers and params must be objects.'}
     headers = {str(k): str(v) for k, v in headers.items()}
     params = {str(k): str(v) for k, v in params.items()}
-    kwargs = {'headers': headers, 'params': params, 'timeout': timeout, 'allow_redirects': allow_redirects, 'verify': verify_tls}
+    kwargs = {'headers': headers, 'params': params, 'timeout': timeout, 'allow_redirects': False, 'verify': verify_tls}
     if json_body is not None:
         kwargs['json'] = json_body
     elif data_body is not None:
@@ -206,6 +209,21 @@ def send_http_requests(input_data: dict) -> dict:
     try:
         t0 = time.time()
         resp = requests.request(method, url, **kwargs)
+        # Manually follow redirects with SSRF validation on each hop
+        _max_redirects = 10
+        while allow_redirects and resp.is_redirect and _max_redirects > 0:
+            _max_redirects -= 1
+            redirect_url = resp.headers.get('Location', '')
+            if not redirect_url:
+                break
+            # Resolve relative redirects
+            if not redirect_url.startswith(('http://', 'https://')):
+                from urllib.parse import urljoin
+                redirect_url = urljoin(resp.url, redirect_url)
+            redirect_error = _is_url_ssrf_safe(redirect_url)
+            if redirect_error:
+                return {'status':'error','status_code':resp.status_code,'response_headers':{},'body':'','final_url':resp.url,'elapsed_ms':int((time.time()-t0)*1000),'message':f'Redirect blocked: {redirect_error}'}
+            resp = requests.request('GET', redirect_url, **{**kwargs, 'allow_redirects': False})
         elapsed_ms = int((time.time() - t0) * 1000)
         resp_headers = {k: v for k, v in resp.headers.items()}
         parsed_json = None
