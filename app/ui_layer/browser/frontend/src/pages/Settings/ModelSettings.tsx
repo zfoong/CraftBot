@@ -8,6 +8,7 @@ import { Button, Badge } from '../../components/ui'
 import { useToast } from '../../contexts/ToastContext'
 import styles from './SettingsPage.module.css'
 import { useSettingsWebSocket } from './useSettingsWebSocket'
+import { getOllamaInstallPercent } from '../../utils/ollamaInstall'
 
 // Types
 interface ProviderInfo {
@@ -30,6 +31,7 @@ interface TestResult {
   success: boolean
   message: string
   error?: string
+  models?: string[]
 }
 
 interface SuggestedModel {
@@ -61,6 +63,10 @@ export function ModelSettings() {
   const [newLlmModel, setNewLlmModel] = useState('')
   const [newVlmModel, setNewVlmModel] = useState('')
 
+  // Slow mode state
+  const [slowModeEnabled, setSlowModeEnabled] = useState(false)
+  const [isLoadingSlowMode, setIsLoadingSlowMode] = useState(true)
+
   // UI state
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -71,6 +77,13 @@ export function ModelSettings() {
   // Ollama model list state
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
   const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false)
+  // null = not yet checked, true = running, false = not installed / not reachable
+  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null)
+
+  // Ollama auto-install state
+  const [ollamaInstallPhase, setOllamaInstallPhase] = useState<'idle' | 'installing' | 'error'>('idle')
+  const [ollamaInstallLog, setOllamaInstallLog] = useState<string[]>([])
+  const [ollamaInstallError, setOllamaInstallError] = useState('')
 
   // Ollama model download state
   const [pullPhase, setPullPhase] = useState<'idle' | 'selecting' | 'pulling'>('idle')
@@ -148,12 +161,13 @@ export function ModelSettings() {
         }
       }),
       onMessage('model_connection_test', (data: unknown) => {
-        const d = data as { success: boolean; message: string; error?: string }
+        const d = data as { success: boolean; message: string; error?: string; models?: string[] }
         setIsTesting(false)
         setTestResult({
           success: d.success,
           message: d.message,
           error: d.error,
+          models: d.models,
         })
 
         if (testBeforeSave && d.success) {
@@ -176,8 +190,25 @@ export function ModelSettings() {
       onMessage('ollama_models_get', (data: unknown) => {
         const d = data as { success: boolean; models: string[]; error?: string }
         setOllamaModelsLoading(false)
+        setOllamaAvailable(d.success)
         if (d.success && d.models && d.models.length > 0) {
           setOllamaModels(d.models)
+          // Auto-select first available model if current selection isn't installed
+          setNewLlmModel(prev => {
+            const effective = prev || currentLlmModel
+            if (!d.models.includes(effective)) {
+              setHasChanges(true)
+              return d.models[0]
+            }
+            return prev
+          })
+          setNewVlmModel(prev => {
+            const effective = prev || currentVlmModel
+            if (!d.models.includes(effective)) {
+              return d.models[0]
+            }
+            return prev
+          })
         } else {
           setOllamaModels([])
         }
@@ -207,6 +238,40 @@ export function ModelSettings() {
           showToast('error', d.error || 'Model download failed')
         }
       }),
+      onMessage('slow_mode_get', (data: unknown) => {
+        const d = data as { success: boolean; enabled: boolean; tpm_limit: number }
+        setIsLoadingSlowMode(false)
+        if (d.success) {
+          setSlowModeEnabled(d.enabled)
+        }
+      }),
+      onMessage('slow_mode_set', (data: unknown) => {
+        const d = data as { success: boolean; enabled: boolean; error?: string }
+        if (d.success) {
+          setSlowModeEnabled(d.enabled)
+          showToast('success', `Slow mode ${d.enabled ? 'enabled' : 'disabled'}`)
+        } else {
+          showToast('error', d.error || 'Failed to update slow mode')
+        }
+      }),
+      onMessage('local_llm_install_progress', (data: unknown) => {
+        const d = data as { message: string }
+        if (d.message) setOllamaInstallLog(prev => [...prev, d.message])
+      }),
+      onMessage('local_llm_install', (data: unknown) => {
+        const d = data as { success: boolean; error?: string }
+        if (d.success) {
+          setOllamaInstallPhase('idle')
+          setOllamaInstallLog([])
+          // Re-check if Ollama is now reachable
+          setOllamaModelsLoading(true)
+          setOllamaAvailable(null)
+          send('ollama_models_get', { baseUrl: newBaseUrl || baseUrls['remote'] || undefined })
+        } else {
+          setOllamaInstallPhase('error')
+          setOllamaInstallError(d.error || 'Installation failed')
+        }
+      }),
     ]
 
     return () => cleanups.forEach(cleanup => cleanup())
@@ -218,12 +283,14 @@ export function ModelSettings() {
 
     send('model_providers_get')
     send('model_settings_get')
+    send('slow_mode_get')
   }, [isConnected, send])
 
   // Fetch Ollama models whenever the active provider is 'remote'
   useEffect(() => {
     if (!isConnected || provider !== 'remote') return
     setOllamaModelsLoading(true)
+    setOllamaAvailable(null)
     send('ollama_models_get', { baseUrl: baseUrls['remote'] || undefined })
   }, [provider, isConnected])
 
@@ -231,13 +298,17 @@ export function ModelSettings() {
   const hasKey = apiKeys[provider]?.has_key || newApiKey.length > 0
   const needsKey = currentProvider?.requires_api_key && !hasKey
 
-  // Update models when provider changes
+  // Update models when provider changes — only before settings have loaded (fallback to
+  // registry defaults for the initial render).  After hasInitialized is true, provider
+  // changes are handled explicitly in handleProviderChange so we don't race against
+  // the model_settings_get response overwriting the saved model.
   useEffect(() => {
+    if (hasInitialized.current) return
     const selectedProvider = providers.find(p => p.id === provider)
-    if (selectedProvider && !newLlmModel) {
+    if (selectedProvider && !newLlmModel && !currentLlmModel) {
       setCurrentLlmModel(selectedProvider.llm_model || '')
     }
-    if (selectedProvider && !newVlmModel) {
+    if (selectedProvider && !newVlmModel && !currentVlmModel) {
       setCurrentVlmModel(selectedProvider.vlm_model || '')
     }
   }, [provider, providers])
@@ -249,6 +320,15 @@ export function ModelSettings() {
     setNewLlmModel('')
     setNewVlmModel('')
     setHasChanges(true)
+    // Reset Ollama install state when switching providers
+    setOllamaInstallPhase('idle')
+    setOllamaInstallLog([])
+    setOllamaInstallError('')
+    // Immediately set model to registry default for new provider so the field
+    // shows a sensible value before the user types anything.
+    const selectedProvider = providers.find(p => p.id === newProvider)
+    setCurrentLlmModel(selectedProvider?.llm_model || '')
+    setCurrentVlmModel(selectedProvider?.vlm_model || '')
   }
 
   const handleTestConnection = () => {
@@ -349,10 +429,92 @@ export function ModelSettings() {
                 )}
               </div>
 
-              {/* Download new Ollama model */}
+              {/* Download new Ollama model / Install Ollama */}
               {provider === 'remote' && (
                 <div className={styles.ollamaDownloadSection}>
-                  {pullPhase === 'idle' && (
+                  {/* Ollama not detected — show install flow */}
+                  {!ollamaModelsLoading && ollamaAvailable === false && (
+                    <div className={styles.ollamaInstallBanner}>
+                      {/* idle: prompt to install */}
+                      {ollamaInstallPhase === 'idle' && (
+                        <>
+                          <div className={styles.ollamaInstallText}>
+                            <strong>Ollama not detected</strong>
+                            <span>Install Ollama to run AI models locally — no cloud needed.</span>
+                          </div>
+                          <div className={styles.ollamaInstallActions}>
+                            <button
+                              className={styles.installOllamaBtn}
+                              onClick={() => {
+                                setOllamaInstallPhase('installing')
+                                setOllamaInstallLog([])
+                                send('local_llm_install')
+                              }}
+                            >
+                              Install Ollama
+                            </button>
+                            <button
+                              className={styles.retryOllamaBtn}
+                              onClick={() => {
+                                setOllamaModelsLoading(true)
+                                setOllamaAvailable(null)
+                                send('ollama_models_get', { baseUrl: newBaseUrl || baseUrls['remote'] || undefined })
+                              }}
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {/* installing: progress bar + live log */}
+                      {ollamaInstallPhase === 'installing' && (() => {
+                        const pct = getOllamaInstallPercent(ollamaInstallLog)
+                        return (
+                          <div className={styles.ollamaInstallProgress}>
+                            <div className={styles.ollamaInstallProgressHeader}>
+                              <Loader2 size={14} className={styles.spinning} />
+                              <strong>Installing Ollama…</strong>
+                              <span className={styles.ollamaInstallPct}>{pct}%</span>
+                            </div>
+                            <div className={styles.ollamaInstallProgressBar}>
+                              <div className={styles.ollamaInstallProgressFill} style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className={styles.ollamaInstallLog}>
+                              {ollamaInstallLog.length === 0
+                                ? <span className={styles.ollamaInstallLogLine}>Starting…</span>
+                                : ollamaInstallLog.map((line, i) => (
+                                    <span key={i} className={styles.ollamaInstallLogLine}>{line}</span>
+                                  ))
+                              }
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* error: show message + back button */}
+                      {ollamaInstallPhase === 'error' && (
+                        <>
+                          <div className={styles.ollamaInstallText}>
+                            <strong>Installation failed</strong>
+                            <span>{ollamaInstallError}</span>
+                          </div>
+                          <button
+                            className={styles.retryOllamaBtn}
+                            onClick={() => {
+                              setOllamaInstallPhase('idle')
+                              setOllamaInstallError('')
+                            }}
+                          >
+                            Back
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Model download — only shown when Ollama is running */}
+                  {ollamaAvailable === true && pullPhase === 'idle' && (
                     <button className={styles.downloadModelBtn} onClick={handleDownloadModelClick}>
                       + Download New Model
                     </button>
@@ -501,7 +663,7 @@ export function ModelSettings() {
           )}
 
           {/* Actions */}
-          <div className={styles.sectionFooter}>
+          <div className={styles.sectionFooter} style={{ borderTop: 'none', paddingTop: 0 }}>
             <Button
               variant="secondary"
               onClick={handleTestConnection}
@@ -537,6 +699,28 @@ export function ModelSettings() {
               )}
             </Button>
           </div>
+
+          {/* Slow Mode */}
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-primary)', margin: 'var(--space-4) 0' }} />
+          <div className={styles.toggleGroup}>
+            <div className={styles.toggleInfo}>
+              <span className={styles.toggleLabel}>Slow Mode</span>
+              <span className={styles.toggleDesc}>
+                Limits token usage to stay within API rate limits.
+                Enable this if you experience rate limiting errors from your provider.
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              className={styles.toggle}
+              checked={slowModeEnabled}
+              onChange={(e) => {
+                setSlowModeEnabled(e.target.checked)
+                send('slow_mode_set', { enabled: e.target.checked })
+              }}
+              disabled={isLoadingSlowMode}
+            />
+          </div>
         </div>
       )}
 
@@ -564,7 +748,23 @@ export function ModelSettings() {
                     </span>
                   </span>
                 ) : (
-                  testResult.message
+                  <span style={{ textAlign: 'center', display: 'block' }}>
+                    <span>{testResult.message}</span>
+                    {testResult.models && testResult.models.length > 0 && (
+                      <span style={{ marginTop: 10, display: 'block', fontSize: '0.85em', color: 'var(--text-secondary)' }}>
+                        {testResult.models.map(m => (
+                          <span key={m} style={{
+                            display: 'inline-block',
+                            background: 'var(--bg-tertiary)',
+                            borderRadius: 4,
+                            padding: '2px 8px',
+                            margin: '3px 3px 0 0',
+                            fontFamily: 'monospace',
+                          }}>{m}</span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
                 )
               ) : (
                 testResult.error || testResult.message

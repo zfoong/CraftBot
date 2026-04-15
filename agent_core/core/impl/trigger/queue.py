@@ -156,7 +156,7 @@ class TriggerQueue:
 
     async def clear(self) -> None:
         """
-        Remove all pending triggers from the queue.
+        Remove all pending and active triggers from the queue.
 
         The queue is cleared under the protection of the condition variable so
         waiting consumers are notified immediately that the queue state has
@@ -164,6 +164,7 @@ class TriggerQueue:
         """
         async with self._cv:
             self._heap.clear()
+            self._active.clear()
             self._cv.notify_all()
 
     # =================================================================
@@ -277,6 +278,20 @@ class TriggerQueue:
                 event_stream_manager=self._event_stream_manager,
             )
 
+            # Build recent conversation context for routing
+            recent_conversation = "No recent conversation history."
+            if self._event_stream_manager:
+                recent_msgs = self._event_stream_manager.get_recent_conversation_messages(limit=10)
+                if recent_msgs:
+                    conv_lines = []
+                    for evt in recent_msgs:
+                        ts = evt.ts.strftime("%Y-%m-%d %H:%M:%S") if evt.ts else "unknown"
+                        conv_line = f"[{ts}] [{evt.kind}]: {evt.message}"
+                        if len(conv_line) > 300:
+                            conv_line = conv_line[:297] + "..."
+                        conv_lines.append(conv_line)
+                    recent_conversation = "\n".join(conv_lines)
+
             # Format prompt with available placeholders
             usr_msg = self._route_to_session_prompt.format(
                 item_type="trigger",
@@ -284,6 +299,7 @@ class TriggerQueue:
                 source_platform=trig.payload.get("platform", "default"),
                 conversation_id=trig.payload.get("conversation_id", "N/A"),
                 existing_sessions=existing_sessions,
+                recent_conversation=recent_conversation,
             )
 
             logger.debug(f"[UNIFIED ROUTING PROMPT]:\n{usr_msg}")

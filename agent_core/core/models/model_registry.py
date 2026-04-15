@@ -25,8 +25,8 @@ MODEL_REGISTRY = {
         InterfaceType.EMBEDDING: "skylark-embedding-vision-250615",
     },
     "remote": {
-        InterfaceType.LLM: "llama3",
-        InterfaceType.VLM: "llava-v1.6",
+        InterfaceType.LLM: "llama3.2:3b",
+        InterfaceType.VLM: "llava:7b",
         InterfaceType.EMBEDDING: "nomic-embed-text",
     },
     "minimax": {
@@ -42,6 +42,11 @@ MODEL_REGISTRY = {
     "moonshot": {
         InterfaceType.LLM: "moonshot-v1-8k",
         InterfaceType.VLM: None,
+        InterfaceType.EMBEDDING: None,
+    },
+    "grok": {
+        InterfaceType.LLM: "grok-3",
+        InterfaceType.VLM: "grok-2-vision-1212",
         InterfaceType.EMBEDDING: None,
     },
 }

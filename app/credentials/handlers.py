@@ -701,8 +701,8 @@ class WhatsAppHandler(IntegrationHandler):
         event_type, event_data = await bridge.wait_for_qr_or_ready(timeout=60.0)
 
         if event_type == "ready":
-            # Already authenticated — save credential and stop the bridge
-            # (start_listening will restart it on the main event loop)
+            # Already authenticated — save credential, keep bridge running
+            # (start_listening will reuse it if still running and ready)
             from app.external_comms.platforms.whatsapp_web import WhatsAppWebCredential
             owner_phone = bridge.owner_phone or ""
             owner_name = bridge.owner_name or ""
@@ -711,7 +711,6 @@ class WhatsAppHandler(IntegrationHandler):
                 owner_phone=owner_phone,
                 owner_name=owner_name,
             ))
-            await bridge.stop()
             display = owner_phone or owner_name or "connected"
             return True, f"WhatsApp Web connected: +{display}"
 
@@ -753,8 +752,8 @@ class WhatsAppHandler(IntegrationHandler):
             if not ready:
                 return False, "Timed out waiting for QR scan. Run /whatsapp login again."
 
-            # Save credential with owner info, then stop bridge
-            # (start_listening will restart it on the main event loop)
+            # Save credential with owner info, keep bridge running
+            # (start_listening will reuse it if still running and ready)
             from app.external_comms.platforms.whatsapp_web import WhatsAppWebCredential
             owner_phone = bridge.owner_phone or ""
             owner_name = bridge.owner_name or ""
@@ -763,7 +762,6 @@ class WhatsAppHandler(IntegrationHandler):
                 owner_phone=owner_phone,
                 owner_name=owner_name,
             ))
-            await bridge.stop()
             display = owner_phone or owner_name or "connected"
             return True, f"WhatsApp Web connected: +{display}"
 
@@ -774,7 +772,25 @@ class WhatsAppHandler(IntegrationHandler):
         if not has_credential("whatsapp_web.json"):
             return False, "No WhatsApp credentials found."
         remove_credential("whatsapp_web.json")
-        return True, "Removed WhatsApp credential."
+        # Stop the bridge and listener
+        try:
+            from app.external_comms.platforms.whatsapp_bridge.client import get_whatsapp_bridge
+            bridge = get_whatsapp_bridge()
+            if bridge.is_running:
+                await bridge.stop()
+            from app.external_comms.manager import get_external_comms_manager
+            manager = get_external_comms_manager()
+            if manager and "whatsapp_web" in manager._active_clients:
+                client = manager._active_clients["whatsapp_web"]
+                if hasattr(client, 'stop_listening'):
+                    await client.stop_listening()
+                del manager._active_clients["whatsapp_web"]
+        except Exception:
+            pass
+        # Keep session directory — session persists for quick reconnect
+        # Only a full "logout" (not disconnect) should delete the session
+            pass
+        return True, "WhatsApp disconnected."
 
     async def status(self):
         if not has_credential("whatsapp_web.json"):

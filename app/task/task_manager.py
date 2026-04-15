@@ -10,11 +10,13 @@ from typing import Awaitable, Callable, List, Optional, TYPE_CHECKING
 from pathlib import Path
 
 from agent_core.core.impl.task import TaskManager as _TaskManager
+from agent_core.core.task import Task
 from app.database_interface import DatabaseInterface
 from app.event_stream import EventStreamManager
 from app.state.state_manager import StateManager
 from app.state.agent_state import STATE
 from app.config import AGENT_WORKSPACE_ROOT, AGENT_FILE_SYSTEM_PATH
+from app.logger import logger
 
 if TYPE_CHECKING:
     from app.llm import LLMInterface
@@ -46,6 +48,24 @@ def _make_on_stream_create(event_stream_manager: EventStreamManager):
     def on_stream_create(task_id: str, temp_dir: Path) -> None:
         event_stream_manager.create_stream(task_id, temp_dir)
     return on_stream_create
+
+
+def _on_task_persist(task: Task) -> None:
+    """Persist task state to SessionStorage for crash recovery."""
+    try:
+        from app.usage.session_storage import get_session_storage
+        get_session_storage().persist_task(task)
+    except Exception as e:
+        logger.warning(f"[TaskManager] Failed to persist task {task.id}: {e}")
+
+
+def _on_task_remove_persist(task_id: str) -> None:
+    """Remove persisted task and its event stream from SessionStorage."""
+    try:
+        from app.usage.session_storage import get_session_storage
+        get_session_storage().remove_task(task_id)
+    except Exception as e:
+        logger.warning(f"[TaskManager] Failed to remove persisted task {task_id}: {e}")
 
 
 def _make_on_stream_remove(event_stream_manager: EventStreamManager):
@@ -90,6 +110,9 @@ class TaskManager(_TaskManager):
             # Event stream hooks for per-task streams (CRITICAL for multi-tasking)
             on_stream_create=_make_on_stream_create(event_stream_manager),
             on_stream_remove=_make_on_stream_remove(event_stream_manager),
+            # Session persistence hooks for crash recovery
+            on_task_persist=_on_task_persist,
+            on_task_remove_persist=_on_task_remove_persist,
             # No chatserver hooks for CraftBot (local only)
             on_task_created_chatserver=None,
             on_todo_transition=None,

@@ -4,6 +4,10 @@
 API keys and base URLs should be passed directly - no environment variable reading.
 """
 
+import logging
+import urllib.request
+import json as _json
+
 from openai import OpenAI
 from anthropic import Anthropic
 from typing import Optional
@@ -12,6 +16,28 @@ from agent_core.core.models.types import InterfaceType
 from agent_core.core.models.model_registry import MODEL_REGISTRY
 from agent_core.core.models.provider_config import PROVIDER_CONFIG
 from agent_core.core.llm.google_gemini_client import GeminiClient
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_ollama_model(requested: str, base_url: str) -> str:
+    """Return `requested` if Ollama has it, otherwise return the first available model."""
+    try:
+        tags_url = base_url.rstrip("/") + "/api/tags"
+        with urllib.request.urlopen(tags_url, timeout=5) as resp:
+            data = _json.loads(resp.read())
+        available = [m["name"] for m in data.get("models", [])]
+        if not available:
+            return requested
+        if requested in available:
+            return requested
+        logger.warning(
+            "[OLLAMA] Model '%s' not found in Ollama. Available: %s. Using '%s'.",
+            requested, available, available[0],
+        )
+        return available[0]
+    except Exception:
+        return requested
 
 
 class ModelFactory:
@@ -39,7 +65,7 @@ class ModelFactory:
             Dictionary with provider context including client instances
         """
         # OpenAI-compatible providers that use OpenAI client with a custom base_url
-        _OPENAI_COMPAT = {"minimax", "deepseek", "moonshot"}
+        _OPENAI_COMPAT = {"minimax", "deepseek", "moonshot", "grok"}
 
         if provider not in PROVIDER_CONFIG:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -135,10 +161,12 @@ class ModelFactory:
             }
 
         if provider == "remote":
-            # Remote (Ollama) doesn't require API key
+            # Remote (Ollama) doesn't require API key.
+            # Validate the model against Ollama's available models and auto-correct if needed.
+            resolved_model = _resolve_ollama_model(model, resolved_base_url)
             return {
                 "provider": provider,
-                "model": model,
+                "model": resolved_model,
                 "client": None,
                 "gemini_client": None,
                 "remote_url": resolved_base_url,

@@ -117,6 +117,8 @@ class CraftApp(App):
         "Google Gemini",
         "BytePlus",
         "Anthropic",
+        "DeepSeek",
+        "Grok (xAI)",
         "Ollama (remote)",
     ]
 
@@ -125,6 +127,8 @@ class CraftApp(App):
         "gemini",
         "byteplus",
         "anthropic",
+        "deepseek",
+        "grok",
         "remote",
     ]
 
@@ -138,6 +142,8 @@ class CraftApp(App):
         "gemini": "Google Gemini",
         "byteplus": "BytePlus",
         "anthropic": "Anthropic",
+        "deepseek": "DeepSeek",
+        "grok": "Grok (xAI)",
         "remote": "Ollama (remote)",
     }
 

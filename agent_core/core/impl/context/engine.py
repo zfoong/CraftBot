@@ -24,6 +24,7 @@ from agent_core.core.prompts import (
     AGENT_FILE_SYSTEM_CONTEXT_PROMPT,
     POLICY_PROMPT,
     USER_PROFILE_PROMPT,
+    SOUL_PROMPT,
     LANGUAGE_INSTRUCTION,
 )
 from agent_core.core.state import get_state, get_session_or_none
@@ -222,6 +223,21 @@ class ContextEngine:
                     return USER_PROFILE_PROMPT.format(user_profile_content=content)
         except Exception as e:
             logger.warning(f"[CONTEXT] Failed to read USER.md: {e}")
+
+        return ""
+
+    def create_system_soul(self) -> str:
+        """Create a system message block with agent soul/personality from SOUL.md."""
+        try:
+            from app.config import AGENT_FILE_SYSTEM_PATH
+            soul_md_path = AGENT_FILE_SYSTEM_PATH / "SOUL.md"
+
+            if soul_md_path.exists():
+                content = soul_md_path.read_text(encoding="utf-8").strip()
+                if content:
+                    return SOUL_PROMPT.format(soul_content=content)
+        except Exception as e:
+            logger.warning(f"[CONTEXT] Failed to read SOUL.md: {e}")
 
         return ""
 
@@ -683,6 +699,7 @@ class ContextEngine:
             "role_info": True,
             "agent_info": True,
             "user_profile": True,
+            "soul": True,
             "language_instruction": True,
             "policy": True,
             "environment": True,
@@ -700,6 +717,7 @@ class ContextEngine:
         system_sections = [
             ("agent_info", self.create_system_agent_info),
             ("user_profile", self.create_system_user_profile),
+            ("soul", self.create_system_soul),
             ("language_instruction", self.create_system_language_instruction),
             ("policy", self.create_system_policy),
             ("role_info", self.create_system_role_info),

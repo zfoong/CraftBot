@@ -1,4 +1,5 @@
 {
+  "version": "1.2.2",
   "general": {
     "agent_name": "CraftBot",
     "os_language": "en"
@@ -13,13 +14,16 @@
     "llm_provider": "byteplus",
     "vlm_provider": "byteplus",
     "llm_model": "kimi-k2-250905",
-    "vlm_model": "seed-1-6-250915"
+    "vlm_model": "seed-1-6-250915",
+    "slow_mode": true,
+    "slow_mode_tpm_limit": 25000
   },
   "api_keys": {
     "openai": "",
     "anthropic": "",
     "google": "",
-    "byteplus": ""
+    "byteplus": "",
+    "deepseek": ""
   },
   "endpoints": {
     "remote_model_url": "",

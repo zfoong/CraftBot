@@ -17,6 +17,8 @@ class ProviderCommand(Command):
         "gemini": ("GOOGLE_API_KEY", "Google Gemini"),
         "anthropic": ("ANTHROPIC_API_KEY", "Anthropic"),
         "byteplus": ("BYTEPLUS_API_KEY", "BytePlus"),
+        "deepseek": ("DEEPSEEK_API_KEY", "DeepSeek"),
+        "grok": ("XAI_API_KEY", "Grok (xAI)"),
         "remote": (None, "Ollama (Local)"),
     }
 
@@ -101,7 +103,7 @@ Examples:
 
         # Reinitialize the LLM
         try:
-            self._controller.agent.reinitialize_llm()
+            self._controller.agent.reinitialize_llm(provider)
             message = f"Provider changed to {display_name}"
             if api_key:
                 message += " with new API key"

@@ -354,12 +354,16 @@ class ActionStorage:
             conn.commit()
             return cursor.rowcount > 0
 
-    def mark_running_as_cancelled(self) -> int:
+    def mark_running_as_cancelled(self, exclude: Optional[set] = None) -> int:
         """
-        Mark all running items as cancelled.
+        Mark running items as cancelled, optionally excluding some.
 
         This should be called on startup to clean up stale running items
         from a previous session.
+
+        Args:
+            exclude: Set of item IDs to skip (e.g., restored tasks that
+                     are still legitimately running).
 
         Returns:
             Number of items updated.
@@ -367,11 +371,19 @@ class ActionStorage:
         import time as time_module
         with sqlite3.connect(self._db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE action_items
-                SET status = 'cancelled', completed_at = ?
-                WHERE status = 'running'
-            """, (time_module.time(),))
+            if exclude:
+                placeholders = ",".join("?" for _ in exclude)
+                cursor.execute(f"""
+                    UPDATE action_items
+                    SET status = 'cancelled', completed_at = ?
+                    WHERE status = 'running' AND id NOT IN ({placeholders})
+                """, (time_module.time(), *exclude))
+            else:
+                cursor.execute("""
+                    UPDATE action_items
+                    SET status = 'cancelled', completed_at = ?
+                    WHERE status = 'running'
+                """, (time_module.time(),))
             conn.commit()
             return cursor.rowcount
 

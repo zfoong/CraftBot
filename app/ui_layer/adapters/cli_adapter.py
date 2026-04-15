@@ -183,6 +183,8 @@ class CLIAdapter(InterfaceAdapter):
 
         # Print logo and welcome
         _get_formatter().print_logo()
+        from app.config import get_app_version
+        print(f"CraftBot v{get_app_version()}")
         print("Type /help for commands, /exit to quit.\n")
 
         # Emit ready event

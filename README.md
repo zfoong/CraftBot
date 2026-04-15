@@ -186,6 +186,18 @@ python run.py --gui
 | `--cli` | Run in **CLI** mode (lightweight) |
 | `--gui` | Enable GUI automation mode (requires `install.py --gui` first) |
 
+### service.py
+
+| Command | Description |
+|---------|-------------|
+| `install` | Install deps, register auto-start, and start CraftBot |
+| `start` | Start CraftBot in the background |
+| `stop` | Stop CraftBot |
+| `restart` | Stop then start |
+| `status` | Show running status and auto-start state |
+| `logs [-n N]` | Show last N log lines (default: 50) |
+| `uninstall` | Remove auto-start registration |
+
 **Installation Examples:**
 ```bash
 # Simple pip installation (no conda)
@@ -246,6 +258,39 @@ python run.py --gui
 # With conda environment
 conda run -n craftbot python run.py
 ```
+
+### 🔧 Background Service (Recommended)
+
+Run CraftBot as a background service so it stays running even after you close the terminal. A desktop shortcut is created automatically so you can reopen the browser anytime.
+
+```bash
+# Install dependencies, register auto-start on login, and start CraftBot
+python service.py install
+```
+
+That's it. The terminal closes itself, CraftBot runs in the background, and the browser opens automatically.
+
+```bash
+# Other service commands:
+python service.py start    # Start CraftBot in background
+python service.py status   # Check if it's running
+python service.py stop     # Stop CraftBot
+python service.py restart  # Restart CraftBot
+python service.py logs     # See recent log output
+```
+
+| Command | Description |
+|---------|-------------|
+| `python service.py install` | Install dependencies, register auto-start on login, start CraftBot, open browser, and close the terminal automatically |
+| `python service.py start` | Start CraftBot in the background — auto-restarts if already running (terminal closes automatically) |
+| `python service.py stop` | Stop CraftBot |
+| `python service.py restart` | Stop and start CraftBot |
+| `python service.py status` | Check if CraftBot is running and if auto-start is enabled |
+| `python service.py logs` | Show recent log output (`-n 100` for more lines) |
+| `python service.py uninstall` | Stop CraftBot, remove auto-start registration, uninstall pip packages, and purge pip cache |
+
+> [!TIP]
+> After `service.py start` or `service.py install`, a **CraftBot desktop shortcut** is created automatically. If you accidentally close the browser, just double-click the shortcut to reopen it.
 
 > [!NOTE]
 > **Installation:** The installer now provides clear guidance if dependencies are missing. If Node.js is not found, you'll be prompted to install it or can switch to TUI mode. Installation automatically detects GPU availability and falls back to CPU-only mode if needed.

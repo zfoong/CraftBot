@@ -67,7 +67,7 @@ StateRegistry.register(lambda: STATE)
 ConfigRegistry.register_workspace_root(".")
 
 # Import settings reader (reads directly from settings.json)
-from app.config import get_llm_provider, get_api_key, get_base_url
+from app.config import get_llm_provider, get_api_key, get_base_url, get_llm_model
 from app.agent_base import AgentBase
 
 
@@ -121,11 +121,12 @@ def _initial_settings() -> tuple[str, str, str, bool]:
     provider = get_llm_provider()
     api_key = get_api_key(provider)
     base_url = get_base_url(provider)
+    model = get_llm_model()  # None → use registry default for the provider
 
     # Remote (Ollama) doesn't require API key
     has_key = bool(api_key) or provider == "remote"
 
-    return provider, api_key, base_url, has_key
+    return provider, api_key, base_url, model, has_key
 
 
 async def main_async() -> None:
@@ -135,13 +136,14 @@ async def main_async() -> None:
     browser_mode = cli_args.get("browser", False)
 
     # Get settings from settings.json
-    provider, api_key, base_url, has_valid_key = _initial_settings()
+    provider, api_key, base_url, model, has_valid_key = _initial_settings()
 
     # CLI args override settings.json if provided
     if cli_args.get("provider"):
         provider = cli_args["provider"]
         api_key = get_api_key(provider)
         base_url = get_base_url(provider)
+        model = get_llm_model()
         has_valid_key = bool(api_key) or provider == "remote"
 
     if cli_args.get("api_key"):
@@ -156,6 +158,7 @@ async def main_async() -> None:
         llm_provider=provider,
         llm_api_key=api_key,
         llm_base_url=base_url,
+        llm_model=model,
         deferred_init=not has_valid_key,
     )
 

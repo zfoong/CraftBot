@@ -9,10 +9,12 @@ as well as re-exports Event and EventRecord from the existing location.
 # Re-export data classes from existing location
 from agent_core.core.event_stream.event import Event, EventRecord
 
+# Token utilities (canonical location: agent_core.utils.token)
+from agent_core.utils.token import count_tokens
+
 # Implementation classes
 from agent_core.core.impl.event_stream.event_stream import (
     EventStream,
-    count_tokens,
     get_cached_token_count,
     SEVERITIES,
     MAX_EVENT_INLINE_CHARS,

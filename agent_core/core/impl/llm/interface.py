@@ -103,7 +103,7 @@ class LLMInterface:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         temperature: float = 0.0,
-        max_tokens: int = 8000,
+        max_tokens: int = 50000,
         deferred: bool = False,
         get_token_count: Optional[GetTokenCountHook] = None,
         set_token_count: Optional[SetTokenCountHook] = None,
@@ -160,6 +160,8 @@ class LLMInterface:
         self.byteplus_base_url: Optional[str] = None
         # Store system prompts for lazy session creation (instance variable)
         self._session_system_prompts: Dict[str, str] = {}
+        # Anthropic multi-turn session message history for KV cache accumulation
+        self._anthropic_session_messages: Dict[str, List[dict]] = {}
 
         if ctx["byteplus"]:
             self.api_key = ctx["byteplus"]["api_key"]
@@ -242,11 +244,13 @@ class LLMInterface:
                     base_url=self.byteplus_base_url,
                     model=self.model,
                 )
-                # Reset session system prompts
+                # Reset session system prompts and Anthropic message history
                 self._session_system_prompts = {}
+                self._anthropic_session_messages = {}
             else:
                 self._byteplus_cache_manager = None
                 self._session_system_prompts = {}
+                self._anthropic_session_messages = {}
 
             # Reinitialize Gemini cache manager
             if self._gemini_client:
@@ -347,7 +351,7 @@ class LLMInterface:
             logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
         try:
-            if self.provider in ("openai", "minimax", "deepseek", "moonshot"):
+            if self.provider in ("openai", "minimax", "deepseek", "moonshot", "grok"):
                 response = self._generate_openai(system_prompt, user_prompt)
             elif self.provider == "remote":
                 response = self._generate_ollama(system_prompt, user_prompt)
@@ -482,7 +486,7 @@ class LLMInterface:
         supports_caching = (
             (self.provider == "byteplus" and self._byteplus_cache_manager) or
             (self.provider == "gemini" and self._gemini_cache_manager) or
-            (self.provider in ("openai", "deepseek") and self.client) or  # OpenAI/DeepSeek use automatic caching with prompt_cache_key
+            (self.provider in ("openai", "deepseek", "grok") and self.client) or  # OpenAI/DeepSeek/Grok use automatic caching with prompt_cache_key
             (self.provider == "anthropic" and self._anthropic_client)  # Anthropic uses ephemeral caching with extended TTL
         )
 
@@ -518,9 +522,10 @@ class LLMInterface:
             task_id: The task ID.
             call_type: Type of LLM call (use LLMCallType enum values).
         """
-        # Clean up stored system prompt
+        # Clean up stored system prompt and Anthropic message history
         session_key = f"{task_id}:{call_type}"
         system_prompt = self._session_system_prompts.pop(session_key, None)
+        self._anthropic_session_messages.pop(session_key, None)
 
         # Clean up provider-specific caches
         if self.provider == "byteplus" and self._byteplus_cache_manager:
@@ -547,6 +552,11 @@ class LLMInterface:
                 call_type = key.split(":", 1)[1] if ":" in key else None
                 if call_type:
                     prompts_and_types.append((system_prompt, call_type))
+
+        # Clean up Anthropic multi-turn message history
+        anthropic_keys = [k for k in self._anthropic_session_messages if k.startswith(f"{task_id}:")]
+        for key in anthropic_keys:
+            self._anthropic_session_messages.pop(key, None)
 
         # Clean up provider-specific caches
         if self.provider == "byteplus" and self._byteplus_cache_manager:
@@ -579,7 +589,7 @@ class LLMInterface:
                 return True
             if self.provider == "gemini" and self._gemini_cache_manager:
                 return True
-            if self.provider in ("openai", "deepseek") and self.client:
+            if self.provider in ("openai", "deepseek", "grok") and self.client:
                 return True
             if self.provider == "anthropic" and self._anthropic_client:
                 return True
@@ -661,8 +671,8 @@ class LLMInterface:
                 logger.info(f"[LLM RECV] {cleaned}")
             return cleaned
 
-        # Handle OpenAI/DeepSeek with call_type-based cache routing
-        if self.provider in ("openai", "deepseek"):
+        # Handle OpenAI/DeepSeek/Grok with call_type-based cache routing
+        if self.provider in ("openai", "deepseek", "grok"):
             # Get stored system prompt or use provided one
             session_key = f"{task_id}:{call_type}"
             stored_system_prompt = self._session_system_prompts.get(session_key)
@@ -682,9 +692,8 @@ class LLMInterface:
                 logger.info(f"[LLM RECV] {cleaned}")
             return cleaned
 
-        # Handle Anthropic with call_type-based extended TTL caching
+        # Handle Anthropic with multi-turn KV caching
         if self.provider == "anthropic" and self._anthropic_client:
-            # Get stored system prompt or use provided one
             session_key = f"{task_id}:{call_type}"
             stored_system_prompt = self._session_system_prompts.get(session_key)
             effective_system_prompt = system_prompt_for_new_session or stored_system_prompt
@@ -694,8 +703,68 @@ class LLMInterface:
                     f"No system prompt for task {task_id}:{call_type}"
                 )
 
-            # Use Anthropic with call_type for extended 1-hour TTL caching
-            response = self._generate_anthropic(effective_system_prompt, user_prompt, call_type=call_type)
+            # Get or initialize multi-turn message history
+            if session_key not in self._anthropic_session_messages:
+                self._anthropic_session_messages[session_key] = []
+
+            history = self._anthropic_session_messages[session_key]
+
+            # Build messages: history (with cache_control on last assistant) + new user msg
+            messages: List[dict] = []
+
+            # Copy history messages (strip old cache_control, we'll re-place it)
+            for msg in history:
+                msg_copy = {"role": msg["role"]}
+                content = msg["content"]
+                if isinstance(content, list):
+                    # Strip cache_control from content blocks
+                    msg_copy["content"] = [
+                        {k: v for k, v in block.items() if k != "cache_control"}
+                        for block in content
+                    ]
+                else:
+                    msg_copy["content"] = content
+                messages.append(msg_copy)
+
+            # Place cache_control on the LAST assistant message for prefix caching
+            if messages:
+                cache_control = {"type": "ephemeral"}
+                if call_type:
+                    cache_control["ttl"] = "1h"
+                for i in range(len(messages) - 1, -1, -1):
+                    if messages[i]["role"] == "assistant":
+                        content = messages[i]["content"]
+                        if isinstance(content, str):
+                            messages[i]["content"] = [
+                                {"type": "text", "text": content, "cache_control": cache_control}
+                            ]
+                        elif isinstance(content, list):
+                            # Add cache_control to the last text block
+                            for j in range(len(content) - 1, -1, -1):
+                                if content[j].get("type") == "text":
+                                    content[j]["cache_control"] = cache_control
+                                    break
+                        break
+
+            # Append the new user message
+            messages.append({"role": "user", "content": user_prompt})
+
+            logger.debug(
+                f"[ANTHROPIC SESSION] {session_key}: {len(history)} history msgs, "
+                f"sending {len(messages)} total msgs"
+            )
+
+            # Call Anthropic with the full multi-turn messages
+            response = self._generate_anthropic(
+                effective_system_prompt, user_prompt, call_type=call_type, messages=messages
+            )
+
+            # On success, accumulate the user message + assistant response in history
+            assistant_content = response.get("content", "")
+            if assistant_content and not response.get("error"):
+                history.append({"role": "user", "content": user_prompt})
+                history.append({"role": "assistant", "content": assistant_content})
+
             cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
             current_count = self._get_token_count()
             self._set_token_count(current_count + response.get("tokens_used", 0))
@@ -1171,7 +1240,7 @@ class LLMInterface:
                     "temperature": self.temperature,
                 }
             }
-            url: str = f"{self.remote_url.rstrip('/')}/generate"
+            url: str = f"{self.remote_url.rstrip('/')}/api/generate"
             response = requests.post(url, json=payload, timeout=600)
             response.raise_for_status()
             result = response.json()
@@ -1570,12 +1639,18 @@ class LLMInterface:
 
     @profile("llm_anthropic_call", OperationCategory.LLM)
     def _generate_anthropic(
-        self, system_prompt: str | None, user_prompt: str, call_type: Optional[str] = None
+        self, system_prompt: str | None, user_prompt: str,
+        call_type: Optional[str] = None,
+        messages: Optional[List[dict]] = None,
     ) -> Dict[str, Any]:
         """Generate response using Anthropic with prompt caching.
 
         Anthropic's prompt caching uses `cache_control` markers on content blocks.
         When the system prompt is long enough (≥1024 tokens), we enable caching.
+
+        For multi-turn sessions, pass pre-built `messages` with cache_control on the
+        last assistant message. This enables prefix caching of the entire conversation
+        history, not just the system prompt.
 
         TTL Options:
         - Default (5 minutes): Free, uses "ephemeral" type
@@ -1588,6 +1663,8 @@ class LLMInterface:
             user_prompt: The user prompt for this request.
             call_type: Optional call type (e.g., "reasoning", "action_selection").
                        When provided, uses extended 1-hour TTL for better cache hit rates.
+            messages: Optional pre-built messages list for multi-turn sessions.
+                      When provided, used instead of building a single-turn message.
 
         Cache hits are logged when `cache_read_input_tokens` > 0 in the response.
         """
@@ -1604,11 +1681,12 @@ class LLMInterface:
             if not self._anthropic_client:
                 raise RuntimeError("Anthropic client was not initialised.")
 
-            # Build the message - rely on system prompt for JSON formatting
+            # Build the message - use pre-built messages for multi-turn, or single-turn
+            # Anthropic requires max_tokens; use 16384 (Claude 4 default) to avoid truncation
             message_kwargs: Dict[str, Any] = {
                 "model": self.model,
-                "max_tokens": self.max_tokens,
-                "messages": [
+                "max_tokens": 16384,
+                "messages": messages if messages is not None else [
                     {"role": "user", "content": user_prompt},
                 ],
             }
@@ -1651,16 +1729,17 @@ class LLMInterface:
             content = content.strip()
 
             # Token usage from Anthropic response
-            token_count_input = response.usage.input_tokens
-            token_count_output = response.usage.output_tokens
-            total_tokens = token_count_input + token_count_output
-
-            # Log cache stats if available (Anthropic returns cache info in usage)
+            # Anthropic reports input_tokens as non-cached input only.
             # cache_creation_input_tokens: tokens written to cache (first call)
             # cache_read_input_tokens: tokens read from cache (subsequent calls)
+            # Total input = input_tokens + cache_creation + cache_read
+            base_input = response.usage.input_tokens
+            token_count_output = response.usage.output_tokens
             cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
             cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-            cached_tokens = cache_creation + cache_read
+            token_count_input = base_input + cache_creation + cache_read
+            total_tokens = token_count_input + token_count_output
+            cached_tokens = cache_read
 
             # Record metrics
             metrics = get_cache_metrics()

@@ -492,7 +492,6 @@ async def start_whatsapp_qr_session() -> Dict[str, Any]:
                 owner_phone=owner_phone,
                 owner_name=owner_name,
             ))
-            await bridge.stop()
 
             display = owner_phone or owner_name or "connected"
             return {
@@ -601,12 +600,11 @@ async def check_whatsapp_session_status(session_id: str) -> Dict[str, Any]:
                     owner_name=owner_name,
                 ))
 
-                # Clean up stored session and stop bridge
-                # (start_platform will restart it on the main event loop)
+                # Clean up stored session — keep bridge running
+                # (start_platform will reuse it if still running and ready)
                 del _whatsapp_sessions[session_id]
-                await bridge.stop()
 
-                # Start the WhatsApp listener
+                # Start the WhatsApp listener (will reuse running bridge)
                 await _start_platform_listener("whatsapp")
 
                 display = owner_phone or owner_name or "connected"

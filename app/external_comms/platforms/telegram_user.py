@@ -7,6 +7,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from app.external_comms.base import BasePlatformClient, PlatformMessage, MessageCallback
@@ -40,6 +41,9 @@ class TelegramUserClient(BasePlatformClient):
         super().__init__()
         self._cred: Optional[TelegramUserCredential] = None
         self._live_client = None          # persistent TelegramClient for listening
+        self._live_loop = None            # event loop the live client was created on
+        self._send_queue: Optional[asyncio.Queue] = None  # queue for sending via live client
+        self._send_task = None
         self._my_user_id: Optional[int] = None
         self._agent_sent_ids: set = set()  # track IDs of messages sent by the agent
 
@@ -125,6 +129,7 @@ class TelegramUserClient(BasePlatformClient):
         session, api_id, api_hash = self._session_params()
         client = TelegramClient(session, api_id, api_hash)
         await client.connect()
+        self._live_loop = asyncio.get_event_loop()
 
         if not await client.is_user_authorized():
             await client.disconnect()
@@ -141,6 +146,39 @@ class TelegramUserClient(BasePlatformClient):
             except Exception as e:
                 logger.error(f"[TELEGRAM_USER] Error handling message event: {e}")
 
+        # Catch up on missed updates
+        await client.catch_up()
+
+        # Send queue processor — runs on the live client's loop
+        self._send_queue = asyncio.Queue()
+
+        async def _send_processor():
+            while self._listening:
+                try:
+                    item = await asyncio.wait_for(self._send_queue.get(), timeout=60)
+                    recipient, text, reply_to, result_future = item
+                    try:
+                        try:
+                            entity = await client.get_entity(int(recipient) if recipient.lstrip('-').isdigit() else recipient)
+                        except ValueError:
+                            entity = await client.get_entity(recipient)
+                        msg = await client.send_message(entity, text, reply_to=reply_to)
+                        result_future.set_result(msg)
+                    except Exception as e:
+                        result_future.set_exception(e)
+                except asyncio.TimeoutError:
+                    # No messages to send — do a keepalive catch_up
+                    try:
+                        if self._live_client and self._live_client.is_connected():
+                            await self._live_client.catch_up()
+                    except Exception:
+                        pass
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    pass
+        self._send_task = asyncio.create_task(_send_processor())
+
         self._listening = True
         logger.info(
             f"[TELEGRAM_USER] Listener started for user {me.first_name or ''} "
@@ -153,6 +191,13 @@ class TelegramUserClient(BasePlatformClient):
             return
 
         self._listening = False
+
+        for task in [getattr(self, '_run_task', None), getattr(self, '_send_task', None)]:
+            if task and not task.done():
+                task.cancel()
+        self._run_task = None
+        self._send_task = None
+        self._send_queue = None
 
         if self._live_client:
             try:
@@ -227,11 +272,21 @@ class TelegramUserClient(BasePlatformClient):
             from telethon import TelegramClient
             from telethon.errors import AuthKeyUnregisteredError, FloodWaitError
 
-            session, api_id, api_hash = self._session_params()
-
-            async with TelegramClient(session, api_id, api_hash) as client:
-                entity = await client.get_entity(resolved)
-                msg = await client.send_message(entity, prefixed_text, reply_to=reply_to)
+            # Queue the send to the live client's send processor (avoids event loop issues)
+            if self._send_queue is not None and self._live_client and self._live_client.is_connected():
+                loop = asyncio.get_event_loop()
+                result_future = loop.create_future()
+                await self._send_queue.put((resolved, prefixed_text, reply_to, result_future))
+                msg = await asyncio.wait_for(result_future, timeout=30)
+            else:
+                # Fallback: new client (listener not running)
+                session, api_id, api_hash = self._session_params()
+                async with TelegramClient(session, api_id, api_hash) as client:
+                    try:
+                        entity = await client.get_entity(int(resolved) if resolved.lstrip('-').isdigit() else resolved)
+                    except ValueError:
+                        entity = await client.get_entity(resolved)
+                    msg = await client.send_message(entity, prefixed_text, reply_to=reply_to)
 
                 # Track sent message ID to filter echo in _handle_event
                 self._agent_sent_ids.add(str(msg.id))
@@ -241,7 +296,7 @@ class TelegramUserClient(BasePlatformClient):
                     "result": {
                         "message_id": msg.id,
                         "date": msg.date.isoformat() if msg.date else None,
-                        "chat_id": entity.id,
+                        "chat_id": getattr(msg, 'chat_id', None) or resolved,
                         "text": msg.text,
                     },
                 }

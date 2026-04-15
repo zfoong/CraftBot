@@ -51,7 +51,7 @@ Examples:
     ) -> CommandResult:
         """Execute the cred command."""
         if not args:
-            return await self._show_status()
+            return CommandResult(success=True, message=self.help_text)
 
         subcommand = args[0].lower()
 
