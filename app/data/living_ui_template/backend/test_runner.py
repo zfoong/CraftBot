@@ -387,6 +387,32 @@ def run_external_tests(port: int) -> Dict[str, Any]:
     base_url = f"http://localhost:{port}"
     created_resources: Dict[str, List[int]] = {}  # path -> list of created IDs
 
+    # Register a test user for auth (if auth routes exist)
+    auth_token = None
+    auth_routes_exist = any(r["path"].startswith("/api/auth") for r in api_routes)
+    if auth_routes_exist:
+        try:
+            reg_data = json.dumps({"email": "smoketest@test.com", "username": "smoketest", "password": "testpass123"}).encode()
+            reg_req = urllib.request.Request(f"{base_url}/api/auth/register", data=reg_data, method="POST",
+                                            headers={"Content-Type": "application/json"})
+            reg_resp = urllib.request.urlopen(reg_req, timeout=10)
+            reg_body = json.loads(reg_resp.read().decode())
+            auth_token = reg_body.get("token")
+            logger.info(f"[EXTERNAL] Registered smoke test user, token obtained")
+        except Exception as e:
+            try:
+                login_data = json.dumps({"email": "smoketest@test.com", "password": "testpass123"}).encode()
+                login_req = urllib.request.Request(f"{base_url}/api/auth/login", data=login_data, method="POST",
+                                                  headers={"Content-Type": "application/json"})
+                login_resp = urllib.request.urlopen(login_req, timeout=10)
+                login_body = json.loads(login_resp.read().decode())
+                auth_token = login_body.get("token")
+                logger.info(f"[EXTERNAL] Logged in as smoke test user")
+            except Exception:
+                logger.warning(f"[EXTERNAL] Could not authenticate for smoke tests: {e}")
+        # Skip auth routes from generic testing (they need specific flows)
+        api_routes = [r for r in api_routes if not r["path"].startswith("/api/auth")]
+
     for route in api_routes:
         method = route["method"]
         path = route["path"]
@@ -407,7 +433,7 @@ def run_external_tests(port: int) -> Dict[str, Any]:
                 resolved_path = resolved_path.replace(f"{{{param}}}", str(ids[0]))
             path = resolved_path
 
-        test_result = _test_endpoint(base_url, method, path, route, definitions)
+        test_result = _test_endpoint(base_url, method, path, route, definitions, auth_token=auth_token)
         result["tests"].append(test_result)
 
         if test_result["status"] == "fail":
@@ -441,6 +467,7 @@ def _test_endpoint(
     path: str,
     route: Dict[str, Any],
     definitions: Dict[str, Any],
+    auth_token: str = None,
 ) -> Dict[str, Any]:
     """Test a single endpoint and return the result."""
     url = f"{base_url}{path}"
@@ -456,11 +483,14 @@ def _test_endpoint(
             payload = generate_payload_from_schema(route["body_schema"], definitions)
 
         data = json.dumps(payload).encode("utf-8") if payload else None
+        headers = {"Content-Type": "application/json"} if data else {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
         req = urllib.request.Request(
             url,
             data=data,
             method=method,
-            headers={"Content-Type": "application/json"} if data else {},
+            headers=headers,
         )
 
         resp = urllib.request.urlopen(req, timeout=10)

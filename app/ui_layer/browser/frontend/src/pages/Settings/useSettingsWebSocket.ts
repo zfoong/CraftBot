@@ -4,7 +4,8 @@ import { getWsUrl } from '../../utils/connection'
 export function useSettingsWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
-  const messageHandlersRef = useRef<Map<string, (data: unknown) => void>>(new Map())
+  // Support multiple handlers per message type (e.g., multiple ShareSections)
+  const messageHandlersRef = useRef<Map<string, Set<(data: unknown) => void>>>(new Map())
 
   useEffect(() => {
     const wsUrl = getWsUrl()
@@ -17,9 +18,9 @@ export function useSettingsWebSocket() {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
-        const handler = messageHandlersRef.current.get(msg.type)
-        if (handler) {
-          handler(msg.data)
+        const handlers = messageHandlersRef.current.get(msg.type)
+        if (handlers) {
+          handlers.forEach(handler => handler(msg.data))
         }
       } catch (err) {
         console.error('[Settings WS] Failed to parse message:', err)
@@ -38,9 +39,16 @@ export function useSettingsWebSocket() {
   }, [])
 
   const onMessage = useCallback((type: string, handler: (data: unknown) => void) => {
-    messageHandlersRef.current.set(type, handler)
+    if (!messageHandlersRef.current.has(type)) {
+      messageHandlersRef.current.set(type, new Set())
+    }
+    messageHandlersRef.current.get(type)!.add(handler)
     return () => {
-      messageHandlersRef.current.delete(type)
+      const handlers = messageHandlersRef.current.get(type)
+      if (handlers) {
+        handlers.delete(handler)
+        if (handlers.size === 0) messageHandlersRef.current.delete(type)
+      }
     }
   }, [])
 

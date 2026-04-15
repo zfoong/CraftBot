@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from routes import router
 from database import init_db
 from logger import setup_logging, cleanup_old_logs
+from pathlib import Path
 import logging
 
 # Initialize persistent file-based logging before anything else
@@ -73,7 +74,6 @@ async def health_check():
 # ============================================================================
 from pydantic import BaseModel
 from typing import List, Optional
-from pathlib import Path
 from datetime import datetime
 
 _FRONTEND_LOG_PATH = Path(__file__).parent / "logs" / "frontend_console.log"

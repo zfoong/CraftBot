@@ -2688,20 +2688,24 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         logger.info(f"[LIVING_UI] Stopping any existing tunnel...")
         await self.stop_tunnel(project_id)
 
-        # Kill any orphan cloudflared processes from previous sessions
-        logger.info("[LIVING_UI] Killing orphan cloudflared processes...")
-        try:
-            if os.name == 'nt':
-                subprocess.run(
-                    ['powershell', '-Command', 'Stop-Process -Name cloudflared -Force -ErrorAction SilentlyContinue'],
-                    capture_output=True, timeout=5
-                )
-            else:
-                subprocess.run(['pkill', '-f', 'cloudflared'], capture_output=True)
-            await asyncio.sleep(1)
-        except Exception as e:
-            logger.warning(f"[LIVING_UI] Failed to kill orphan cloudflared: {e}")
-        logger.info("[LIVING_UI] Orphan cleanup done")
+        # Only kill orphans on first tunnel start (no other tunnels active)
+        other_tunnels = any(
+            p.tunnel_process is not None and p.id != project_id
+            for p in self.projects.values()
+        )
+        if not other_tunnels:
+            logger.info("[LIVING_UI] No other tunnels active, cleaning orphan cloudflared processes...")
+            try:
+                if os.name == 'nt':
+                    subprocess.run(
+                        ['powershell', '-Command', 'Stop-Process -Name cloudflared -Force -ErrorAction SilentlyContinue'],
+                        capture_output=True, timeout=5
+                    )
+                else:
+                    subprocess.run(['pkill', '-f', 'cloudflared'], capture_output=True)
+                await asyncio.sleep(1)
+            except Exception:
+                pass
 
         port = project.backend_port or project.port
         if not port:
