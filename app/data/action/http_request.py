@@ -188,7 +188,7 @@ def send_http_requests(input_data: dict) -> dict:
                 _ip = _ipaddress.ip_address(_sockaddr[0])
                 if _ip.is_private or _ip.is_loopback or _ip.is_link_local:
                     return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':f'Blocked: requests to private/internal addresses ({_hostname}) are not allowed.'}
-        except (socket.gaierror, ValueError):
+        except (_socket.gaierror, ValueError):
             pass  # Let the request library handle DNS resolution errors
     except Exception:
         pass  # Best-effort SSRF check; don't block on parsing failures
