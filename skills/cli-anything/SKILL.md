@@ -10,6 +10,84 @@ action-sets: ["shell", "file_operations"]
 
 ---
 
+## Help Response (no tools needed — just reply with text)
+
+If the user's message matches any of these (case-insensitive, any wording):
+- "cli anything help" / "cli-anything help" / "cli help"
+- "what apps does cli-anything support" / "what can cli-anything do"
+- "show cli apps" / "cli anything guide" / "list cli apps"
+- Any variation asking what CLI-Anything can do or which apps are supported
+
+**Do not run any tools. Reply directly with this message:**
+
+---
+
+**CLI-Anything — What I Can Do**
+
+Just tell me what you want done in plain English. I'll auto-install the app if it's not on your system and complete the task for you — you never need to run any commands yourself.
+
+**Creative & Media**
+| App | Example prompt |
+|---|---|
+| GIMP | "Resize photo.jpg to 1920×1080 and save as photo_hd.jpg" |
+| Blender | "Render scene.blend to PNG frames in the frames/ folder" |
+| Inkscape | "Export logo.svg as a 300 DPI PNG" |
+| Krita | "Export painting.kra as PNG" |
+| Audacity | "Trim the first 30 seconds from audio.mp3 and save as clip.mp3" |
+| OBS Studio | "Record my screen for 60 seconds" |
+| Kdenlive | "Render project.kdenlive to MP4" |
+| Shotcut | "Render project.mlt to MP4" |
+
+**Office & Productivity**
+| App | Example prompt |
+|---|---|
+| LibreOffice | "Convert report.docx to PDF" / "Run a macro on spreadsheet.xlsx" |
+| Mubu | "Open my outline in Mubu" |
+
+**Communication**
+| App | Example prompt |
+|---|---|
+| Zoom | "Start a Zoom meeting" |
+
+**Diagramming**
+| App | Example prompt |
+|---|---|
+| Draw.io | "Export diagram.drawio as PNG" |
+| Mermaid | "Render this diagram to PNG: graph TD; A-->B; B-->C" |
+
+**AI & ML**
+| App | Example prompt |
+|---|---|
+| ComfyUI | "Run workflow.json and save images to output/" |
+| AnyGen | "Generate content using AnyGen" |
+| NotebookLM | "Summarize this PDF using NotebookLM" |
+| Ollama | "Run llama3 and summarize this text: ..." |
+| Stable Diffusion | "Generate 'a sunset over mountains' and save as out.png" |
+
+**Dev & Infrastructure**
+| App | Example prompt |
+|---|---|
+| JupyterLab | "Execute notebook.ipynb and save the output" |
+| Grafana | "Export my dashboard as JSON" |
+| Gitea | "Create a private repo called myrepo on Gitea" |
+| GitLab | "Create a new project on GitLab" |
+| NextCloud | "Sync my files to NextCloud" |
+| Jenkins | "Trigger my build pipeline" |
+| AdGuard Home | "Set up network-wide ad blocking with AdGuard Home" |
+
+**GIS & Design**
+| App | Example prompt |
+|---|---|
+| FreeCAD | "Export model.fcstd as STL" |
+| QGIS | "Export map.qgz as PNG" |
+
+**Tips:**
+- Always give me the full file path (e.g. `C:\Users\you\Desktop\photo.jpg`)
+- If the app isn't installed, I'll install it automatically — just wait a few minutes
+- I never ask you to run commands yourself — I do everything for you
+
+---
+
 ## Supported Apps Reference
 
 Use this table to look up the correct names for every step.
