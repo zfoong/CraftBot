@@ -255,6 +255,8 @@
 
 .detailList dd {
   color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .mono {
@@ -306,6 +308,8 @@
 /* Expandable value for long text */
 .expandableValue {
   display: inline;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .expandButton {
