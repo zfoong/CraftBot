@@ -22,6 +22,7 @@ Usage:
 """
 
 import asyncio
+import html
 import ipaddress
 import logging
 import os
@@ -120,9 +121,19 @@ def _make_callback_handler(result_holder: Dict[str, Any]):
         def do_GET(self):
             """Handle GET request from OAuth callback."""
             params = parse_qs(urlparse(self.path).query)
-            result_holder["code"] = params.get("code", [None])[0]
-            result_holder["state"] = params.get("state", [None])[0]
+            returned_state = params.get("state", [None])[0]
             result_holder["error"] = params.get("error", [None])[0]
+
+            # Validate OAuth state parameter to prevent CSRF
+            expected_state = result_holder.get("expected_state")
+            if expected_state and returned_state != expected_state:
+                result_holder["error"] = "OAuth state mismatch — possible CSRF attack"
+                result_holder["code"] = None
+                logger.warning("[OAUTH] State mismatch: expected %s, got %s", expected_state, returned_state)
+            else:
+                result_holder["code"] = params.get("code", [None])[0]
+
+            result_holder["state"] = returned_state
 
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -132,8 +143,9 @@ def _make_callback_handler(result_holder: Dict[str, Any]):
                     b"<h2>Authorization successful!</h2><p>You can close this tab.</p>"
                 )
             else:
+                safe_error = html.escape(str(result_holder.get('error') or 'Unknown error'))
                 self.wfile.write(
-                    f"<h2>Failed</h2><p>{result_holder['error']}</p>".encode()
+                    f"<h2>Failed</h2><p>{safe_error}</p>".encode()
                 )
 
         def log_message(self, format, *args):
@@ -203,8 +215,12 @@ def run_oauth_flow(
     if cancel_event and cancel_event.is_set():
         return None, "OAuth cancelled"
 
+    # Extract the state parameter from the auth URL for CSRF validation
+    auth_params = parse_qs(urlparse(auth_url).query)
+    expected_state = auth_params.get("state", [None])[0]
+
     # Use instance-level result holder instead of class-level state
-    result_holder: Dict[str, Any] = {"code": None, "state": None, "error": None}
+    result_holder: Dict[str, Any] = {"code": None, "state": None, "error": None, "expected_state": expected_state}
     handler_class = _make_callback_handler(result_holder)
 
     try:
