@@ -76,24 +76,14 @@ def write_file(input_data: dict) -> dict:
     if write_mode not in ('overwrite', 'append'):
         return {'status': 'error', 'file_path': '', 'bytes_written': 0, 'message': "mode must be 'overwrite' or 'append'."}
 
-    # Resolve path to prevent traversal attacks (resolve parent since file may not exist yet)
-    parent_dir = os.path.dirname(os.path.abspath(file_path))
-    resolved_parent = os.path.realpath(parent_dir) if os.path.exists(parent_dir) else os.path.abspath(parent_dir)
-    resolved_path = os.path.join(resolved_parent, os.path.basename(file_path))
-
-    # Block writes to sensitive directories
-    _BLOCKED_DIRS = ('.credentials', '.ssh', '.gnupg', '.aws', '.env')
-    path_parts = resolved_path.replace('\\', '/').split('/')
-    if any(part in _BLOCKED_DIRS for part in path_parts):
-        return {'status': 'error', 'file_path': '', 'bytes_written': 0, 'message': f'Access denied: cannot write to restricted location.'}
-
     try:
         # Create parent directories if needed
-        if resolved_parent:
-            os.makedirs(resolved_parent, exist_ok=True)
+        parent_dir = os.path.dirname(file_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
 
         file_mode = 'w' if write_mode == 'overwrite' else 'a'
-        with open(resolved_path, file_mode, encoding=encoding) as f:
+        with open(file_path, file_mode, encoding=encoding) as f:
             bytes_written = f.write(content)
 
         return {
