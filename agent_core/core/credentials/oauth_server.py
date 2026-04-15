@@ -126,7 +126,10 @@ def _make_callback_handler(result_holder: Dict[str, Any]):
 
             # Validate OAuth state parameter to prevent CSRF
             expected_state = result_holder.get("expected_state")
-            if expected_state and returned_state != expected_state:
+            import hmac
+            if expected_state and not hmac.compare_digest(
+                str(returned_state or ''), str(expected_state)
+            ):
                 result_holder["error"] = "OAuth state mismatch — possible CSRF attack"
                 result_holder["code"] = None
                 logger.warning("[OAUTH] State mismatch: expected %s, got %s", expected_state, returned_state)
