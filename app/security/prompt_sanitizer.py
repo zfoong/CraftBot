@@ -69,17 +69,14 @@ class PromptSanitizer:
                 suspicious_patterns.append(pattern)
         
         if suspicious_patterns:
-            # Log and strip detected injection patterns
+            # Log these for monitoring (optional)
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(
-                f"[SECURITY] Potential prompt injection detected and stripped. "
+                f"[SECURITY] Potential prompt injection detected. "
                 f"Text: {text[:100]}... Patterns: {suspicious_patterns[:2]}"
             )
-            # Strip matched injection patterns from the text
-            for pattern in suspicious_patterns:
-                text = re.sub(pattern, '[FILTERED]', text)
-
+            
         return text
     
     @staticmethod
