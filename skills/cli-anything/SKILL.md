@@ -1,187 +1,176 @@
 ---
 name: cli-anything
-description: "Generate agent-native CLI harnesses for any GUI application using the CLI-Anything methodology, or discover and install pre-built CLIs via CLI-Hub."
-metadata: {"clawdbot":{"emoji":"⚡","os":["darwin","linux","windows"],"requires":{"bins":["python"]}}}
+description: "Use any supported GUI application (GIMP, Blender, LibreOffice, Audacity, OBS, etc.) on behalf of the user. Auto-installs the app and CLI harness, then executes the task directly."
+action-sets: ["shell", "file_operations"]
 ---
 
 # CLI-Anything Skill
 
-CLI-Anything transforms any GUI application into an agent-native command-line interface. Use this skill when the user asks to:
-- Generate a CLI harness for any software (GIMP, Blender, LibreOffice, etc.)
-- Install or discover CLIs via CLI-Hub
-- Refine or test an existing generated harness
+**Core rule: Do everything yourself. Never give the user a command to run. Never explain steps. Just execute the task and report the result.**
 
 ---
 
-## Quick Install (CLI-Hub)
+## Supported Apps Reference
 
-For software that already has a pre-built harness:
+Use this table to look up the correct names for every step.
+
+| App | cli-hub name | Windows (winget) | macOS (brew cask) | Linux (apt) |
+|---|---|---|---|---|
+| GIMP | `gimp` | `GIMP.GIMP` | `gimp` | `gimp` |
+| Blender | `blender` | `BlenderFoundation.Blender` | `blender` | `blender` |
+| Inkscape | `inkscape` | `Inkscape.Inkscape` | `inkscape` | `inkscape` |
+| Audacity | `audacity` | `Audacity.Audacity` | `audacity` | `audacity` |
+| OBS Studio | `obs` | `OBSProject.OBSStudio` | `obs` | `obs-studio` |
+| Kdenlive | `kdenlive` | `KDE.Kdenlive` | `kdenlive` | `kdenlive` |
+| Shotcut | `shotcut` | `Meltytech.Shotcut` | `shotcut` | `shotcut` |
+| Krita | `krita` | `KDE.Krita` | `krita` | `krita` |
+| LibreOffice | `libreoffice` | `TheDocumentFoundation.LibreOffice` | `libreoffice` | `libreoffice` |
+| Mubu | `mubu` | _(web app — skip winget)_ | _(web app)_ | _(web app)_ |
+| Zoom | `zoom` | `Zoom.Zoom` | `zoom` | `zoom` |
+| Draw.io | `draw-io` | `JGraph.Draw` | `drawio` | _(AppImage)_ |
+| Mermaid | `mermaid` | `OpenJS.NodeJS` _(then npm i -g @mermaid-js/mermaid-cli)_ | `mermaid` | _(npm)_ |
+| ComfyUI | `comfyui` | _(git clone — see below)_ | _(git clone)_ | _(git clone)_ |
+| AnyGen | `anygen` | _(pip install)_ | _(pip install)_ | _(pip install)_ |
+| NotebookLM | `notebooklm` | _(web app — Playwright)_ | _(web app)_ | _(web app)_ |
+| Ollama | `ollama` | `Ollama.Ollama` | `ollama` | _(curl install)_ |
+| AdGuard Home | `adguard-home` | `AdGuard.AdGuardHome` | `adguard-home` | _(binary release)_ |
+| Stable Diffusion | `stable-diffusion` | _(git clone AUTOMATIC1111)_ | _(git clone)_ | _(git clone)_ |
+| JupyterLab | `jupyterlab` | _(pip install jupyterlab)_ | _(pip install)_ | _(pip install)_ |
+| FreeCAD | `freecad` | `FreeCAD.FreeCAD` | `freecad` | `freecad` |
+| QGIS | `qgis` | `OSGeo.QGIS` | `qgis` | `qgis` |
+| Grafana | `grafana` | `GrafanaLabs.Grafana` | `grafana` | `grafana` |
+| Gitea | `gitea` | `Gitea.Gitea` | `gitea` | _(binary)_ |
+| GitLab | `gitlab` | _(docker or package)_ | _(docker)_ | `gitlab-ce` |
+| NextCloud | `nextcloud` | `Nextcloud.NextcloudDesktop` | `nextcloud` | _(snap/docker)_ |
+| Jenkins | `jenkins` | `Jenkins.Jenkins` | `jenkins` | `jenkins` |
+
+---
+
+## Execution Flow (follow every time — use EXACT timeouts listed)
+
+**CRITICAL: Always pass the timeout shown below to run_shell. Never use the default (30s). winget/brew installs take minutes — without a timeout they die silently and the agent loops forever.**
+
+### Step 1 — Detect OS
+Run with `timeout: 10`:
+```bash
+python -c "import platform; print(platform.system())"
+```
+Result: `Windows`, `Darwin`, or `Linux`.
+
+### Step 2 — Check if the app is installed
+Run with `timeout: 10`:
+```bash
+gimp --version      # or blender --version, libreoffice --version, etc.
+```
+- Exit 0 → already installed → skip to Step 4
+- Exit non-zero → not installed → go to Step 3
+
+### Step 3 — Install the app (ONE attempt only — never retry install)
+
+**Windows** — run with `timeout: 600`:
+```bash
+winget install --id <WingetID> --silent --accept-package-agreements --accept-source-agreements
+```
+
+**macOS** — run with `timeout: 600`:
+```bash
+brew install --cask <cask-name>
+```
+
+**Linux** — run with `timeout: 300`:
+```bash
+sudo apt-get install -y <package>
+```
+
+**Special cases:**
+- ComfyUI / Stable Diffusion: `git clone` + `pip install -r requirements.txt` — `timeout: 600`
+- Mermaid: `npm install -g @mermaid-js/mermaid-cli` — `timeout: 120`
+- JupyterLab / AnyGen: `pip install <package>` — `timeout: 120`
+- Web apps (Mubu, NotebookLM): no install needed — use `playwright-mcp`
+- Ollama on Linux: `curl -fsSL https://ollama.com/install.sh | sh` — `timeout: 300`
+
+After install, re-run Step 2 check once (`timeout: 10`). If still fails → tell the user, stop completely.
+
+### Step 4 — Check if CLI harness is installed
+Run with `timeout: 10`:
+```bash
+cli-anything-<appname> --version
+```
+- Found → skip to Step 6
+- Not found → go to Step 5
+
+### Step 5 — Install CLI harness (ONE attempt only)
+
+**Always try CLI-Hub first** — run with `timeout: 120`:
+```bash
+pip install cli-anything-hub --quiet && cli-hub install <cli-hub-name>
+```
+
+If CLI-Hub fails → generate a minimal harness with `write_file` (a Click CLI wrapping the app's real scripting API), then run with `timeout: 60`:
+```bash
+pip install -e cli_anything/<appname> --quiet
+```
+
+If harness install also fails → tell the user, stop completely.
+
+### Step 6 — Execute the user's task
+Run with `timeout: 300` (or `timeout: 600` for renders/exports):
 
 ```bash
-pip install cli-anything-hub
-cli-hub install <name>
+# Image editing
+cli-anything-gimp image resize input.jpg output.jpg 1920 1080
+cli-anything-gimp filter blur input.jpg --radius 3 --output out.jpg
+cli-anything-gimp export input.xcf output.png
+
+# 3D / rendering
+cli-anything-blender render scene.blend --output frames/ --format PNG
+cli-anything-blender script run myscript.py scene.blend
+
+# Vector
+cli-anything-inkscape export logo.svg logo.png --dpi 300
+cli-anything-inkscape convert input.svg output.pdf
+
+# Audio
+cli-anything-audacity trim audio.mp3 output.mp3 --start 0 --end 30
+cli-anything-audacity export-mp3 project.aup3 output.mp3
+
+# Video
+cli-anything-kdenlive render project.kdenlive output.mp4
+cli-anything-shotcut render project.mlt output.mp4
+
+# Office
+cli-anything-libreoffice convert doc.docx output.pdf
+cli-anything-libreoffice calc run macro.py spreadsheet.xlsx
+
+# Diagrams
+cli-anything-draw-io export diagram.drawio output.png
+cli-anything-mermaid render diagram.mmd output.png
+
+# AI / ML
+cli-anything-comfyui run workflow.json --output images/
+cli-anything-ollama run llama3 --prompt "summarize this"
+cli-anything-stable-diffusion generate "a sunset over mountains" --output out.png
+
+# Dev / Infra
+cli-anything-jupyterlab execute notebook.ipynb --output result.ipynb
+cli-anything-grafana export-dashboard my-dashboard dashboard.json
+cli-anything-gitea create-repo myrepo --private
 ```
 
-Browse the full catalog: https://hkuds.github.io/CLI-Anything/
+**Always run the task. Never print commands and ask the user to run them.**
+
+If the task command fails → retry once with adjusted args. If it fails again → report the error and stop.
+
+### Step 7 — Report result
+One or two sentences only:
+> "Done — rendered `output.mp4` from your Kdenlive project."
+> "Converted `report.docx` to PDF at `report.pdf`."
 
 ---
 
-## Generate a New CLI Harness
+## Hard Stop Rules (prevents infinite loops)
 
-Follow the **7-Phase Methodology** below. Work sequentially — each phase depends on the prior.
-
-### Phase 1 — Codebase Analysis
-
-Before writing code, study the target application:
-
-```
-- Identify the backend engine (separate from the GUI presentation layer)
-- Map each GUI action to its underlying API or Python call
-- Understand the data model and native file formats (e.g., .blend, ODF, SVG)
-- Locate any existing CLI entry points or scripting interfaces
-- Catalog the undo/redo and session management system
-```
-
-### Phase 2 — CLI Architecture Design
-
-Choose one of:
-- **Stateful REPL** — for interactive, session-based workflows
-- **Subcommand CLI** — for scriptable, one-shot invocations
-- **Both** — recommended; REPL wraps the subcommand interface
-
-Design command groups that mirror the app's logical domains (e.g., `image`, `layer`, `export` for GIMP). Plan dual output: human-readable text and machine-readable `--json`.
-
-### Phase 3 — Implementation
-
-Directory layout:
-```
-cli_anything/              # Namespace package — NO __init__.py here
-└── <software>/           # Sub-package — HAS __init__.py
-    ├── __main__.py
-    ├── README.md
-    ├── <software>_cli.py
-    ├── core/             # Domain modules wrapping the real software
-    ├── utils/            # Shared utilities + repl_skin.py
-    └── tests/
-        ├── TEST.md
-        ├── test_core.py
-        └── test_full_e2e.py
-```
-
-**Critical rule**: The CLI MUST call the actual software for rendering and export — never reimplement the software's functionality in Python. Generate valid native project files and hand them to the real application backend.
-
-Required patterns for every command:
-- `--json` flag for machine-readable output
-- Fail loudly with unambiguous error messages
-- Introspection commands (`info`, `list`, `status`) for state inspection
-
-Use the unified REPL skin (`repl_skin.py` from `cli-anything-plugin/repl_skin.py`) so all generated CLIs share a consistent interface.
-
-### Phase 4 — Test Planning (write TEST.md Part 1)
-
-Before any test code, document in `tests/TEST.md`:
-- Test inventory and what each test covers
-- Unit test plans (synthetic data, no external deps)
-- E2E test plans (real software backend invoked)
-- Realistic end-to-end workflow scenarios
-
-### Phase 5 — Test Implementation
-
-Four layers, all required:
-1. **Unit tests** — synthetic data, deterministic, fast
-2. **E2E native tests** — verify project file generation and structure
-3. **E2E backend tests** — invoke the real software, check output exists with correct format (magic bytes, ZIP structure, pixel analysis, etc.)
-4. **CLI subprocess tests** — install the CLI entry point, run full workflows end-to-end
-
-**Never assume an export is correct because it ran without errors.** Validate outputs programmatically and print artifact paths for manual inspection.
-
-### Phase 6 — Test Documentation (write TEST.md Part 2)
-
-Append full `pytest` output and summary statistics to `TEST.md`.
-
-### Phase 6.5 — SKILL.md Generation
-
-Create `cli_anything/<software>/skills/SKILL.md` with:
-- YAML frontmatter for agent discovery (`name`, `description`, `tags`, `requires`)
-- All command groups and subcommands
-- Usage examples for common workflows
-- Agent-specific guidance for `--json` output and error handling
-
-The REPL should print the absolute path to `SKILL.md` on startup so agents can find it.
-
-### Phase 7 — Package & Install
-
-```bash
-# setup.py uses PEP 420 namespace packaging
-cd cli_anything/<software>
-pip install -e .
-
-# Verify the CLI is on PATH
-which cli-anything-<software>
-cli-anything-<software> --help
-```
-
-Publish to PyPI when ready:
-```bash
-python -m build
-twine upload dist/*
-```
-
----
-
-## Using a Generated CLI
-
-```bash
-# Interactive REPL (default when no subcommand given)
-cli-anything-<software>
-
-# One-shot subcommand with JSON output for agent consumption
-cli-anything-<software> --json <command> [args]
-
-# Help
-cli-anything-<software> --help
-cli-anything-<software> <command> --help
-```
-
----
-
-## Refining an Existing Harness
-
-After initial generation, run a gap analysis:
-
-```bash
-# Broad refinement
-/cli-anything:refine ./<software>
-
-# Focused refinement on specific capabilities
-/cli-anything:refine ./<software> "batch processing and filters"
-```
-
-Then re-run tests: `/cli-anything:test <software>`
-
----
-
-## Supported Applications (Pre-built)
-
-CLI-Anything has verified harnesses for 26+ applications:
-
-| Category | Applications |
-|---|---|
-| Creative | GIMP, Blender, Inkscape, Krita, MuseScore |
-| Office | LibreOffice, Zotero |
-| Media | Audacity, OBS Studio, Kdenlive, Shotcut, VideoCaptioner |
-| Diagramming | Draw.io, Mermaid |
-| AI/ML | ComfyUI, Ollama, NotebookLM |
-| Web/Cloud | Zoom, AdGuard Home, Exa |
-| Dev Tools | Godot Engine, RenderDoc |
-
----
-
-## Architecture Pitfalls
-
-**The Rendering Gap** — project files may reference filters/effects that simple file readers ignore. Solution priority:
-1. Use the app's native renderer
-2. Build a translation layer for effect conversion
-3. Generate a render script as fallback
-
-**Testing with missing software** — tests MUST NOT skip or fake results when the target software is missing. They should fail loudly so the absence is visible.
+- **Never retry an install** — if `winget install` or `cli-hub install` fails, stop and tell the user.
+- **Never loop on a timeout** — if a command times out once, it will time out again. Stop immediately.
+- **Max 1 retry on the task command (Step 6) only** — not on installs.
+- **If stuck after 3 total run_shell calls** for the same step → stop, tell the user what failed.
