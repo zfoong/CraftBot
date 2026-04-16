@@ -209,22 +209,53 @@ class ApiKeyStep:
 
 
 class AgentNameStep:
-    """Agent name configuration step."""
+    """Agent name + profile picture configuration step."""
 
     name = "agent_name"
-    title = "Agent Name"
-    description = "Give your agent a name (optional)"
+    title = "Agent Identity"
+    description = "Give your agent a name and an optional avatar."
     required = False
+
+    ALLOWED_PICTURE_EXTS = {"png", "jpg", "jpeg", "webp", "gif"}
+
+    def get_form_fields(self) -> List[FormField]:
+        return [
+            FormField(
+                name="agent_name",
+                label="Agent Name",
+                field_type="text",
+                default="CraftBot",
+                placeholder="Enter a name",
+            ),
+            FormField(
+                name="agent_profile_picture",
+                label="Avatar",
+                field_type="image_upload",
+                default="",
+                placeholder="",
+            ),
+        ]
 
     def get_options(self) -> List[StepOption]:
         return []
 
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
-        # Optional, any string is valid
-        return True, None
+        # Accept legacy string submissions (plain text name) for backward compat.
+        if isinstance(value, str):
+            return True, None
+        if isinstance(value, dict):
+            picture = value.get("agent_profile_picture")
+            if picture not in (None, ""):
+                if not isinstance(picture, str) or picture.lower() not in self.ALLOWED_PICTURE_EXTS:
+                    return False, "Unsupported avatar format"
+            return True, None
+        return False, "Invalid agent identity submission"
 
-    def get_default(self) -> str:
-        return "CraftBot"
+    def get_default(self) -> Dict[str, Any]:
+        return {
+            "agent_name": "CraftBot",
+            "agent_profile_picture": "",
+        }
 
 
 class UserProfileStep:

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { getOllamaInstallPercent } from '../../utils/ollamaInstall'
 import {
   Check,
@@ -27,6 +27,8 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
+  Upload,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '../../components/ui'
@@ -332,6 +334,10 @@ export function OnboardingPage() {
     skipOnboardingStep,
     goBackOnboardingStep,
     localLLM,
+    agentProfilePictureUrl,
+    agentProfilePictureHasCustom,
+    uploadAgentProfilePicture,
+    removeAgentProfilePicture,
   } = useWebSocket()
 
   // Local form state
@@ -342,6 +348,32 @@ export function OnboardingPage() {
   const [ollamaConnected, setOllamaConnected] = useState(false)
   // Form step state (for user_profile and similar multi-field steps)
   const [formValues, setFormValues] = useState<Record<string, string | string[]>>({})
+  // Picture upload state (for image_upload fields)
+  const [pictureUploading, setPictureUploading] = useState(false)
+  const [pictureError, setPictureError] = useState<string | null>(null)
+  const pictureInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Reset picture-upload feedback when transitioning between steps
+  useEffect(() => {
+    setPictureUploading(false)
+    setPictureError(null)
+  }, [onboardingStep?.name])
+
+  // Clear uploading spinner once the context reflects the new picture
+  useEffect(() => {
+    if (pictureUploading) {
+      setPictureUploading(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentProfilePictureUrl])
+
+  // Safety: clear the spinner after a short timeout even if no ack arrives
+  // (e.g., on a failed upload that did not update the context URL).
+  useEffect(() => {
+    if (!pictureUploading) return
+    const t = window.setTimeout(() => setPictureUploading(false), 10000)
+    return () => window.clearTimeout(t)
+  }, [pictureUploading])
 
   // Request first step when connected
   useEffect(() => {
@@ -386,6 +418,46 @@ export function OnboardingPage() {
     setOllamaUrl(url)
     setOllamaConnected(true)
   }, [])
+
+  const handlePictureSelect = useCallback(() => {
+    pictureInputRef.current?.click()
+  }, [])
+
+  const handlePictureChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>, fieldName: string) => {
+      const file = e.target.files?.[0]
+      e.target.value = ''
+      if (!file) return
+
+      setPictureError(null)
+      setPictureUploading(true)
+
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        const base64 = result.includes(',') ? result.split(',', 2)[1] : result
+        // Mark this form field as "has picture" using the file extension
+        const ext = (file.name.split('.').pop() || '').toLowerCase()
+        setFormValues(prev => ({ ...prev, [fieldName]: ext }))
+        uploadAgentProfilePicture(file.name, file.type || 'application/octet-stream', base64)
+      }
+      reader.onerror = () => {
+        setPictureUploading(false)
+        setPictureError('Could not read file')
+      }
+      reader.readAsDataURL(file)
+    },
+    [uploadAgentProfilePicture]
+  )
+
+  const handlePictureRemove = useCallback(
+    (fieldName: string) => {
+      setPictureError(null)
+      setFormValues(prev => ({ ...prev, [fieldName]: '' }))
+      removeAgentProfilePicture()
+    },
+    [removeAgentProfilePicture]
+  )
 
   const handleOptionSelect = useCallback((value: string) => {
     if (!onboardingStep) return
@@ -466,6 +538,80 @@ export function OnboardingPage() {
             defaultUrl={ollamaUrl}
             onConnected={handleOllamaConnected}
           />
+        </div>
+      )
+    }
+
+    // Agent Identity step — compact side-by-side layout (avatar + name)
+    if (
+      onboardingStep.name === 'agent_name' &&
+      onboardingStep.form_fields &&
+      onboardingStep.form_fields.length > 0
+    ) {
+      const nameField = onboardingStep.form_fields.find(f => f.field_type === 'text')
+      const avatarField = onboardingStep.form_fields.find(f => f.field_type === 'image_upload')
+
+      return (
+        <div className={styles.formGroup}>
+          <div className={styles.identityCard}>
+            {avatarField && (
+              <div className={styles.identityAvatar}>
+                <img
+                  src={agentProfilePictureUrl}
+                  alt=""
+                  className={styles.imageUploadPreview}
+                />
+                <input
+                  ref={pictureInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={(e) => handlePictureChange(e, avatarField.name)}
+                  style={{ display: 'none' }}
+                />
+              </div>
+            )}
+            <div className={styles.identityDetails}>
+              {nameField && (
+                <>
+                  <label className={styles.formFieldLabel}>{nameField.label}</label>
+                  <input
+                    type="text"
+                    className={styles.textInput}
+                    value={(formValues[nameField.name] as string) ?? ''}
+                    onChange={(e) =>
+                      setFormValues((prev) => ({ ...prev, [nameField.name]: e.target.value }))
+                    }
+                    placeholder={nameField.placeholder || 'Enter a name'}
+                  />
+                </>
+              )}
+              {avatarField && (
+                <div className={styles.identityAvatarActions}>
+                  <Button
+                    variant="secondary"
+                    onClick={handlePictureSelect}
+                    disabled={pictureUploading}
+                    icon={<Upload size={14} />}
+                  >
+                    {pictureUploading ? 'Uploading...' : 'Upload avatar'}
+                  </Button>
+                  {agentProfilePictureHasCustom && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => handlePictureRemove(avatarField.name)}
+                      disabled={pictureUploading}
+                      icon={<Trash2 size={14} />}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              )}
+              {pictureError && (
+                <div className={styles.imageUploadError}>{pictureError}</div>
+              )}
+            </div>
+          </div>
         </div>
       )
     }
@@ -551,6 +697,46 @@ export function OnboardingPage() {
                     </div>
                   )
                 })() : null}
+
+                {field.field_type === 'image_upload' && (
+                  <div className={styles.imageUploadRow}>
+                    <img
+                      src={agentProfilePictureUrl}
+                      alt=""
+                      className={styles.imageUploadPreview}
+                    />
+                    <div className={styles.imageUploadActions}>
+                      <input
+                        ref={pictureInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        onChange={(e) => handlePictureChange(e, field.name)}
+                        style={{ display: 'none' }}
+                      />
+                      <Button
+                        variant="secondary"
+                        onClick={handlePictureSelect}
+                        disabled={pictureUploading}
+                        icon={<Upload size={14} />}
+                      >
+                        {pictureUploading ? 'Uploading...' : 'Upload'}
+                      </Button>
+                      {agentProfilePictureHasCustom && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => handlePictureRemove(field.name)}
+                          disabled={pictureUploading}
+                          icon={<Trash2 size={14} />}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                    {pictureError && (
+                      <div className={styles.imageUploadError}>{pictureError}</div>
+                    )}
+                  </div>
+                )}
 
                 {field.field_type === 'multi_checkbox' && (
                   <div className={styles.formCheckboxGroup}>

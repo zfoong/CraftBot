@@ -24,6 +24,8 @@ class OnboardingState:
         soft_completed_at: ISO timestamp when soft onboarding completed
         user_name: User's name collected during onboarding
         agent_name: Agent's name configured during onboarding
+        agent_profile_picture: Extension of the user-uploaded agent profile
+            picture (e.g. "png", "jpg"). None means the bundled default is used.
     """
     hard_completed: bool = False
     soft_completed: bool = False
@@ -31,6 +33,7 @@ class OnboardingState:
     soft_completed_at: Optional[str] = None
     user_name: Optional[str] = None
     agent_name: Optional[str] = None
+    agent_profile_picture: Optional[str] = None
 
     @property
     def is_complete(self) -> bool:
@@ -56,6 +59,7 @@ class OnboardingState:
             "soft_completed_at": self.soft_completed_at,
             "user_name": self.user_name,
             "agent_name": self.agent_name,
+            "agent_profile_picture": self.agent_profile_picture,
         }
 
     @classmethod
@@ -68,6 +72,7 @@ class OnboardingState:
             soft_completed_at=data.get("soft_completed_at"),
             user_name=data.get("user_name"),
             agent_name=data.get("agent_name"),
+            agent_profile_picture=data.get("agent_profile_picture"),
         )
 
 

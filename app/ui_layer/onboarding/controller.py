@@ -245,7 +245,13 @@ class OnboardingFlowController:
         # Extract collected data
         provider = self._state.collected_data.get("provider", "openai")
         api_key = self._state.collected_data.get("api_key", "")
-        agent_name = self._state.collected_data.get("agent_name", "Agent")
+        agent_name_data = self._state.collected_data.get("agent_name", "Agent")
+        # Agent name step is a form step, so the collected value is a dict.
+        # Accept plain strings too for backward compatibility.
+        if isinstance(agent_name_data, dict):
+            agent_name = agent_name_data.get("agent_name") or "Agent"
+        else:
+            agent_name = agent_name_data or "Agent"
         selected_mcp_servers = self._state.collected_data.get("mcp", [])
         selected_skills = self._state.collected_data.get("skills", [])
 
@@ -298,9 +304,15 @@ class OnboardingFlowController:
             # Fallback: initialize language from OS locale if profile step was skipped
             self._initialize_user_language()
 
-        # Mark hard onboarding complete
+        # Mark hard onboarding complete. The profile picture is already
+        # persisted via the immediate-upload websocket handler; the
+        # authoritative value is onboarding_manager.state.agent_profile_picture.
         user_name = user_profile.get("user_name") if user_profile else None
-        onboarding_manager.mark_hard_complete(user_name=user_name, agent_name=agent_name)
+        onboarding_manager.mark_hard_complete(
+            user_name=user_name,
+            agent_name=agent_name,
+            agent_profile_picture=onboarding_manager.state.agent_profile_picture,
+        )
 
         # Trigger soft onboarding now that hard onboarding is done
         # This is needed because the soft onboarding check in agent.run() happens

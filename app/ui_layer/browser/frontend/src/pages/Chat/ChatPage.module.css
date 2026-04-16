@@ -101,16 +101,40 @@
 .messageWrapper.systemWrapper {
   margin-right: auto;
   align-items: flex-start;
+  /* Align with agent bubbles (which are offset by the avatar slot) */
+  margin-left: calc(32px + var(--space-2));
 }
 
 .messageWrapper.errorWrapper {
   margin-right: auto;
   align-items: flex-start;
+  /* Align with agent bubbles (which are offset by the avatar slot) */
+  margin-left: calc(32px + var(--space-2));
 }
 
 .messageWrapper.infoWrapper {
   margin: 0 auto;
   align-items: center;
+}
+
+/* Agent messages: avatar + bubble in a row (attachments stay below) */
+.agentContentRow {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-2);
+  align-items: flex-start;
+  width: 100%;
+}
+
+.agentAvatar {
+  width: 32px;
+  height: 32px;
+  /* Square with the same fillet as the chat bubble */
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
 }
 
 /* Messages */

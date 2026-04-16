@@ -127,6 +127,9 @@ export type WSMessageType =
   | 'update_check_result'
   | 'do_update'
   | 'update_progress'
+  // Agent profile picture
+  | 'agent_profile_picture_upload'
+  | 'agent_profile_picture_remove'
 
 export interface WSMessage {
   type: WSMessageType
@@ -546,7 +549,7 @@ export interface OnboardingStepOption {
 export interface OnboardingFormField {
   name: string
   label: string
-  field_type: 'text' | 'select' | 'multi_checkbox'
+  field_type: 'text' | 'select' | 'multi_checkbox' | 'image_upload'
   options: OnboardingStepOption[]
   default: string | string[]
   placeholder: string

@@ -908,6 +908,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         self._app.router.add_get("/api/state", self._state_handler)
         self._app.router.add_get("/api/theme.css", self._theme_css_handler)
         self._app.router.add_get("/api/workspace/{path:.*}", self._workspace_file_handler)
+        self._app.router.add_get("/api/agent-profile-picture", self._agent_profile_picture_handler)
 
         # Serve Vite-built frontend (production)
         frontend_dist = Path(__file__).parent.parent / "browser" / "frontend" / "dist"
@@ -1202,6 +1203,12 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         elif msg_type == "agent_file_restore":
             filename = data.get("filename", "")
             await self._handle_agent_file_restore(filename)
+
+        elif msg_type == "agent_profile_picture_upload":
+            await self._handle_agent_profile_picture_upload(data)
+
+        elif msg_type == "agent_profile_picture_remove":
+            await self._handle_agent_profile_picture_remove()
 
         elif msg_type == "reset":
             await self._handle_reset()
@@ -1720,11 +1727,15 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                 # Onboarding complete - controller._complete() already called
                 from app.onboarding import onboarding_manager
 
+                from app.ui_layer.settings.general_settings import get_agent_profile_picture_info
+                picture_info = get_agent_profile_picture_info()
                 await self._broadcast({
                     "type": "onboarding_complete",
                     "data": {
                         "success": True,
                         "agentName": onboarding_manager.state.agent_name or "Agent",
+                        "agentProfilePictureUrl": picture_info["url"],
+                        "agentProfilePictureHasCustom": picture_info["has_custom"],
                     },
                 })
                 # Clear cached controller for fresh state
@@ -1797,11 +1808,15 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             if controller.is_complete:
                 from app.onboarding import onboarding_manager
 
+                from app.ui_layer.settings.general_settings import get_agent_profile_picture_info
+                picture_info = get_agent_profile_picture_info()
                 await self._broadcast({
                     "type": "onboarding_complete",
                     "data": {
                         "success": True,
                         "agentName": onboarding_manager.state.agent_name or "Agent",
+                        "agentProfilePictureUrl": picture_info["url"],
+                        "agentProfilePictureHasCustom": picture_info["has_custom"],
                     },
                 })
                 if hasattr(self, "_onboarding_controller"):
@@ -2097,6 +2112,12 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             settings = {
                 "agentName": result.get("agent_name", "CraftBot"),
                 "theme": "dark",  # Theme is managed client-side
+                "agentProfilePictureUrl": result.get(
+                    "agent_profile_picture_url", "/api/agent-profile-picture"
+                ),
+                "agentProfilePictureHasCustom": result.get(
+                    "agent_profile_picture_has_custom", False
+                ),
             }
 
             await self._broadcast({
@@ -4681,6 +4702,71 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                 },
             })
 
+    async def _handle_agent_profile_picture_upload(self, data: Dict[str, Any]) -> None:
+        """Handle uploading a new agent profile picture."""
+        from app.ui_layer.settings.general_settings import (
+            PROFILE_MIME_TO_EXT,
+            ALLOWED_PROFILE_EXTS,
+            MAX_PROFILE_PICTURE_BYTES,
+            save_agent_profile_picture,
+        )
+
+        try:
+            name = data.get("name", "")
+            # Accept "mimeType" (preferred — avoids collision with the envelope "type" key)
+            # and fall back to legacy "type" for compatibility.
+            mime_type = (data.get("mimeType") or data.get("type") or "").lower()
+            content_b64 = data.get("content", "")
+
+            if not content_b64:
+                raise ValueError("No content provided")
+
+            # Resolve extension from MIME first, then fall back to filename.
+            ext: Optional[str] = PROFILE_MIME_TO_EXT.get(mime_type)
+            if not ext and name:
+                guess = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                if guess in ALLOWED_PROFILE_EXTS:
+                    ext = guess
+            if not ext:
+                raise ValueError(
+                    f"Unsupported image type. Allowed: {', '.join(sorted(ALLOWED_PROFILE_EXTS))}"
+                )
+
+            raw_bytes = base64.b64decode(content_b64)
+            if len(raw_bytes) > MAX_PROFILE_PICTURE_BYTES:
+                raise ValueError(
+                    f"Image too large (max {MAX_PROFILE_PICTURE_BYTES // (1024 * 1024)} MB)"
+                )
+
+            result = save_agent_profile_picture(ext, raw_bytes)
+
+            await self._broadcast({
+                "type": "agent_profile_picture_upload",
+                "data": result,
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "agent_profile_picture_upload",
+                "data": {
+                    "success": False,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_agent_profile_picture_remove(self) -> None:
+        """Handle removing the custom agent profile picture."""
+        from app.ui_layer.settings.general_settings import remove_agent_profile_picture
+
+        try:
+            result = remove_agent_profile_picture()
+        except Exception as e:
+            result = {"success": False, "error": str(e)}
+
+        await self._broadcast({
+            "type": "agent_profile_picture_remove",
+            "data": result,
+        })
+
     async def _handle_open_file(self, file_path: str) -> None:
         """Open a file with the system default application."""
         import subprocess
@@ -4948,11 +5034,14 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
     def _get_initial_state(self) -> Dict[str, Any]:
         """Get initial state for new connections."""
         from app.onboarding import onboarding_manager
+        from app.ui_layer.settings.general_settings import get_agent_profile_picture_info
 
         state = self._controller.state
         metrics = self._metrics_collector.get_metrics()
 
         from app.config import get_app_version
+
+        picture_info = get_agent_profile_picture_info()
 
         return {
             "version": get_app_version(),
@@ -4960,6 +5049,8 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             "guiMode": state.gui_mode,
             "needsHardOnboarding": onboarding_manager.needs_hard_onboarding,
             "agentName": onboarding_manager.state.agent_name or "Agent",
+            "agentProfilePictureUrl": picture_info["url"],
+            "agentProfilePictureHasCustom": picture_info["has_custom"],
             "currentTask": {
                 "id": state.current_task_id,
                 "name": state.current_task_name,
@@ -5050,6 +5141,49 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
 
         css = self._theme_adapter.get_theme_css()
         return web.Response(text=css, content_type="text/css")
+
+    async def _agent_profile_picture_handler(self, request: "web.Request") -> "web.Response":
+        """Serve the current agent profile picture (user upload or bundled default)."""
+        from aiohttp import web
+
+        from app.ui_layer.settings.general_settings import (
+            AGENT_PROFILE_DIR,
+            AGENT_PROFILE_DEFAULT_FILENAME,
+            EXT_TO_MIME,
+            _user_profile_picture_path,
+        )
+        from app.onboarding import onboarding_manager
+
+        ext = onboarding_manager.state.agent_profile_picture
+        target: Optional[Path] = None
+        mime_type = "image/png"
+
+        if ext:
+            candidate = _user_profile_picture_path(ext)
+            if candidate.exists():
+                target = candidate
+                mime_type = EXT_TO_MIME.get(ext.lower(), "application/octet-stream")
+
+        if target is None:
+            default_path = AGENT_PROFILE_DIR / AGENT_PROFILE_DEFAULT_FILENAME
+            if default_path.exists():
+                target = default_path
+                mime_type = "image/png"
+
+        if target is None:
+            raise web.HTTPNotFound(reason="Avatar not available")
+
+        try:
+            content = target.read_bytes()
+            return web.Response(
+                body=content,
+                content_type=mime_type,
+                headers={
+                    "Cache-Control": "no-cache, max-age=0",
+                },
+            )
+        except Exception as e:
+            raise web.HTTPInternalServerError(reason=str(e))
 
     async def _workspace_file_handler(self, request: "web.Request") -> "web.Response":
         """Serve files from the workspace directory."""
