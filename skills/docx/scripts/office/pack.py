@@ -10,6 +10,8 @@ Examples:
     python pack.py unpacked/ output.pptx --validate false
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 import shutil

@@ -1239,22 +1239,24 @@ class LLMInterface:
         try:
             payload = {
                 "model": self.model,
-                "system": system_prompt,
                 "prompt": user_prompt,
                 "stream": False,
+                "format": "json",
                 "options": {
                     "temperature": self.temperature,
                 }
             }
+            if system_prompt:
+                payload["system"] = system_prompt
             url: str = f"{self.remote_url.rstrip('/')}/api/generate"
             response = requests.post(url, json=payload, timeout=600)
             response.raise_for_status()
             result = response.json()
 
             content = result.get("response", "").strip()
-            total_tokens = result.get("usage", {}).get("total_tokens", 0)
             token_count_input = result.get("prompt_eval_count", 0)
             token_count_output = result.get("eval_count", 0)
+            total_tokens = token_count_input + token_count_output
             status = "success"
         except Exception as exc:
             exc_obj = exc

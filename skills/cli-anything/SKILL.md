@@ -1,12 +1,62 @@
 ---
 name: cli-anything
-description: "Use any supported GUI application (GIMP, Blender, LibreOffice, Audacity, OBS, etc.) on behalf of the user. Auto-installs the app and CLI harness, then executes the task directly."
+description: "Automatically handles image editing, document conversion, audio/video editing, 3D rendering, diagrams, AI image generation, and more — using GIMP, LibreOffice, Blender, Audacity, Inkscape, Krita, Kdenlive, Shotcut, OBS, Draw.io, Mermaid, Ollama, Stable Diffusion, ComfyUI, JupyterLab, FreeCAD, QGIS, Grafana, Gitea, GitLab, NextCloud, Jenkins, AdGuard Home, Zoom, Mubu. User does NOT need to mention CLI-Anything — agent auto-selects the right app for the task. Auto-installs if not present."
 action-sets: ["shell", "file_operations"]
 ---
 
 # CLI-Anything Skill
 
 **Core rule: Do everything yourself. Never give the user a command to run. Never explain steps. Just execute the task and report the result.**
+
+**Activation rule: The user does NOT need to say "CLI-Anything". If their task matches a supported app below, use it automatically — no prompting needed.**
+
+---
+
+## Task Routing — Auto-select the right app (check this before every task)
+
+| If the user asks about... | Use this app | Command prefix |
+|---|---|---|
+| Resize / crop / filter / edit an image | **GIMP** | `cli-anything-gimp` |
+| Convert image format (JPG→PNG, PNG→WEBP, etc.) | **GIMP** | `cli-anything-gimp` |
+| SVG, vector graphics, logos | **Inkscape** | `cli-anything-inkscape` |
+| Digital painting, .kra files | **Krita** | `cli-anything-krita` |
+| Convert DOCX / XLSX / PPTX → PDF | **LibreOffice** | `cli-anything-libreoffice` |
+| Writer / Calc / Impress / spreadsheet macros | **LibreOffice** | `cli-anything-libreoffice` |
+| Trim / convert / export audio (MP3, WAV, FLAC) | **Audacity** | `cli-anything-audacity` |
+| Render / edit video | **Kdenlive** or **Shotcut** | `cli-anything-kdenlive` |
+| Record screen or live stream | **OBS Studio** | `cli-anything-obs` |
+| 3D modeling / rendering / .blend files | **Blender** | `cli-anything-blender` |
+| Create or export diagrams (.drawio) | **Draw.io** | `cli-anything-draw-io` |
+| Render Mermaid diagram code | **Mermaid** | `cli-anything-mermaid` |
+| Generate image from text prompt (AI) | **Stable Diffusion** or **ComfyUI** | `cli-anything-stable-diffusion` |
+| Run a local LLM | **Ollama** | `cli-anything-ollama` |
+| AI content generation | **AnyGen** | `cli-anything-anygen` |
+| AI research / summarize PDF | **NotebookLM** | `cli-anything-notebooklm` |
+| Execute a Jupyter notebook | **JupyterLab** | `cli-anything-jupyterlab` |
+| CAD / 3D design, .fcstd files | **FreeCAD** | `cli-anything-freecad` |
+| GIS / maps, .qgz files | **QGIS** | `cli-anything-qgis` |
+| Monitoring dashboards | **Grafana** | `cli-anything-grafana` |
+| Git hosting, create repos | **Gitea** or **GitLab** | `cli-anything-gitea` |
+| CI/CD pipelines | **Jenkins** | `cli-anything-jenkins` |
+| Cloud file sync | **NextCloud** | `cli-anything-nextcloud` |
+| Network-wide ad blocking | **AdGuard Home** | `cli-anything-adguard-home` |
+| Video conferencing | **Zoom** | `cli-anything-zoom` |
+| Knowledge outlines | **Mubu** | `cli-anything-mubu` |
+
+---
+
+## Smart Fallback — When CLI-Anything fails
+
+CLI-Anything is the first choice, but if it fails the agent must still complete the task:
+
+1. **Try CLI-Anything first** — always attempt the harness (`cli-anything-<app>`)
+2. **If harness fails after 1 retry** — fall back to Python (PIL, python-docx, pydub, moviepy, etc.) and complete the task anyway
+3. **Always tell the user** what was actually used and suggest installing the app for better results
+
+Example:
+> "Done — resized using Python PIL as a fallback (GIMP harness failed). Install GIMP for higher quality results next time."
+
+Never leave the user with no result. Always complete the task one way or another.
 
 ---
 
@@ -47,67 +97,63 @@ If the user's message matches any of these (case-insensitive, any wording):
 
 **CLI-Anything — What I Can Do**
 
-Just tell me what you want done in plain English. I'll auto-install the app if it's not on your system and complete the task for you — you never need to run any commands yourself.
+Just describe your task in plain English — you don't need to mention CLI-Anything. I'll pick the right app, install it if needed, and complete the task. Works on Windows, macOS, and Linux.
 
 **Creative & Media**
-| App | What I can do | Example prompt |
+| App | What I do | Example |
 |---|---|---|
-| GIMP | Resize, crop, blur, convert, export images | "Resize photo.jpg to 1920×1080 and save as photo_hd.jpg" |
-| Blender | Render 3D scenes, run scripts, export models | "Render scene.blend to PNG frames in the frames/ folder" |
-| Inkscape | Export SVG to PNG/PDF, convert vector files | "Export logo.svg as a 300 DPI PNG" |
-| Krita | Export paintings, batch convert images | "Export painting.kra as PNG" |
-| Audacity | Trim, export, convert audio files | "Trim the first 30 seconds from audio.mp3 and save as clip.mp3" |
-| OBS Studio | Record screen, stream | "Record my screen for 60 seconds" |
-| Kdenlive | Render video projects to MP4/MKV | "Render project.kdenlive to MP4" |
-| Shotcut | Render video projects to MP4 | "Render project.mlt to MP4" |
+| GIMP _(image editing)_ | Resize, crop, filter, convert, export images | "Resize photo.jpg to 1920×1080" |
+| Blender _(3D modeling & rendering)_ | Render scenes, export models, run scripts | "Render scene.blend to PNG frames" |
+| Inkscape _(vector graphics)_ | Export SVG to PNG/PDF, convert vectors | "Export logo.svg as 300 DPI PNG" |
+| Audacity _(audio production)_ | Trim, convert, export audio | "Trim first 30s from audio.mp3" |
+| OBS Studio _(live streaming & recording)_ | Record screen, capture video, stream | "Record my screen for 60 seconds" |
+| Kdenlive _(video editing)_ | Render video projects to MP4/MKV | "Render project.kdenlive to MP4" |
+| Shotcut _(video editing)_ | Render video projects to MP4 | "Render project.mlt to MP4" |
+| Krita _(digital painting)_ | Export paintings, batch convert .kra files | "Export painting.kra as PNG" |
 
 **Office & Productivity**
-| App | What I can do | Example prompt |
+| App | What I do | Example |
 |---|---|---|
-| LibreOffice | Convert DOCX/XLSX/PPTX to PDF, run macros | "Convert report.docx to PDF" |
-| Mubu | Manage knowledge outlines | "Open my outline in Mubu" |
+| LibreOffice _(Writer, Calc, Impress)_ | Convert DOCX/XLSX/PPTX to PDF, run macros | "Convert report.docx to PDF" |
+| Mubu _(knowledge management & outlining)_ | Manage outlines and knowledge bases | "Open my outline in Mubu" |
 
 **Communication**
-| App | What I can do | Example prompt |
+| App | What I do | Example |
 |---|---|---|
-| Zoom | Start/join meetings | "Start a Zoom meeting" |
+| Zoom _(video conferencing)_ | Start or join meetings | "Start a Zoom meeting" |
 
 **Diagramming**
-| App | What I can do | Example prompt |
+| App | What I do | Example |
 |---|---|---|
-| Draw.io | Export diagrams to PNG/SVG/PDF | "Export diagram.drawio as PNG" |
-| Mermaid | Render diagram code to PNG | "Render this diagram to PNG: graph TD; A-->B; B-->C" |
+| Draw.io _(diagrams)_ | Export diagrams to PNG/SVG/PDF | "Export diagram.drawio as PNG" |
+| Mermaid Live Editor _(diagrams)_ | Render diagram code to image | "Render: graph TD; A-->B; B-->C" |
 
 **AI & ML**
-| App | What I can do | Example prompt |
+| App | What I do | Example |
 |---|---|---|
-| ComfyUI | Run AI image generation workflows | "Run workflow.json and save images to output/" |
-| AnyGen | Generate AI content | "Generate content using AnyGen" |
-| NotebookLM | AI research and summarization | "Summarize this PDF using NotebookLM" |
-| Ollama | Run local LLM inference | "Run llama3 and summarize this text: ..." |
-| Stable Diffusion | Generate images from text prompts | "Generate 'a sunset over mountains' and save as out.png" |
+| ComfyUI _(AI image generation)_ | Run AI image workflows | "Run workflow.json, save to output/" |
+| AnyGen _(AI content generation)_ | Generate AI content | "Generate content using AnyGen" |
+| NotebookLM _(AI research assistant)_ | Research, summarize documents | "Summarize this PDF in NotebookLM" |
+| Ollama _(local LLM inference)_ | Run local AI models | "Run llama3: summarize this text" |
+| Stable Diffusion WebUI | Generate images from text prompts | "Generate 'sunset over mountains'" |
 
-**Dev & Infrastructure**
-| App | What I can do | Example prompt |
+**Network & Infrastructure**
+| App | What I do | Example |
 |---|---|---|
-| JupyterLab | Execute notebooks, save output | "Execute notebook.ipynb and save the output" |
-| Grafana | Export dashboards | "Export my dashboard as JSON" |
-| Gitea | Create repos, manage git hosting | "Create a private repo called myrepo on Gitea" |
-| GitLab | Create projects, manage CI/CD | "Create a new project on GitLab" |
-| NextCloud | Sync files, manage cloud storage | "Sync my files to NextCloud" |
-| Jenkins | Trigger build pipelines | "Trigger my build pipeline" |
-| AdGuard Home | Set up network-wide ad blocking | "Set up network-wide ad blocking with AdGuard Home" |
-
-**GIS & 3D Design**
-| App | What I can do | Example prompt |
-|---|---|---|
+| AdGuard Home _(network-wide ad blocking)_ | Set up DNS-level ad blocking | "Set up AdGuard Home ad blocking" |
+| JupyterLab | Execute notebooks, save output | "Run notebook.ipynb and save output" |
+| Jenkins | Trigger CI/CD pipelines | "Trigger my build pipeline" |
+| Gitea | Git hosting, create/manage repos | "Create private repo called myrepo" |
+| NextCloud | Cloud file sync | "Sync my folder to NextCloud" |
+| GitLab | Projects, CI/CD pipelines | "Create a new GitLab project" |
+| Grafana | Export monitoring dashboards | "Export my dashboard as JSON" |
 | FreeCAD | Export 3D models to STL/STEP | "Export model.fcstd as STL" |
 | QGIS | Export maps to PNG/PDF | "Export map.qgz as PNG" |
 
 **Tips:**
-- Always give me the full file path (e.g. `C:\Users\you\Desktop\photo.jpg`)
-- If the app isn't installed, I'll install it automatically — just wait a few minutes
-- I never ask you to run commands yourself — I do everything for you
+- Give me the full file path (e.g. `C:\Users\you\Desktop\photo.jpg` or `/home/user/photo.jpg`)
+- If the app isn't installed, I install it automatically — no action needed from you
+- If the app fails, I fall back to a Python alternative and tell you
 - Works on Windows, macOS, and Linux
 
 ---

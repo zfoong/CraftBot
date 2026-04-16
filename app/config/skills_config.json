@@ -1,7 +1,6 @@
 {
   "auto_load": true,
   "enabled_skills": [
-    "cli-anything",
     "docx",
     "pdf",
     "playwright-mcp",
@@ -9,6 +8,7 @@
     "xlsx"
   ],
   "disabled_skills": [
+    "cli-anything",
     "agentmail",
     "ai-news-collector",
     "ai-ppt-generator",

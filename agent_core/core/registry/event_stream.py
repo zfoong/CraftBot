@@ -16,6 +16,8 @@ Usage:
     manager.log("INFO", "Something happened")
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from agent_core.core.registry.base import ComponentRegistry

@@ -16,6 +16,8 @@ Usage:
     task_id = manager.create_task("My Task", "Do something")
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from agent_core.core.registry.base import ComponentRegistry
