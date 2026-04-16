@@ -419,10 +419,14 @@ def run_external_tests(port: int) -> Dict[str, Any]:
         path_params = route.get("path_params", [])
 
         # Skip parameterized paths if we don't have test data yet
-        if path_params and method in ("GET", "PUT", "PATCH", "DELETE"):
-            # Try to use a created resource ID
+        if path_params:
+            # Try to find a matching created resource
             base_path = _get_base_path(path)
             ids = created_resources.get(base_path, [])
+            # For action sub-paths like /api/bills/{id}/receive, try the parent path
+            if not ids:
+                parent_path = "/".join(base_path.split("/")[:-1])
+                ids = created_resources.get(parent_path, [])
             if not ids:
                 logger.info(f"[SKIP] {method} {path} — no test data available")
                 result["tests"].append({"method": method, "path": path, "status": "skipped", "reason": "no test data"})
