@@ -175,11 +175,15 @@ def send_http_requests(input_data: dict) -> dict:
     import ipaddress as _ipaddress
     import socket as _socket
 
-    def _is_url_ssrf_safe(check_url: str) -> str | None:
+    _BLOCKED_HOSTS = frozenset({'169.254.169.254', 'metadata.google.internal', 'metadata.internal'})
+
+    def _is_url_ssrf_safe(check_url: str) -> 'str | None':
         """Return an error message if the URL targets a blocked host, or None if safe."""
         _parsed = _urlparse(check_url)
+        # Block non-HTTP schemes (file://, gopher://, etc.)
+        if _parsed.scheme not in ('http', 'https'):
+            return f'Blocked: only http/https schemes are allowed (got {_parsed.scheme}).'
         _hostname = _parsed.hostname or ''
-        _BLOCKED_HOSTS = {'169.254.169.254', 'metadata.google.internal', 'metadata.internal'}
         if _hostname in _BLOCKED_HOSTS:
             return 'Blocked: requests to cloud metadata endpoints are not allowed.'
         try:
@@ -223,7 +227,19 @@ def send_http_requests(input_data: dict) -> dict:
             redirect_error = _is_url_ssrf_safe(redirect_url)
             if redirect_error:
                 return {'status':'error','status_code':resp.status_code,'response_headers':{},'body':'','final_url':resp.url,'elapsed_ms':int((time.time()-t0)*1000),'message':f'Redirect blocked: {redirect_error}'}
-            resp = requests.request('GET', redirect_url, **{**kwargs, 'allow_redirects': False})
+            # 307/308 preserve method; all others downgrade to GET per RFC 7231
+            redirect_method = method if resp.status_code in (307, 308) else 'GET'
+            redirect_kwargs = {**kwargs, 'allow_redirects': False}
+            # Strip body on method downgrade to GET
+            if redirect_method == 'GET':
+                redirect_kwargs.pop('json', None)
+                redirect_kwargs.pop('data', None)
+            # Strip auth headers on cross-origin redirects
+            _orig_host = _urlparse(url).netloc
+            _redir_host = _urlparse(redirect_url).netloc
+            if _orig_host != _redir_host and 'Authorization' in redirect_kwargs.get('headers', {}):
+                redirect_kwargs['headers'] = {k: v for k, v in redirect_kwargs['headers'].items() if k != 'Authorization'}
+            resp = requests.request(redirect_method, redirect_url, **redirect_kwargs)
         elapsed_ms = int((time.time() - t0) * 1000)
         resp_headers = {k: v for k, v in resp.headers.items()}
         parsed_json = None

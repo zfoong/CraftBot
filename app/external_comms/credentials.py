@@ -85,6 +85,7 @@ def save_credential(filename: str, credential) -> None:
     try:
         # Create file with restricted permissions atomically (rw-------)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)  # Ensure permissions even if file pre-existed
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(asdict(credential), f, indent=2, default=str)
         logger.info(f"Saved credential: {filename}")
