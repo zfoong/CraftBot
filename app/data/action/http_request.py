@@ -165,13 +165,17 @@ def send_http_requests(input_data: dict) -> dict:
     allow_redirects = bool(input_data.get('allow_redirects', True))
     verify_tls = bool(input_data.get('verify_tls', True))
     allowed = {'GET','POST','PUT','PATCH','DELETE'}
+
+    def _error(message, status_code=0, final_url='', elapsed_ms=0):
+        return {'status':'error','status_code':status_code,'response_headers':{},'body':'','final_url':final_url,'elapsed_ms':elapsed_ms,'message':message}
+
     if method not in allowed:
-        return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Unsupported method.'}
+        return _error('Unsupported method.')
     if not url or not (url.startswith('http://') or url.startswith('https://')):
-        return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Invalid or missing URL.'}
+        return _error('Invalid or missing URL.')
 
     # SSRF protection: block requests to private/internal networks and cloud metadata
-    from urllib.parse import urlparse as _urlparse
+    from urllib.parse import urlparse as _urlparse, urljoin as _urljoin
     import ipaddress as _ipaddress
     import socket as _socket
 
@@ -198,11 +202,11 @@ def send_http_requests(input_data: dict) -> dict:
 
     ssrf_error = _is_url_ssrf_safe(url)
     if ssrf_error:
-        return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message': ssrf_error}
+        return _error(ssrf_error)
     if json_body is not None and data_body is not None:
-        return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Provide either json or data, not both.'}
+        return _error('Provide either json or data, not both.')
     if not isinstance(headers, dict) or not isinstance(params, dict):
-        return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'headers and params must be objects.'}
+        return _error('headers and params must be objects.')
     headers = {str(k): str(v) for k, v in headers.items()}
     params = {str(k): str(v) for k, v in params.items()}
     kwargs = {'headers': headers, 'params': params, 'timeout': timeout, 'allow_redirects': False, 'verify': verify_tls}
@@ -222,11 +226,10 @@ def send_http_requests(input_data: dict) -> dict:
                 break
             # Resolve relative redirects
             if not redirect_url.startswith(('http://', 'https://')):
-                from urllib.parse import urljoin
-                redirect_url = urljoin(resp.url, redirect_url)
+                redirect_url = _urljoin(resp.url, redirect_url)
             redirect_error = _is_url_ssrf_safe(redirect_url)
             if redirect_error:
-                return {'status':'error','status_code':resp.status_code,'response_headers':{},'body':'','final_url':resp.url,'elapsed_ms':int((time.time()-t0)*1000),'message':f'Redirect blocked: {redirect_error}'}
+                return _error(f'Redirect blocked: {redirect_error}', status_code=resp.status_code, final_url=resp.url, elapsed_ms=int((time.time()-t0)*1000))
             # 307/308 preserve method; all others downgrade to GET per RFC 7231
             redirect_method = method if resp.status_code in (307, 308) else 'GET'
             redirect_kwargs = {**kwargs, 'allow_redirects': False}
