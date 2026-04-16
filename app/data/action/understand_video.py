@@ -2,9 +2,10 @@ from agent_core import action
 
 @action(
     name="understand_video",
-    description="Analyses a video file by sampling keyframes and generating a narrative summary using a Vision Language Model. Use when the user shares a video and wants to know what happens in it, extract visible text, or answer a specific question about video content.",
+    description="Uses Gemini 1.5 Pro for native video understanding when a Google API key is configured. Falls back to keyframe extraction via OpenCV if no Google API key is available.",
     mode="CLI",
     action_sets=["document_processing, image"],
+    requirement=["google-generativeai"],
     input_schema={
         "video_path": {
             "type": "string",
@@ -78,6 +79,46 @@ def understand_video(input_data: dict) -> dict:
 
     if not os.path.isfile(video_path):
         return {'status': 'error', 'summary': '', 'file_path': '', 'file_saved': False, 'message': 'File not found.'}
+
+    from app.config import get_api_key
+    api_key = get_api_key('gemini')
+
+    if api_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            import time
+            from datetime import datetime
+            from app.config import AGENT_WORKSPACE_ROOT
+
+            video_file = genai.upload_file(path=video_path)
+            
+            while video_file.state.name == "PROCESSING":
+                time.sleep(2)
+                video_file = genai.get_file(video_file.name)
+                
+            model = genai.GenerativeModel("gemini-1.5-pro")
+            prompt = query if query else "Understand and describe the contents of this video."
+            response = model.generate_content([video_file, prompt])
+            
+            genai.delete_file(video_file.name)
+            
+            full_text = response.text
+            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            out_path = os.path.join(AGENT_WORKSPACE_ROOT, f"video_summary_{ts}.txt")
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(full_text)
+                
+            return {
+                'status': 'success',
+                'summary': full_text[:500] + ("..." if len(full_text) > 500 else ""),
+                'file_path': out_path,
+                'file_saved': True,
+                'message': ''
+            }
+        except Exception as e:
+            # Fall through to fallback path if Gemini native path fails
+            pass
 
     try:
         import app.internal_action_interface as iai

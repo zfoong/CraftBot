@@ -114,3 +114,64 @@ class TestBridgeDelegation:
 
         assert result["status"] == "error"
         assert "message" in result
+
+
+class TestPrimaryGeminiPath:
+
+    @patch("app.config.get_api_key")
+    @patch("google.generativeai.upload_file")
+    @patch("google.generativeai.GenerativeModel")
+    @patch("google.generativeai.delete_file")
+    def test_gemini_path_success(self, mock_delete, mock_generative_model, mock_upload, mock_get_api_key, tmp_path):
+        from unittest.mock import MagicMock
+        mock_get_api_key.return_value = "fake_google_key"
+
+        mock_file = MagicMock()
+        mock_file.name = "fake_video_name"
+        mock_file.state.name = "ACTIVE"
+        mock_upload.return_value = mock_file
+
+        mock_model_instance = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "This is a native Gemini summary of the video. " * 20
+        mock_model_instance.generate_content.return_value = mock_response
+        mock_generative_model.return_value = mock_model_instance
+
+        fake_video = tmp_path / "gemini_clip.mp4"
+        fake_video.write_bytes(b"fake_video_bytes")
+
+        with patch("app.config.AGENT_WORKSPACE_ROOT", str(tmp_path)):
+            result = load_action(str(fake_video), query="What happens?")
+
+        assert result["status"] == "success"
+        assert "native Gemini summary" in result["summary"]
+        assert result["file_saved"] is True
+
+        mock_upload.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+        mock_delete.assert_called_once_with(mock_file.name)
+
+    @patch("app.config.get_api_key")
+    @patch("app.internal_action_interface.InternalActionInterface.understand_video")
+    def test_fallback_path_triggered(self, mock_bridge, mock_get_api_key, tmp_path):
+        mock_get_api_key.return_value = None
+
+        mock_return = {
+            "status": "success",
+            "summary": "Fallback summary",
+            "file_path": "/tmp/fallback.txt",
+            "file_saved": True,
+            "message": ""
+        }
+        mock_bridge.return_value = mock_return
+
+        fake_video = tmp_path / "fallback_clip.mp4"
+        fake_video.write_bytes(b"fake_video_bytes")
+
+        result = load_action(str(fake_video), query="Fallback query")
+
+        assert result["status"] == "success"
+        assert result["summary"] == "Fallback summary"
+        mock_bridge.assert_called_once()
+        called_args = mock_bridge.call_args[0]
+        assert called_args[0] == str(fake_video)
