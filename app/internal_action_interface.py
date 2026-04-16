@@ -152,14 +152,14 @@ class InternalActionInterface:
     @staticmethod
     async def do_chat(
         message: str,
-        platform: str = "CraftBot TUI",
+        platform: str = "CraftBot Interface",
         session_id: Optional[str] = None,
     ) -> None:
         """Record an agent-authored chat message to the event stream.
 
         Args:
             message: The message content to record.
-            platform: The platform the message is sent to (default: "CraftBot TUI").
+            platform: The platform the message is sent to (default: "CraftBot Interface").
             session_id: Optional task/session ID for multi-task isolation.
         """
         if InternalActionInterface.state_manager is None:

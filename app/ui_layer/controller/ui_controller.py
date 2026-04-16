@@ -283,6 +283,21 @@ class UIController:
 
         await self._agent._handle_chat_message(payload)
 
+    async def handle_option_click(self, value: str, session_id: str) -> None:
+        """
+        Handle a user clicking an option button in a chat message.
+
+        Routes limit-choice options to the appropriate agent handler.
+
+        Args:
+            value: The option value (e.g. "continue_limit", "abort_limit")
+            session_id: The task session ID associated with the option
+        """
+        if value == "continue_limit":
+            await self._agent.handle_limit_continue(session_id)
+        elif value == "abort_limit":
+            await self._agent.handle_limit_abort(session_id)
+
     # ─────────────────────────────────────────────────────────────────────
     # Event Processing
     # ─────────────────────────────────────────────────────────────────────

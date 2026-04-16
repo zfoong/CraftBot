@@ -16,8 +16,8 @@
 - **Approval Required For:** (Ask the users for info)
 
 ## Life Goals
-- **Goals:** (Ask the users for info)
-- **Help Wanted:** (Ask the users for info)
+
+(Ask the users for info)
 
 ## Personality
 

@@ -329,6 +329,252 @@
   margin-top: var(--space-2);
 }
 
+/* ── Profile Form (multi-field form step) ── */
+
+.profileForm {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding-right: var(--space-2);
+  max-height: 420px;
+}
+
+.profileForm::-webkit-scrollbar {
+  width: 6px;
+}
+
+.profileForm::-webkit-scrollbar-track {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+}
+
+.profileForm::-webkit-scrollbar-thumb {
+  background: var(--border-secondary);
+  border-radius: var(--radius-full);
+}
+
+.profileForm::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.formFieldLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.formFieldHint {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* ── Shared radio dot styles ── */
+
+.formSelectOptionInline .optionRadio,
+.formSelectOptionVertical .optionRadio {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  border: 2px solid var(--text-secondary);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-base);
+}
+
+.formSelectOptionInline .optionRadio::after,
+.formSelectOptionVertical .optionRadio::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.formSelectOptionInline.selected .optionRadio,
+.formSelectOptionVertical.selected .optionRadio {
+  border-color: var(--color-primary);
+}
+
+.formSelectOptionInline.selected .optionRadio::after,
+.formSelectOptionVertical.selected .optionRadio::after {
+  opacity: 1;
+}
+
+.formSelectOptionInline:hover .optionRadio,
+.formSelectOptionVertical:hover .optionRadio {
+  border-color: var(--text-primary);
+}
+
+/* ── Inline select (no descriptions, e.g. Communication Tone) ── */
+
+.formSelectInline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.formSelectOptionInline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-size: var(--text-sm);
+}
+
+.formSelectOptionInline:hover {
+  border-color: var(--text-secondary);
+}
+
+.formSelectOptionInline.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+/* ── Vertical select (with descriptions, e.g. Proactive Level) ── */
+
+.formSelectVertical {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.formSelectOptionVertical {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-size: var(--text-sm);
+}
+
+.formSelectOptionVertical:hover {
+  border-color: var(--text-secondary);
+}
+
+.formSelectOptionVertical.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+/* Native dropdown for large option lists (e.g., language) */
+.formDropdown {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color var(--transition-base);
+  appearance: auto;
+}
+
+.formDropdown:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.formDropdown option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.formSelectLabel {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.formSelectDesc {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+.formSelectDesc::before {
+  content: '— ';
+}
+
+/* Checkbox group for form fields */
+.formCheckboxGroup {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-2);
+}
+
+.formCheckboxItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.formCheckboxItem:hover {
+  border-color: var(--text-secondary);
+}
+
+.formCheckboxItem.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+.formCheckboxItem .optionCheckbox {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  border: 2px solid var(--text-secondary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-base);
+}
+
+.formCheckboxItem.selected .optionCheckbox {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-white, #fff);
+}
+
+.formCheckboxItem:hover .optionCheckbox {
+  border-color: var(--text-primary);
+}
+
 /* Error Message */
 .errorMessage {
   display: flex;

@@ -200,6 +200,17 @@ class BrowserChatComponent(ChatComponentProtocol):
                         )
                         for att in stored.attachments
                     ]
+                options = None
+                if stored.options:
+                    from app.ui_layer.components.types import ChatMessageOption
+                    options = [
+                        ChatMessageOption(
+                            label=o.get("label", ""),
+                            value=o.get("value", ""),
+                            style=o.get("style", "default"),
+                        )
+                        for o in stored.options
+                    ]
                 self._messages.append(ChatMessage(
                     sender=stored.sender,
                     content=stored.content,
@@ -208,6 +219,8 @@ class BrowserChatComponent(ChatComponentProtocol):
                     message_id=stored.message_id,
                     attachments=attachments,
                     task_session_id=stored.task_session_id,
+                    options=options,
+                    option_selected=stored.option_selected,
                 ))
         except Exception:
             # Storage may not be available, continue without persistence
@@ -233,6 +246,12 @@ class BrowserChatComponent(ChatComponentProtocol):
                         }
                         for att in message.attachments
                     ]
+                options_data = None
+                if message.options:
+                    options_data = [
+                        {"label": o.label, "value": o.value, "style": o.style}
+                        for o in message.options
+                    ]
                 stored = StoredChatMessage(
                     message_id=message.message_id or f"{message.sender}:{message.timestamp}",
                     sender=message.sender,
@@ -241,6 +260,7 @@ class BrowserChatComponent(ChatComponentProtocol):
                     timestamp=message.timestamp,
                     attachments=attachments_data,
                     task_session_id=message.task_session_id,
+                    options=options_data,
                 )
                 self._storage.insert_message(stored)
             except Exception:
@@ -271,6 +291,15 @@ class BrowserChatComponent(ChatComponentProtocol):
         # Include task session ID for reply feature
         if message.task_session_id:
             message_data["taskSessionId"] = message.task_session_id
+
+        # Include options/buttons if present
+        if message.options:
+            message_data["options"] = [
+                {"label": o.label, "value": o.value, "style": o.style}
+                for o in message.options
+            ]
+        if message.option_selected:
+            message_data["optionSelected"] = message.option_selected
 
         await self._adapter._broadcast({
             "type": "chat_message",
@@ -320,6 +349,17 @@ class BrowserChatComponent(ChatComponentProtocol):
                         )
                         for att in s.attachments
                     ]
+                options = None
+                if s.options:
+                    from app.ui_layer.components.types import ChatMessageOption
+                    options = [
+                        ChatMessageOption(
+                            label=o.get("label", ""),
+                            value=o.get("value", ""),
+                            style=o.get("style", "default"),
+                        )
+                        for o in s.options
+                    ]
                 messages.append(ChatMessage(
                     sender=s.sender,
                     content=s.content,
@@ -327,6 +367,8 @@ class BrowserChatComponent(ChatComponentProtocol):
                     timestamp=s.timestamp,
                     message_id=s.message_id,
                     attachments=attachments,
+                    options=options,
+                    option_selected=s.option_selected,
                 ))
             return messages
         except Exception:
@@ -966,7 +1008,18 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             print(f"[BROWSER ADAPTER] Failed to prepare WebSocket: {e}")
             return ws
         
+        is_first_client = len(self._ws_clients) == 0
         self._ws_clients.add(ws)
+
+        # Trigger soft onboarding on first client connection so the UI
+        # is ready to receive the task creation event.
+        if is_first_client:
+            from app.onboarding import onboarding_manager
+            if onboarding_manager.needs_soft_onboarding:
+                agent = self._controller.agent
+                if agent:
+                    import asyncio
+                    asyncio.create_task(agent.trigger_soft_onboarding())
 
         # Send initial state
         try:
@@ -1122,6 +1175,12 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         elif msg_type == "task_cancel":
             task_id = data.get("taskId", "")
             await self._handle_task_cancel(task_id)
+
+        elif msg_type == "option_click":
+            value = data.get("value", "")
+            session_id = data.get("sessionId", "")
+            message_id = data.get("messageId", "")
+            await self._handle_option_click(value, session_id, message_id)
 
         # Settings operations
         elif msg_type == "settings_get":
@@ -1558,6 +1617,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                         ],
                         "default": controller.get_step_default(),
                         "provider": getattr(step, "provider", None),
+                        "form_fields": self._get_step_form_fields(step),
                     },
                 },
             })
@@ -1570,6 +1630,27 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "error": str(e),
                 },
             })
+
+    @staticmethod
+    def _get_step_form_fields(step) -> Optional[list]:
+        """Extract form field definitions from a step, if it supports them."""
+        form_fields = getattr(step, 'get_form_fields', lambda: [])()
+        if not form_fields:
+            return None
+        return [
+            {
+                "name": f.name,
+                "label": f.label,
+                "field_type": f.field_type,
+                "options": [
+                    {"value": o.value, "label": o.label, "description": o.description, "default": o.default}
+                    for o in f.options
+                ],
+                "default": f.default,
+                "placeholder": f.placeholder,
+            }
+            for f in form_fields
+        ]
 
     async def _handle_onboarding_step_submit(self, value: Any) -> None:
         """Submit a value for the current onboarding step."""
@@ -1678,6 +1759,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                             ],
                             "default": controller.get_step_default(),
                             "provider": getattr(step, "provider", None),
+                            "form_fields": self._get_step_form_fields(step),
                         },
                     },
                 })
@@ -1982,6 +2064,27 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "error": str(e),
                 },
             })
+
+    async def _handle_option_click(self, value: str, session_id: str, message_id: str) -> None:
+        """Handle a user clicking an option button in a chat message."""
+        try:
+            # Mark the option as selected in storage and in-memory
+            if self._chat and message_id:
+                if self._chat._storage:
+                    try:
+                        self._chat._storage.update_option_selected(message_id, value)
+                    except Exception:
+                        pass
+                # Update in-memory message so refreshes reflect the selection
+                for m in self._chat._messages:
+                    if m.message_id == message_id:
+                        m.option_selected = value
+                        break
+
+            # Route to the controller
+            await self._controller.handle_option_click(value, session_id)
+        except Exception as e:
+            logger.error(f"[OPTION_CLICK] Error handling option click: {e}", exc_info=True)
 
     # ─────────────────────────────────────────────────────────────────────
     # Settings Operation Handlers
@@ -4339,6 +4442,13 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     ]
                 if m.task_session_id:
                     msg_data["taskSessionId"] = m.task_session_id
+                if m.options:
+                    msg_data["options"] = [
+                        {"label": o.label, "value": o.value, "style": o.style}
+                        for o in m.options
+                    ]
+                if m.option_selected:
+                    msg_data["optionSelected"] = m.option_selected
                 messages_data.append(msg_data)
 
             await self._broadcast({
@@ -4872,6 +4982,11 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                         for att in m.attachments
                     ]} if m.attachments else {}),
                     **({"taskSessionId": m.task_session_id} if m.task_session_id else {}),
+                    **({"options": [
+                        {"label": o.label, "value": o.value, "style": o.style}
+                        for o in m.options
+                    ]} if m.options else {}),
+                    **({"optionSelected": m.option_selected} if m.option_selected else {}),
                 }
                 for m in self._chat.get_messages()
             ],

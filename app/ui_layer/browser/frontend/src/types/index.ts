@@ -12,6 +12,12 @@ export interface Attachment {
   url: string
 }
 
+export interface ChatMessageOption {
+  label: string
+  value: string
+  style?: 'primary' | 'danger' | 'default'
+}
+
 export interface ChatMessage {
   sender: string
   content: string
@@ -20,13 +26,15 @@ export interface ChatMessage {
   messageId: string
   attachments?: Attachment[]
   taskSessionId?: string  // Links message to a task session for reply feature
+  options?: ChatMessageOption[]
+  optionSelected?: string  // Value of the option that was selected
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // Action/Task Types
 // ─────────────────────────────────────────────────────────────────────
 
-export type ActionStatus = 'running' | 'completed' | 'error' | 'pending' | 'cancelled' | 'waiting'
+export type ActionStatus = 'running' | 'completed' | 'error' | 'pending' | 'cancelled' | 'waiting' | 'paused'
 export type ItemType = 'task' | 'action' | 'reasoning'
 
 export interface ActionItem {
@@ -95,6 +103,8 @@ export type WSMessageType =
   // Task control
   | 'task_cancel'
   | 'task_cancel_response'
+  // Option click (interactive buttons in chat)
+  | 'option_click'
   // Onboarding
   | 'onboarding_step'
   | 'onboarding_step_get'
@@ -533,6 +543,15 @@ export interface OnboardingStepOption {
   requires_setup?: boolean  // Whether this option needs API key or additional setup
 }
 
+export interface OnboardingFormField {
+  name: string
+  label: string
+  field_type: 'text' | 'select' | 'multi_checkbox'
+  options: OnboardingStepOption[]
+  default: string | string[]
+  placeholder: string
+}
+
 export interface OnboardingStep {
   name: string
   title: string
@@ -543,6 +562,7 @@ export interface OnboardingStep {
   options: OnboardingStepOption[]
   default: string | string[] | null
   provider?: string | null   // only present on the api_key step
+  form_fields?: OnboardingFormField[] | null  // present on form steps (e.g., user_profile)
 }
 
 // ─────────────────────────────────────────────────────────────────────

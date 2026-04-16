@@ -87,6 +87,8 @@ interface WebSocketContextType extends WebSocketState {
   startLocalLLM: () => void
   requestSuggestedModels: () => void
   pullOllamaModel: (model: string) => void
+  // Option click (interactive buttons in chat)
+  sendOptionClick: (value: string, sessionId?: string, messageId?: string) => void
 }
 
 // Initialize lastSeenMessageId from localStorage
@@ -770,6 +772,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const sendOptionClick = useCallback((value: string, sessionId?: string, messageId?: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'option_click', value, sessionId, messageId }))
+    }
+  }, [])
+
   const openFile = useCallback((path: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'open_file', path }))
@@ -943,6 +951,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         startLocalLLM,
         requestSuggestedModels,
         pullOllamaModel,
+        sendOptionClick,
       }}
     >
       {children}

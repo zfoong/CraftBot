@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 import { Button } from '../../components/ui'
 import { useWebSocket } from '../../contexts/WebSocketContext'
-import type { OnboardingStep, OnboardingStepOption } from '../../types'
+import type { OnboardingStep, OnboardingStepOption, OnboardingFormField } from '../../types'
 import styles from './OnboardingPage.module.css'
 
 // Icon mapping for dynamic rendering
@@ -53,7 +53,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Sheet,
 }
 
-const STEP_NAMES = ['Provider', 'API Key', 'Agent Name', 'MCP Servers', 'Skills']
+const STEP_NAMES = ['Provider', 'API Key', 'Agent Name', 'User Profile', 'MCP Servers', 'Skills']
 
 // ── Ollama local-setup component ─────────────────────────────────────────────
 
@@ -340,6 +340,8 @@ export function OnboardingPage() {
   // URL submitted from OllamaSetup
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434')
   const [ollamaConnected, setOllamaConnected] = useState(false)
+  // Form step state (for user_profile and similar multi-field steps)
+  const [formValues, setFormValues] = useState<Record<string, string | string[]>>({})
 
   // Request first step when connected
   useEffect(() => {
@@ -353,7 +355,14 @@ export function OnboardingPage() {
     if (onboardingStep) {
       setOllamaConnected(false)
 
-      if (onboardingStep.name === 'mcp' || onboardingStep.name === 'skills') {
+      // Form step (e.g., user_profile)
+      if (onboardingStep.form_fields && onboardingStep.form_fields.length > 0) {
+        const defaults: Record<string, string | string[]> = {}
+        for (const field of onboardingStep.form_fields) {
+          defaults[field.name] = field.default ?? ''
+        }
+        setFormValues(defaults)
+      } else if (onboardingStep.name === 'mcp' || onboardingStep.name === 'skills') {
         setSelectedValue(Array.isArray(onboardingStep.default) ? onboardingStep.default : [])
       } else if (onboardingStep.options.length > 0) {
         const defaultOption = onboardingStep.options.find(opt => opt.default)
@@ -396,18 +405,21 @@ export function OnboardingPage() {
 
     if (isOllamaStep) {
       submitOnboardingStep(ollamaUrl)
+    } else if (onboardingStep.form_fields && onboardingStep.form_fields.length > 0) {
+      submitOnboardingStep(formValues)
     } else if (onboardingStep.options.length > 0) {
       submitOnboardingStep(selectedValue)
     } else {
       submitOnboardingStep(textValue)
     }
-  }, [onboardingStep, selectedValue, textValue, ollamaUrl, submitOnboardingStep])
+  }, [onboardingStep, selectedValue, textValue, ollamaUrl, formValues, submitOnboardingStep])
 
   const handleSkip = useCallback(() => skipOnboardingStep(), [skipOnboardingStep])
   const handleBack = useCallback(() => goBackOnboardingStep(), [goBackOnboardingStep])
 
   const isMultiSelect = onboardingStep?.name === 'mcp' || onboardingStep?.name === 'skills'
-  const isWideStep = isMultiSelect
+  const isFormStep = !!(onboardingStep?.form_fields && onboardingStep.form_fields.length > 0)
+  const isWideStep = isMultiSelect || isFormStep
   const isLastStep = onboardingStep ? onboardingStep.index === onboardingStep.total - 1 : false
 
   const isOllamaStep =
@@ -419,6 +431,7 @@ export function OnboardingPage() {
     if (isOllamaStep) {
       return ollamaConnected || (localLLM.phase === 'connected' && !!localLLM.testResult?.success)
     }
+    if (isFormStep) return true  // All form fields are optional
     if (onboardingStep.options.length > 0) {
       return isMultiSelect ? true : !!selectedValue
     }
@@ -453,6 +466,123 @@ export function OnboardingPage() {
             defaultUrl={ollamaUrl}
             onConnected={handleOllamaConnected}
           />
+        </div>
+      )
+    }
+
+    // Form step (multi-field form, e.g., user_profile)
+    if (onboardingStep.form_fields && onboardingStep.form_fields.length > 0) {
+      return (
+        <div className={styles.formGroup}>
+          <div className={styles.profileForm}>
+            {onboardingStep.form_fields.map((field: OnboardingFormField) => (
+              <div key={field.name} className={styles.formField}>
+                <label className={styles.formFieldLabel}>{field.label}</label>
+
+                {field.field_type === 'text' && (
+                  <input
+                    type="text"
+                    className={styles.textInput}
+                    value={(formValues[field.name] as string) ?? ''}
+                    onChange={e => setFormValues(prev => ({ ...prev, [field.name]: e.target.value }))}
+                    placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
+                  />
+                )}
+
+                {field.field_type === 'select' && field.options.length > 20 ? (
+                  /* Large option list (e.g., languages) — use native dropdown */
+                  <>
+                    <select
+                      className={styles.formDropdown}
+                      value={(formValues[field.name] as string) ?? ''}
+                      onChange={e => setFormValues(prev => ({ ...prev, [field.name]: e.target.value }))}
+                    >
+                      {field.options.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}{opt.description && opt.description !== opt.label ? ` (${opt.description})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {field.placeholder && (
+                      <div className={styles.formFieldHint}>{field.placeholder}</div>
+                    )}
+                  </>
+                ) : field.field_type === 'select' ? (() => {
+                  const hasDescriptions = field.options.some(o => o.description && o.description !== o.label)
+                  if (hasDescriptions) {
+                    /* Options with descriptions — vertical stack */
+                    return (
+                      <div className={styles.formSelectVertical}>
+                        {field.options.map(opt => {
+                          const isSelected = formValues[field.name] === opt.value
+                          return (
+                            <div
+                              key={opt.value}
+                              className={`${styles.formSelectOptionVertical} ${isSelected ? styles.selected : ''}`}
+                              onClick={() => setFormValues(prev => ({ ...prev, [field.name]: opt.value }))}
+                            >
+                              <div className={styles.optionRadio} />
+                              <span className={styles.formSelectLabel}>{opt.label}</span>
+                              {opt.description && opt.description !== opt.label && (
+                                <span className={styles.formSelectDesc}>{opt.description}</span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  }
+                  /* Simple options without descriptions — inline row */
+                  return (
+                    <div className={styles.formSelectInline}>
+                      {field.options.map(opt => {
+                        const isSelected = formValues[field.name] === opt.value
+                        return (
+                          <div
+                            key={opt.value}
+                            className={`${styles.formSelectOptionInline} ${isSelected ? styles.selected : ''}`}
+                            onClick={() => setFormValues(prev => ({ ...prev, [field.name]: opt.value }))}
+                          >
+                            <div className={styles.optionRadio} />
+                            <span className={styles.formSelectLabel}>{opt.label}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })() : null}
+
+                {field.field_type === 'multi_checkbox' && (
+                  <div className={styles.formCheckboxGroup}>
+                    {field.options.map(opt => {
+                      const checked = Array.isArray(formValues[field.name]) &&
+                        (formValues[field.name] as string[]).includes(opt.value)
+                      return (
+                        <div
+                          key={opt.value}
+                          className={`${styles.formCheckboxItem} ${checked ? styles.selected : ''}`}
+                          onClick={() => {
+                            setFormValues(prev => {
+                              const current = Array.isArray(prev[field.name]) ? (prev[field.name] as string[]) : []
+                              const updated = current.includes(opt.value)
+                                ? current.filter(v => v !== opt.value)
+                                : [...current, opt.value]
+                              return { ...prev, [field.name]: updated }
+                            })
+                          }}
+                        >
+                          <div className={styles.optionCheckbox}>
+                            {checked && <Check size={12} />}
+                          </div>
+                          <span>{opt.label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )
     }
