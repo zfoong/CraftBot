@@ -4,7 +4,7 @@ from agent_core import action
     name="understand_video",
     description="Uses Gemini 1.5 Pro for native video understanding when a Google API key is configured. Falls back to keyframe extraction via OpenCV if no Google API key is available.",
     mode="CLI",
-    action_sets=["document_processing, image"],
+    action_sets=["document_processing", "image"],
     requirement=["google-generativeai"],
     input_schema={
         "video_path": {

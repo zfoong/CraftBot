@@ -4,7 +4,7 @@ from agent_core import action
     name="perform_ocr",
     description="Extracts all text from an image using OCR via a Vision Language Model. Use this when the user wants to read text from a screenshot, scanned document, photo of a receipt, whiteboard, sign, or any image containing text. Returns extracted text saved to a file in workspace.",
     mode="CLI",
-    action_sets=["document_processing, image"],
+    action_sets=["document_processing", "image"],
     input_schema={
         "image_path": {
             "type": "string",
