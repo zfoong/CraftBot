@@ -387,13 +387,16 @@ export function OnboardingPage() {
     if (onboardingStep) {
       setOllamaConnected(false)
 
-      // Form step (e.g., user_profile)
+      // Form step (e.g., user_profile, agent_name)
+      // Preserve existing values when navigating back — only set defaults for missing fields
       if (onboardingStep.form_fields && onboardingStep.form_fields.length > 0) {
-        const defaults: Record<string, string | string[]> = {}
-        for (const field of onboardingStep.form_fields) {
-          defaults[field.name] = field.default ?? ''
-        }
-        setFormValues(defaults)
+        setFormValues(prev => {
+          const defaults: Record<string, string | string[]> = {}
+          for (const field of onboardingStep.form_fields) {
+            defaults[field.name] = prev[field.name] ?? (field.default ?? '')
+          }
+          return defaults
+        })
       } else if (onboardingStep.name === 'mcp' || onboardingStep.name === 'skills') {
         setSelectedValue(Array.isArray(onboardingStep.default) ? onboardingStep.default : [])
       } else if (onboardingStep.options.length > 0) {

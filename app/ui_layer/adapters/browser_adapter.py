@@ -1906,6 +1906,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                         ],
                         "default": controller.get_step_default(),
                         "provider": getattr(step, "provider", None),
+                        "form_fields": self._get_step_form_fields(step),
                     },
                 },
             })
