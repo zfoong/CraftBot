@@ -65,4 +65,5 @@ Examples:
 
         # Show all commands
         help_text = self._controller.command_registry.get_help_text()
+        help_text += "\n\nType /skill list to see available skill shortcuts (e.g., /pdf, /docx)."
         return CommandResult(success=True, message=help_text)

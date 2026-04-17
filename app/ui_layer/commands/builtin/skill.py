@@ -173,6 +173,8 @@ Examples:
 
         name = args[0]
         success, message = enable_skill(name)
+        if success:
+            self._controller.sync_skill_commands()
         return CommandResult(success=success, message=message)
 
     async def _disable_skill(self, args: List[str]) -> CommandResult:
@@ -185,6 +187,8 @@ Examples:
 
         name = args[0]
         success, message = disable_skill(name)
+        if success:
+            self._controller.sync_skill_commands()
         return CommandResult(success=success, message=message)
 
     async def _install_skill(self, args: List[str]) -> CommandResult:
@@ -234,6 +238,8 @@ Examples:
     async def _reload_skills(self) -> CommandResult:
         """Reload skills from disk."""
         success, message = reload_skills()
+        if success:
+            self._controller.sync_skill_commands()
         return CommandResult(success=success, message=message)
 
     async def _show_dirs(self) -> CommandResult:

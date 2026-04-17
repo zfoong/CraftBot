@@ -53,7 +53,7 @@ const formatFileSize = (bytes: number): string => {
 }
 
 export function ChatPage() {
-  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen, replyTarget, setReplyTarget, clearReplyTarget, loadOlderMessages, hasMoreMessages, loadingOlderMessages } = useWebSocket()
+  const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen, replyTarget, setReplyTarget, clearReplyTarget, loadOlderMessages, hasMoreMessages, loadingOlderMessages, sendOptionClick } = useWebSocket()
 
   // Derive agent status from actions and messages
   const status = useDerivedAgentStatus({
@@ -556,6 +556,7 @@ export function ChatPage() {
                       onOpenFile={openFile}
                       onOpenFolder={openFolder}
                       onReply={handleChatReply}
+                      onOptionClick={sendOptionClick}
                     />
                   </div>
                 )
