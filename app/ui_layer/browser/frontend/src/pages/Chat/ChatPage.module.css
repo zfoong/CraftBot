@@ -101,16 +101,40 @@
 .messageWrapper.systemWrapper {
   margin-right: auto;
   align-items: flex-start;
+  /* Align with agent bubbles (which are offset by the avatar slot) */
+  margin-left: calc(32px + var(--space-2));
 }
 
 .messageWrapper.errorWrapper {
   margin-right: auto;
   align-items: flex-start;
+  /* Align with agent bubbles (which are offset by the avatar slot) */
+  margin-left: calc(32px + var(--space-2));
 }
 
 .messageWrapper.infoWrapper {
   margin: 0 auto;
   align-items: center;
+}
+
+/* Agent messages: avatar + bubble in a row (attachments stay below) */
+.agentContentRow {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-2);
+  align-items: flex-start;
+  width: 100%;
+}
+
+.agentAvatar {
+  width: 32px;
+  height: 32px;
+  /* Square with the same fillet as the chat bubble */
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
 }
 
 /* Messages */
@@ -192,6 +216,57 @@
 
 .messageContent {
   word-break: break-word;
+}
+
+/* Interactive option buttons inside messages */
+.messageOptions {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border-primary);
+  padding-top: var(--space-2);
+}
+
+.optionsPrompt {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  padding: 0 0 var(--space-2);
+}
+
+.optionButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.optionButton:hover:not(:disabled) {
+  background: var(--bg-primary);
+}
+
+.optionButton--selected {
+  background: var(--bg-primary);
+}
+
+.optionButton--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.optionIndex {
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
 }
 
 /* Attachments underneath the bubble */

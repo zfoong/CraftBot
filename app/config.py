@@ -35,6 +35,12 @@ CONNECTION_TEST_MODELS_CONFIG_PATH = APP_CONFIG_PATH / "connection_test_models.j
 _settings_cache: Optional[Dict[str, Any]] = None
 
 
+def invalidate_settings_cache() -> None:
+    """Invalidate the settings cache so the next get_settings() call re-reads from disk."""
+    global _settings_cache
+    _settings_cache = None
+
+
 def _get_default_settings() -> Dict[str, Any]:
     """Return default settings structure."""
     return {

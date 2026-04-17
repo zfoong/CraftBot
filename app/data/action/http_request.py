@@ -169,6 +169,29 @@ def send_http_requests(input_data: dict) -> dict:
         return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Unsupported method.'}
     if not url or not (url.startswith('http://') or url.startswith('https://')):
         return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Invalid or missing URL.'}
+
+    # SSRF protection: block requests to private/internal networks and cloud metadata
+    try:
+        from urllib.parse import urlparse as _urlparse
+        import ipaddress as _ipaddress
+        import socket as _socket
+        _parsed = _urlparse(url)
+        _hostname = _parsed.hostname or ''
+        # Block cloud metadata endpoints
+        _BLOCKED_HOSTS = {'169.254.169.254', 'metadata.google.internal', 'metadata.internal'}
+        if _hostname in _BLOCKED_HOSTS:
+            return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Blocked: requests to cloud metadata endpoints are not allowed.'}
+        # Resolve hostname and check for private IPs
+        try:
+            _resolved = _socket.getaddrinfo(_hostname, None)
+            for _family, _type, _proto, _canonname, _sockaddr in _resolved:
+                _ip = _ipaddress.ip_address(_sockaddr[0])
+                if _ip.is_private or _ip.is_loopback or _ip.is_link_local:
+                    return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':f'Blocked: requests to private/internal addresses ({_hostname}) are not allowed.'}
+        except (socket.gaierror, ValueError):
+            pass  # Let the request library handle DNS resolution errors
+    except Exception:
+        pass  # Best-effort SSRF check; don't block on parsing failures
     if json_body is not None and data_body is not None:
         return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Provide either json or data, not both.'}
     if not isinstance(headers, dict) or not isinstance(params, dict):

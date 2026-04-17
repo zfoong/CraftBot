@@ -12,6 +12,7 @@ from app.onboarding.interfaces.steps import (
     ProviderStep,
     ApiKeyStep,
     AgentNameStep,
+    UserProfileStep,
     MCPStep,
     SkillsStep,
 )
@@ -173,6 +174,72 @@ class CLIHardOnboarding(OnboardingInterface):
 
         return list(selections)
 
+    async def _input_form(self, step) -> Dict[str, Any]:
+        """Present a multi-field form and return collected data as a dict."""
+        form_fields = step.get_form_fields()
+        result: Dict[str, Any] = {}
+
+        print(f"\n{step.title}:")
+        print(f"{step.description}\n")
+
+        for f in form_fields:
+            if f.field_type == "text":
+                default_display = f.default or ""
+                prompt = f"  {f.label}"
+                if default_display:
+                    prompt += f" (default: {default_display})"
+                prompt += ": "
+                try:
+                    value = await self._async_input(prompt)
+                except (EOFError, KeyboardInterrupt):
+                    value = ""
+                result[f.name] = value.strip() if value.strip() else (f.default or "")
+
+            elif f.field_type == "select":
+                print(f"\n  {f.label}:")
+                for i, opt in enumerate(f.options, 1):
+                    marker = "*" if (opt.value == f.default or opt.default) else " "
+                    label = f"    {i}. [{marker}] {opt.label}"
+                    if opt.description and opt.description != opt.label:
+                        label += f" - {opt.description}"
+                    print(label)
+                try:
+                    choice = await self._async_input(f"  Enter number [1-{len(f.options)}]: ")
+                except (EOFError, KeyboardInterrupt):
+                    choice = ""
+                choice = choice.strip()
+                if choice:
+                    try:
+                        idx = int(choice) - 1
+                        if 0 <= idx < len(f.options):
+                            result[f.name] = f.options[idx].value
+                            continue
+                    except ValueError:
+                        pass
+                result[f.name] = f.default
+
+            elif f.field_type == "multi_checkbox":
+                print(f"\n  {f.label}:")
+                for i, opt in enumerate(f.options, 1):
+                    print(f"    {i}. [ ] {opt.label} - {opt.description}")
+                print("  Enter numbers to select (comma-separated), or press Enter to skip:")
+                try:
+                    choice = await self._async_input("  > ")
+                except (EOFError, KeyboardInterrupt):
+                    choice = ""
+                selected = []
+                for part in choice.split(","):
+                    part = part.strip()
+                    try:
+                        idx = int(part) - 1
+                        if 0 <= idx < len(f.options):
+                            selected.append(f.options[idx].value)
+                    except ValueError:
+                        continue
+                result[f.name] = selected
+
+        return result
+
     async def run_hard_onboarding(self) -> Dict[str, Any]:
         """Execute CLI-based hard onboarding wizard."""
         print(CLIFormatter.format_header("CraftBot Setup"))
@@ -206,7 +273,21 @@ class CLIHardOnboarding(OnboardingInterface):
             )
             self._collected_data["agent_name"] = agent_name or "Agent"
 
-            # Step 4: MCP servers (optional)
+            # Step 4: User Profile (optional)
+            profile_step = UserProfileStep()
+            print("\nWould you like to set up your profile? (Y/n)")
+            try:
+                configure_profile = await self._async_input("> ")
+            except (EOFError, KeyboardInterrupt):
+                configure_profile = "n"
+
+            if not configure_profile.lower().startswith("n"):
+                profile_data = await self._input_form(profile_step)
+                self._collected_data["user_profile"] = profile_data
+            else:
+                self._collected_data["user_profile"] = {}
+
+            # Step 5: MCP servers (optional)
             mcp_step = MCPStep()
             mcp_options = mcp_step.get_options()
             if mcp_options:
@@ -271,9 +352,16 @@ class CLIHardOnboarding(OnboardingInterface):
             save_settings_to_json(provider, api_key)
             logger.info(f"[CLI ONBOARDING] Saved provider={provider} to settings.json")
 
+        # Write user profile data to USER.md
+        profile_data = self._collected_data.get("user_profile", {})
+        if profile_data:
+            from app.onboarding.profile_writer import write_profile_to_user_md
+            write_profile_to_user_md(profile_data)
+
         # Mark hard onboarding as complete
         agent_name = self._collected_data.get("agent_name", "Agent")
-        onboarding_manager.mark_hard_complete(agent_name=agent_name)
+        user_name = profile_data.get("user_name") if profile_data else None
+        onboarding_manager.mark_hard_complete(user_name=user_name, agent_name=agent_name)
 
         logger.info("[CLI ONBOARDING] Hard onboarding completed successfully")
 

@@ -282,6 +282,7 @@ class TaskManager:
             compiled_actions=compiled_actions,
             selected_skills=selected_skills or [],
             conversation_id=conversation_id,
+            source_platform=original_platform,
         )
 
         self.tasks[task_id] = task

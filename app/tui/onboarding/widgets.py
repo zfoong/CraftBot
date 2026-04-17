@@ -3,7 +3,7 @@
 Textual widgets for the onboarding wizard.
 """
 
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -191,6 +191,82 @@ OnboardingWizardScreen {
     text-style: italic;
     margin-top: 1;
 }
+
+/* Profile form - compact scrollable multi-field form */
+.profile-form {
+    height: auto;
+    max-height: 22;
+    padding: 0 1;
+}
+
+.form-field {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.form-label {
+    color: #ff4f18;
+    text-style: bold;
+    height: 1;
+}
+
+.form-input {
+    width: 100%;
+    border: solid #2a2a2a;
+    background: #0a0a0a;
+    color: #e5e5e5;
+}
+
+.form-input:focus {
+    border: solid #ff4f18;
+}
+
+.form-select {
+    width: 30;
+    height: auto;
+    max-height: 4;
+    background: transparent;
+    border: none;
+    margin: 0 0;
+}
+
+.form-select > ListItem {
+    padding: 0 0;
+}
+
+.form-select > ListItem.--highlight .option-label {
+    background: #ff4f18;
+    color: #ffffff;
+    text-style: bold;
+}
+
+.form-checkbox-row {
+    height: 1;
+    margin-bottom: 0;
+}
+
+.form-checkbox-toggle {
+    width: 3;
+    min-width: 3;
+    height: 1;
+    background: #333333;
+    color: #666666;
+    border: none;
+    margin-right: 1;
+}
+
+.form-checkbox-toggle.-checked {
+    color: #00cc00;
+}
+
+.form-checkbox-toggle:hover {
+    background: #00cc00;
+    color: #000000;
+}
+
+.form-checkbox-label {
+    color: #a0a0a0;
+}
 """
 
 
@@ -215,6 +291,9 @@ class OnboardingWizardScreen(Screen):
         self._handler = handler
         self._current_step = 0
         self._multi_select_values: List[str] = []
+        # Form step state
+        self._form_fields: List[Any] = []
+        self._form_checkbox_values: Dict[str, List[str]] = {}
 
     def compose(self) -> ComposeResult:
         with Container(id="onboarding-container"):
@@ -279,17 +358,27 @@ class OnboardingWizardScreen(Screen):
         content = self.query_one("#step-content", Container)
         content.remove_children()
 
+        # Check for form step (e.g., UserProfileStep)
+        form_fields = getattr(step, 'get_form_fields', lambda: [])()
         options = step.get_options()
 
-        if step.name in ("mcp", "skills"):
+        if form_fields:
+            # Multi-field form
+            self._form_fields = form_fields
+            self._form_checkbox_values = {}
+            self._build_form(content, step, form_fields)
+        elif step.name in ("mcp", "skills"):
             # Multi-select list
+            self._form_fields = []
             self._multi_select_values = step.get_default()
             self._build_multi_select(content, options)
         elif options:
             # Single-select list
+            self._form_fields = []
             self._build_option_list(content, options, step.get_default())
         else:
             # Text input
+            self._form_fields = []
             self._build_text_input(content, step.get_default())
 
     def _update_nav_items(self, index: int, required: bool) -> None:
@@ -369,13 +458,126 @@ class OnboardingWizardScreen(Screen):
 
         container.mount(scroll)
 
+    def _build_form(self, container: Container, step: Any, fields: list) -> None:
+        """Build a compact scrollable form with multiple field types."""
+        scroll = VerticalScroll(id="profile-form", classes="profile-form")
+
+        for f in fields:
+            field_container = Vertical(classes="form-field")
+
+            # Label
+            field_container.compose_add_child(
+                Static(f.label, classes="form-label")
+            )
+
+            if f.field_type == "text":
+                inp = Input(
+                    value=str(f.default) if f.default else "",
+                    placeholder=f.placeholder or "Enter value...",
+                    id=f"form-{f.name}",
+                    classes="form-input",
+                )
+                field_container.compose_add_child(inp)
+
+            elif f.field_type == "select":
+                items = []
+                highlight_idx = 0
+                for i, opt in enumerate(f.options):
+                    label_text = f"  {opt.label}"
+                    if opt.description and opt.description != opt.label:
+                        label_text += f"  ({opt.description})"
+                    items.append(
+                        ListItem(
+                            Label(label_text, classes="option-label"),
+                            id=f"fopt-{f.name}-{opt.value}",
+                        )
+                    )
+                    if opt.value == f.default or opt.default:
+                        highlight_idx = i
+
+                list_view = ListView(
+                    *items,
+                    id=f"form-select-{f.name}",
+                    classes="form-select",
+                )
+                field_container.compose_add_child(list_view)
+
+                # Highlight default after mount
+                _idx = highlight_idx
+                def _make_highlight(lv=list_view, idx=_idx):
+                    def _set():
+                        lv.index = idx
+                    return _set
+                self.call_after_refresh(_make_highlight())
+
+            elif f.field_type == "multi_checkbox":
+                self._form_checkbox_values[f.name] = list(f.default) if isinstance(f.default, list) else []
+                for opt in f.options:
+                    is_checked = opt.value in self._form_checkbox_values[f.name]
+                    toggle_text = "[x]" if is_checked else "[ ]"
+                    toggle_cls = "form-checkbox-toggle -checked" if is_checked else "form-checkbox-toggle"
+                    row = Horizontal(
+                        Button(toggle_text, id=f"fchk-{f.name}-{opt.value}", classes=toggle_cls),
+                        Static(f" {opt.label}", classes="form-checkbox-label"),
+                        classes="form-checkbox-row",
+                    )
+                    field_container.compose_add_child(row)
+
+            scroll.compose_add_child(field_container)
+
+        container.mount(scroll)
+
+        # Focus the first text input if any
+        def _focus_first():
+            for f in fields:
+                if f.field_type == "text":
+                    widget = self.query(f"#form-{f.name}")
+                    if widget:
+                        widget.first().focus()
+                    break
+        self.call_after_refresh(_focus_first)
+
+    def _get_form_value(self) -> Dict[str, Any]:
+        """Extract all values from the form fields."""
+        result: Dict[str, Any] = {}
+        for f in self._form_fields:
+            if f.field_type == "text":
+                widget = self.query(f"#form-{f.name}")
+                result[f.name] = widget.first().value.strip() if widget else f.default
+
+            elif f.field_type == "select":
+                widget = self.query(f"#form-select-{f.name}")
+                if widget:
+                    lv = widget.first()
+                    if lv and lv.highlighted_child:
+                        item_id = lv.highlighted_child.id
+                        prefix = f"fopt-{f.name}-"
+                        if item_id and item_id.startswith(prefix):
+                            result[f.name] = item_id[len(prefix):]
+                            continue
+                result[f.name] = f.default
+
+            elif f.field_type == "multi_checkbox":
+                result[f.name] = list(self._form_checkbox_values.get(f.name, []))
+
+            else:
+                result[f.name] = f.default
+        return result
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button presses (for multi-select toggles)."""
+        """Handle button presses (for multi-select toggles and form checkboxes)."""
         button_id = event.button.id
 
         if button_id and button_id.startswith("toggle-"):
             value = button_id[7:]  # Remove "toggle-" prefix
             self._toggle_multi_select(value, event.button)
+        elif button_id and button_id.startswith("fchk-"):
+            # Form checkbox toggle: "fchk-{field_name}-{value}"
+            parts = button_id[5:]  # Remove "fchk-"
+            dash_idx = parts.index("-")
+            field_name = parts[:dash_idx]
+            value = parts[dash_idx + 1:]
+            self._toggle_form_checkbox(field_name, value, event.button)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle list view selection."""
@@ -412,9 +614,25 @@ class OnboardingWizardScreen(Screen):
             button.label = "[+]"
             button.add_class("-selected")
 
+    def _toggle_form_checkbox(self, field_name: str, value: str, button: Button) -> None:
+        """Toggle a form checkbox option."""
+        values = self._form_checkbox_values.setdefault(field_name, [])
+        if value in values:
+            values.remove(value)
+            button.label = "[ ]"
+            button.remove_class("-checked")
+        else:
+            values.append(value)
+            button.label = "[x]"
+            button.add_class("-checked")
+
     def _get_current_value(self) -> Any:
         """Get the current value from the active step widget."""
         step = self._handler.get_step(self._current_step)
+
+        # Form step returns a dict
+        if self._form_fields:
+            return self._get_form_value()
 
         if step.name in ("mcp", "skills"):
             return self._multi_select_values

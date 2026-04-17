@@ -26,7 +26,7 @@ Efficient File Reading:
 
 File Actions:
 - read_file: General reading with pagination (offset/limit)
-- grep_files: Search for keywords, returns matching chunks with line numbers
+- grep_files: Search files/directories for regex patterns with three output modes: 'files_with_matches' (discover files), 'content' (matching lines with line numbers), 'count' (match counts). Supports glob/file_type filtering, before/after context lines, case_insensitive, and multiline.
 - stream_read + stream_edit: Use together for file modifications
 
 Avoid: Reading entire large files repeatedly - use grep + targeted offset/limit reads instead

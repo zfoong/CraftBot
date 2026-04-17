@@ -15,8 +15,8 @@ MODEL_REGISTRY = {
         InterfaceType.EMBEDDING: "text-embedding-004",
     },
     "anthropic": {
-        InterfaceType.LLM: "claude-sonnet-4-6",
-        InterfaceType.VLM: "claude-sonnet-4-6",
+        InterfaceType.LLM: "claude-sonnet-4-5-20250929",
+        InterfaceType.VLM: "claude-sonnet-4-5-20250929",
         InterfaceType.EMBEDDING: None,  # Anthropic does not provide native embedding models
     },
     "byteplus": {
@@ -36,7 +36,7 @@ MODEL_REGISTRY = {
     },
     "deepseek": {
         InterfaceType.LLM: "deepseek-chat",
-        InterfaceType.VLM: "deepseek-chat",
+        InterfaceType.VLM: None,
         InterfaceType.EMBEDDING: None,
     },
     "moonshot": {
@@ -46,7 +46,7 @@ MODEL_REGISTRY = {
     },
     "grok": {
         InterfaceType.LLM: "grok-3",
-        InterfaceType.VLM: "grok-2-vision-1212",
+        InterfaceType.VLM: "grok-4-0709",
         InterfaceType.EMBEDDING: None,
     },
 }

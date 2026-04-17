@@ -7,8 +7,148 @@ used by any interface adapter (Browser, TUI, CLI).
 from pathlib import Path
 from typing import Dict, Any, Optional
 import shutil
+import time
 
-from app.config import AGENT_FILE_SYSTEM_PATH, AGENT_FILE_SYSTEM_TEMPLATE_PATH
+from app.config import AGENT_FILE_SYSTEM_PATH, AGENT_FILE_SYSTEM_TEMPLATE_PATH, APP_DATA_PATH
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Agent Profile Picture
+# ─────────────────────────────────────────────────────────────────────
+
+AGENT_PROFILE_DIR = APP_DATA_PATH / "agent_profile"
+AGENT_PROFILE_DEFAULT_FILENAME = "default.png"
+AGENT_PROFILE_BASENAME = "picture"
+ALLOWED_PROFILE_EXTS = {"png", "jpg", "jpeg", "webp", "gif"}
+PROFILE_MIME_TO_EXT = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+EXT_TO_MIME = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+}
+MAX_PROFILE_PICTURE_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _user_profile_picture_path(ext: str) -> Path:
+    return AGENT_PROFILE_DIR / f"{AGENT_PROFILE_BASENAME}.{ext}"
+
+
+def _find_existing_user_picture() -> Optional[Path]:
+    """Return the path of the currently-stored user picture if any."""
+    if not AGENT_PROFILE_DIR.exists():
+        return None
+    for ext in ALLOWED_PROFILE_EXTS:
+        path = _user_profile_picture_path(ext)
+        if path.exists():
+            return path
+    return None
+
+
+def _remove_all_user_pictures() -> None:
+    """Delete every `picture.*` file in the profile directory."""
+    if not AGENT_PROFILE_DIR.exists():
+        return
+    for ext in ALLOWED_PROFILE_EXTS:
+        path = _user_profile_picture_path(ext)
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+def get_agent_profile_picture_info() -> Dict[str, Any]:
+    """Get the current profile picture URL and whether it is a custom upload."""
+    from app.onboarding import onboarding_manager
+
+    ext = onboarding_manager.state.agent_profile_picture
+    path = _user_profile_picture_path(ext) if ext else None
+    if path and path.exists():
+        mtime = int(path.stat().st_mtime)
+        return {
+            "url": f"/api/agent-profile-picture?v={mtime}",
+            "has_custom": True,
+        }
+    return {
+        "url": "/api/agent-profile-picture?v=default",
+        "has_custom": False,
+    }
+
+
+def save_agent_profile_picture(
+    ext: str,
+    raw_bytes: bytes,
+) -> Dict[str, Any]:
+    """Persist a user-uploaded agent profile picture.
+
+    Replaces any existing user picture on disk and updates the onboarding
+    state so the new extension is known on future restarts.
+    """
+    from app.onboarding import onboarding_manager
+
+    ext = ext.lower().lstrip(".")
+    if ext not in ALLOWED_PROFILE_EXTS:
+        return {
+            "success": False,
+            "error": f"Unsupported image type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_PROFILE_EXTS))}",
+        }
+    if len(raw_bytes) > MAX_PROFILE_PICTURE_BYTES:
+        return {
+            "success": False,
+            "error": f"Image too large (max {MAX_PROFILE_PICTURE_BYTES // (1024 * 1024)} MB)",
+        }
+    if not raw_bytes:
+        return {"success": False, "error": "Empty image payload"}
+
+    try:
+        AGENT_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        # Ensure exactly one picture.* exists after the write.
+        _remove_all_user_pictures()
+        target = _user_profile_picture_path(ext)
+        target.write_bytes(raw_bytes)
+
+        onboarding_manager.state.agent_profile_picture = ext
+        onboarding_manager.save()
+
+        mtime = int(target.stat().st_mtime)
+        return {
+            "success": True,
+            "url": f"/api/agent-profile-picture?v={mtime}",
+            "has_custom": True,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to save profile picture: {str(e)}",
+        }
+
+
+def remove_agent_profile_picture() -> Dict[str, Any]:
+    """Delete any custom profile picture and revert to the bundled default."""
+    from app.onboarding import onboarding_manager
+
+    try:
+        _remove_all_user_pictures()
+        onboarding_manager.state.agent_profile_picture = None
+        onboarding_manager.save()
+        return {
+            "success": True,
+            "url": f"/api/agent-profile-picture?v=default&t={int(time.time())}",
+            "has_custom": False,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to remove profile picture: {str(e)}",
+        }
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -179,8 +319,12 @@ def get_general_settings() -> Dict[str, Any]:
     """
     from app.onboarding import onboarding_manager
 
+    picture_info = get_agent_profile_picture_info()
+
     return {
         "agent_name": onboarding_manager.state.agent_name or "Agent",
+        "agent_profile_picture_url": picture_info["url"],
+        "agent_profile_picture_has_custom": picture_info["has_custom"],
         # Theme is handled client-side (stored in localStorage)
         # Add more settings here as needed
     }
