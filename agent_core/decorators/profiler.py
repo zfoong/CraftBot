@@ -28,6 +28,8 @@ Configuration:
     Set "auto_save_interval" to N to save after every N loops (0 = only at exit).
 """
 
+from __future__ import annotations
+
 import atexit
 import asyncio
 import functools

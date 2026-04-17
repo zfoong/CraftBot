@@ -9,6 +9,8 @@ Sanitizes user input before injection into LLM prompts to prevent:
 - Format manipulation attacks
 """
 
+from __future__ import annotations
+
 import re
 from typing import Any
 

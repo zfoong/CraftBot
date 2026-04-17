@@ -446,14 +446,17 @@ class UserProfileStep:
         return []
 
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
-        """Validate the form data dict. All fields are optional."""
-        if not isinstance(value, dict):
-            return False, "Expected a dictionary of form values"
-        # Validate approval is a list if present
-        approval = value.get("approval")
-        if approval is not None and not isinstance(approval, list):
-            return False, "Approval settings must be a list"
-        return True, None
+      """Validate the form data dict. All fields are optional."""
+      if not isinstance(value, dict):
+          return False, "Expected a dictionary of form values"
+      user_name = value.get("user_name")
+      if user_name and len(str(user_name)) > 20:
+          return False, "Name must be 20 characters or fewer"
+      # Validate approval is a list if present
+      approval = value.get("approval")
+      if approval is not None and not isinstance(approval, list):
+          return False, "Approval settings must be a list"
+      return True, None
 
     def get_default(self) -> Dict[str, Any]:
         """Return defaults for all fields."""

@@ -1,3 +1,5 @@
+
+from __future__ import annotations
 #!/usr/bin/env python3
 """
 Ontology graph operations: create, query, relate, validate.

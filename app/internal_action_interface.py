@@ -5,6 +5,8 @@ This interface contains all the agent actions calling to the agent
 framework internal functions.
 """
 
+from __future__ import annotations
+
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from app.llm import LLMInterface, LLMCallType
 from app.vlm_interface import VLMInterface
