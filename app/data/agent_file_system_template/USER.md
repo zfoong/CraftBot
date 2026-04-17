@@ -10,14 +10,15 @@
 - **Language:** en
 - **Preferred Tone:** (Ask the users for info)
 - **Response Style:** (Ask the users for info)
+- **Preferred Messaging Platform:** (Ask the users for info)
 
 ## Agent Interaction
 - **Prefer Proactive Assistance:** (Ask the users for info)
 - **Approval Required For:** (Ask the users for info)
 
 ## Life Goals
-- **Goals:** (Ask the users for info)
-- **Help Wanted:** (Ask the users for info)
+
+(Ask the users for info)
 
 ## Personality
 

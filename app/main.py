@@ -56,6 +56,7 @@ _suppress_console_logging_early()
 import argparse
 import asyncio
 import sys
+import pathlib
 
 # Register agent_core state provider and config before importing AgentBase
 # This ensures shared code can access state via get_state()
@@ -64,10 +65,12 @@ from app.state.agent_state import STATE
 
 # CraftBot uses global STATE singleton - always available
 StateRegistry.register(lambda: STATE)
-ConfigRegistry.register_workspace_root(".")
+ConfigRegistry.register_workspace_root(
+    str(pathlib.Path(__file__).parent.parent.resolve())
+)
 
 # Import settings reader (reads directly from settings.json)
-from app.config import get_llm_provider, get_api_key, get_base_url, get_llm_model
+from app.config import get_llm_provider, get_vlm_provider, get_api_key, get_base_url, get_llm_model, get_vlm_model
 from app.agent_base import AgentBase
 
 
@@ -110,11 +113,11 @@ def _parse_cli_args() -> dict:
     return vars(args)
 
 
-def _initial_settings() -> tuple[str, str, str, bool]:
+def _initial_settings() -> tuple:
     """Determine initial provider, API key, and base URL from settings.json.
 
     Returns:
-        Tuple of (provider, api_key, base_url, has_valid_key) where has_valid_key
+        Tuple of (provider, api_key, base_url, model, vlm_provider, vlm_model, has_valid_key) where has_valid_key
         indicates if a working API key was found.
     """
     # Read directly from settings.json
@@ -122,11 +125,13 @@ def _initial_settings() -> tuple[str, str, str, bool]:
     api_key = get_api_key(provider)
     base_url = get_base_url(provider)
     model = get_llm_model()  # None → use registry default for the provider
+    vlm_prov = get_vlm_provider()
+    vlm_mod = get_vlm_model()
 
     # Remote (Ollama) doesn't require API key
     has_key = bool(api_key) or provider == "remote"
 
-    return provider, api_key, base_url, model, has_key
+    return provider, api_key, base_url, model, vlm_prov, vlm_mod, has_key
 
 
 async def main_async() -> None:
@@ -136,7 +141,7 @@ async def main_async() -> None:
     browser_mode = cli_args.get("browser", False)
 
     # Get settings from settings.json
-    provider, api_key, base_url, model, has_valid_key = _initial_settings()
+    provider, api_key, base_url, model, vlm_prov, vlm_mod, has_valid_key = _initial_settings()
 
     # CLI args override settings.json if provided
     if cli_args.get("provider"):
@@ -159,6 +164,8 @@ async def main_async() -> None:
         llm_api_key=api_key,
         llm_base_url=base_url,
         llm_model=model,
+        vlm_provider=vlm_prov,
+        vlm_model=vlm_mod,
         deferred_init=not has_valid_key,
     )
 

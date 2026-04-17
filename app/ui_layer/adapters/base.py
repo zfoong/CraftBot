@@ -15,7 +15,7 @@ from app.ui_layer.components.protocols import (
     InputComponentProtocol,
     FootageComponentProtocol,
 )
-from app.ui_layer.components.types import ChatMessage, ActionItem
+from app.ui_layer.components.types import ChatMessage, ChatMessageOption, ActionItem
 
 if TYPE_CHECKING:
     from app.ui_layer.controller.ui_controller import UIController
@@ -271,12 +271,25 @@ class InterfaceAdapter(ABC):
         from app.onboarding import onboarding_manager
 
         agent_name = onboarding_manager.state.agent_name or "Agent"
+        # Extract options from event data if present
+        raw_options = event.data.get("options")
+        options = None
+        if raw_options and isinstance(raw_options, list):
+            options = [
+                ChatMessageOption(
+                    label=o.get("label", ""),
+                    value=o.get("value", ""),
+                    style=o.get("style", "default"),
+                )
+                for o in raw_options
+            ]
         asyncio.create_task(
             self._display_chat_message(
                 agent_name,
                 event.data.get("message", ""),
                 "agent",
                 task_session_id=event.task_id,
+                options=options,
             )
         )
 
@@ -442,6 +455,7 @@ class InterfaceAdapter(ABC):
         message: str,
         style: str,
         task_session_id: Optional[str] = None,
+        options: Optional[List[ChatMessageOption]] = None,
     ) -> None:
         """
         Display a chat message.
@@ -451,6 +465,7 @@ class InterfaceAdapter(ABC):
             message: Message content
             style: Style identifier
             task_session_id: Optional task session ID for reply feature
+            options: Optional list of interactive options/buttons
         """
         import time
 
@@ -461,6 +476,7 @@ class InterfaceAdapter(ABC):
                 style=style,
                 timestamp=time.time(),
                 task_session_id=task_session_id,
+                options=options,
             )
         )
 
