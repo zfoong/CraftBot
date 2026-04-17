@@ -42,14 +42,13 @@ class TestGeminiClientMultiImage(unittest.TestCase):
         client._timeout = 30
         return client
 
-    def test_method_exists(self):
-        """generate_multimodal_multi_image must exist on GeminiClient."""
+    def test_method_accepts_list(self):
+        """generate_multimodal must accept image_bytes_list."""
         from agent_core.core.llm.google_gemini_client import GeminiClient
-        self.assertTrue(
-            hasattr(GeminiClient, "generate_multimodal_multi_image"),
-            "FAIL: GeminiClient.generate_multimodal_multi_image not found. "
-            "Add it to agent_core/core/llm/google_gemini_client.py"
-        )
+        import inspect
+        sig = inspect.signature(GeminiClient.generate_multimodal)
+        self.assertIn("image_bytes_list", sig.parameters,
+            "FAIL: GeminiClient.generate_multimodal does not accept image_bytes_list.")
 
     def test_payload_contains_multiple_inline_data_parts(self):
         """The API payload must contain one inlineData entry per frame passed in."""
@@ -68,7 +67,7 @@ class TestGeminiClientMultiImage(unittest.TestCase):
         client._post_json = fake_post
 
         frame_bytes = [b"frame1_bytes", b"frame2_bytes", b"frame3_bytes"]
-        result = client.generate_multimodal_multi_image(
+        result = client.generate_multimodal(
             "gemini-2.5-flash",
             text="What is happening?",
             image_bytes_list=frame_bytes,
@@ -109,7 +108,7 @@ class TestGeminiClientMultiImage(unittest.TestCase):
         captured = {}
         client._post_json = lambda path, payload: (captured.update(payload), fake_response)[1]
 
-        client.generate_multimodal_multi_image(
+        client.generate_multimodal(
             "gemini-2.5-flash",
             text="Describe",
             image_bytes_list=[b"img"],
@@ -128,7 +127,7 @@ class TestGeminiClientMultiImage(unittest.TestCase):
         captured = {}
         client._post_json = lambda path, payload: (captured.update(payload), fake_response)[1]
 
-        client.generate_multimodal_multi_image(
+        client.generate_multimodal(
             "gemini-2.5-flash",
             text="Describe",
             image_bytes_list=[b"img"],
@@ -527,6 +526,7 @@ class TestRegressionDescribeImage(unittest.TestCase):
         mock_response.choices = [mock_choice]
         mock_response.usage.prompt_tokens = 10
         mock_response.usage.completion_tokens = 5
+        mock_response.usage.prompt_tokens_details = None  # Prevent MagicMock leak
         vlm.client = MagicMock()
         vlm.client.chat.completions.create.return_value = mock_response
 
@@ -547,6 +547,7 @@ class TestRegressionDescribeImage(unittest.TestCase):
         mock_response.choices = [mock_choice]
         mock_response.usage.prompt_tokens = 10
         mock_response.usage.completion_tokens = 5
+        mock_response.usage.prompt_tokens_details = None  # Prevent MagicMock leak
         vlm.client = MagicMock()
         vlm.client.chat.completions.create.return_value = mock_response
 

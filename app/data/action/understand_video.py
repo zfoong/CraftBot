@@ -2,7 +2,7 @@ from agent_core import action
 
 @action(
     name="understand_video",
-    description="Uses Gemini 1.5 Pro for native video understanding when a Google API key is configured. Falls back to keyframe extraction via OpenCV if no Google API key is available.",
+    description="Uses the configured VLM model (default: Gemini 1.5 Pro) for native video understanding when a Google API key is configured. Falls back to keyframe extraction via OpenCV if no Google API key is available.",
     mode="CLI",
     action_sets=["document_processing", "image"],
     requirement=["google-generativeai"],
@@ -80,7 +80,7 @@ def understand_video(input_data: dict) -> dict:
     if not os.path.isfile(video_path):
         return {'status': 'error', 'summary': '', 'file_path': '', 'file_saved': False, 'message': 'File not found.'}
 
-    from app.config import get_api_key
+    from app.config import get_api_key, get_vlm_model
     api_key = get_api_key('gemini')
 
     if api_key:
@@ -97,7 +97,8 @@ def understand_video(input_data: dict) -> dict:
                 time.sleep(2)
                 video_file = genai.get_file(video_file.name)
                 
-            model = genai.GenerativeModel("gemini-1.5-pro")
+            vlm_model = get_vlm_model() or "gemini-1.5-pro"
+            model = genai.GenerativeModel(vlm_model)
             prompt = query if query else "Understand and describe the contents of this video."
             response = model.generate_content([video_file, prompt])
             

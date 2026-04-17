@@ -217,6 +217,7 @@ class VLMInterface:
         system_prompt: str | None = None,
         user_prompt: str | None = "Describe this image in detail.",
         log_response: bool = True,
+        json_mode: bool = True,
     ) -> str:
         """Describe an image from raw bytes using the VLM.
 
@@ -234,7 +235,10 @@ class VLMInterface:
                 logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
             if self.provider in ("openai", "minimax", "deepseek", "moonshot", "grok"):
-                response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt)
+                if json_mode:
+                    response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt)
+                else:
+                    response = self._openai_describe_bytes_plain(image_bytes, system_prompt, user_prompt)
             elif self.provider == "remote":
                 response = self._ollama_describe_bytes(image_bytes, system_prompt, user_prompt)
             elif self.provider == "gemini":
@@ -311,24 +315,13 @@ class VLMInterface:
     
         logger.info(f"[LLM SEND] OCR request | path={image_path}")
     
-        if self.provider in ("openai", "minimax", "deepseek", "moonshot", "grok"):
-            response = self._openai_describe_bytes_plain(image_bytes, system_prompt, effective_user)
-        elif self.provider == "remote":
-            response = self._ollama_describe_bytes(image_bytes, system_prompt, effective_user)
-        elif self.provider == "gemini":
-            response = self._gemini_describe_bytes(image_bytes, system_prompt, effective_user)
-        elif self.provider == "byteplus":
-            response = self._byteplus_describe_bytes(image_bytes, system_prompt, effective_user)
-        elif self.provider == "anthropic":
-            response = self._anthropic_describe_bytes(image_bytes, system_prompt, effective_user)
-        else:
-            raise RuntimeError(f"Unknown provider {self.provider!r}")
-    
-        cleaned = re.sub(self._CODE_BLOCK_RE, "", response.get("content", "").strip())
-    
-        tokens_used = response.get("tokens_used", 0)
-        if tokens_used:
-            self._set_token_count(self._get_token_count() + tokens_used)
+        cleaned = self.describe_image_bytes(
+            image_bytes,
+            system_prompt=system_prompt,
+            user_prompt=effective_user,
+            log_response=False,  # Logged below
+            json_mode=False,
+        )
     
         logger.info(f"[LLM RECV OCR] {cleaned[:120]}...")
         return cleaned
@@ -451,7 +444,7 @@ class VLMInterface:
         self, frame_bytes_list: list[bytes], sys: str | None, usr: str
     ) -> str:
         """Gemini-specific multi-image frame analysis in a single API call."""
-        result = self._gemini_client.generate_multimodal_multi_image(
+        result = self._gemini_client.generate_multimodal(
             self.model,
             text=usr,
             image_bytes_list=frame_bytes_list,
