@@ -25,6 +25,17 @@ class StepOption:
 
 
 @dataclass
+class FormField:
+    """A field in a multi-field form step (e.g., User Profile)."""
+    name: str                                                   # Field key (e.g., "user_name")
+    label: str                                                  # Display label
+    field_type: str                                             # "text", "select", "multi_checkbox"
+    options: List["StepOption"] = field(default_factory=list)   # For select/checkbox types
+    default: Any = ""                                           # Default value
+    placeholder: str = ""                                       # Hint text
+
+
+@dataclass
 class StepResult:
     """Result of completing an onboarding step."""
     success: bool
@@ -198,22 +209,264 @@ class ApiKeyStep:
 
 
 class AgentNameStep:
-    """Agent name configuration step."""
+    """Agent name + profile picture configuration step."""
 
     name = "agent_name"
-    title = "Agent Name"
-    description = "Give your agent a name (optional)"
+    title = "Agent Identity"
+    description = "Give your agent a name and an optional avatar."
     required = False
+
+    ALLOWED_PICTURE_EXTS = {"png", "jpg", "jpeg", "webp", "gif"}
+
+    def get_form_fields(self) -> List[FormField]:
+        return [
+            FormField(
+                name="agent_name",
+                label="Agent Name",
+                field_type="text",
+                default="CraftBot",
+                placeholder="Enter a name",
+            ),
+            FormField(
+                name="agent_profile_picture",
+                label="Avatar",
+                field_type="image_upload",
+                default="",
+                placeholder="",
+            ),
+        ]
 
     def get_options(self) -> List[StepOption]:
         return []
 
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
-        # Optional, any string is valid
-        return True, None
+        # Accept legacy string submissions (plain text name) for backward compat.
+        if isinstance(value, str):
+            if len(value) > 20:
+                return False, "Agent name must be 20 characters or fewer"
+            return True, None
+        if isinstance(value, dict):
+            agent_name = value.get("agent_name")
+            if agent_name and len(str(agent_name)) > 20:
+                return False, "Agent name must be 20 characters or fewer"
+            picture = value.get("agent_profile_picture")
+            if picture not in (None, ""):
+                if not isinstance(picture, str) or picture.lower() not in self.ALLOWED_PICTURE_EXTS:
+                    return False, "Unsupported avatar format"
+            return True, None
+        return False, "Invalid agent identity submission"
 
-    def get_default(self) -> str:
-        return "CraftBot"
+    def get_default(self) -> Dict[str, Any]:
+        return {
+            "agent_name": "CraftBot",
+            "agent_profile_picture": "",
+        }
+
+
+class UserProfileStep:
+    """User profile form step — collects identity and preferences in a compact form."""
+
+    name = "user_profile"
+    title = "User Profile"
+    description = "Tell us about yourself to personalize your experience."
+    required = False
+
+    TONE_OPTIONS = [
+        ("casual", "Casual"),
+        ("formal", "Formal"),
+        ("friendly", "Friendly"),
+        ("professional", "Professional"),
+    ]
+
+    PROACTIVITY_OPTIONS = [
+        ("low", "Low", "Wait for instructions"),
+        ("medium", "Medium", "Suggest when relevant"),
+        ("high", "High", "Proactively suggest things"),
+    ]
+
+    APPROVAL_OPTIONS = [
+        ("messages", "Messages", "Sending messages on your behalf"),
+        ("scheduling", "Scheduling", "Creating/modifying schedules"),
+        ("file_changes", "File Changes", "Modifying files on your system"),
+        ("purchases", "Purchases", "Making purchases or payments"),
+        ("all", "All Actions", "Ask approval for everything"),
+    ]
+
+    PLATFORM_OPTIONS = [
+        ("telegram", "Telegram"),
+        ("whatsapp", "WhatsApp"),
+        ("discord", "Discord"),
+        ("slack", "Slack"),
+        ("tui", "CraftBot Interface"),
+    ]
+
+    @staticmethod
+    def fetch_geolocation() -> str:
+        """Fetch user's location from IP. Returns 'City, Country' or '' on failure."""
+        try:
+            import requests
+            resp = requests.get("http://ip-api.com/json", timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                city = data.get("city", "")
+                country = data.get("country", "")
+                if city and country:
+                    return f"{city}, {country}"
+                return country or city or ""
+        except Exception:
+            pass
+        return ""
+
+    @staticmethod
+    def get_language_options() -> List[StepOption]:
+        """Get a dynamic list of languages using babel. Pre-select based on OS locale."""
+        try:
+            from babel import Locale
+            import locale as _locale
+
+            # Get OS locale for pre-selection
+            try:
+                os_locale = _locale.getdefaultlocale()[0] or "en_US"
+                os_lang = os_locale.split("_")[0]
+            except Exception:
+                os_lang = "en"
+
+            # Get all language display names from babel (in English)
+            lang_names = Locale("en").languages
+
+            # Filter to commonly-used languages (those with 2-letter ISO codes)
+            # and sort by display name
+            seen = set()
+            options = []
+            for code, display_name in sorted(lang_names.items(), key=lambda x: x[1]):
+                # Only include 2-letter codes (ISO 639-1) to keep list manageable
+                if len(code) == 2 and code not in seen:
+                    seen.add(code)
+                    options.append(StepOption(
+                        value=code,
+                        label=display_name,
+                        description=code,
+                        default=(code == os_lang),
+                    ))
+            return options
+        except ImportError:
+            # Fallback if babel not installed — return a minimal list
+            return [
+                StepOption(value="en", label="English", description="en", default=True),
+                StepOption(value="zh", label="Chinese", description="zh"),
+                StepOption(value="es", label="Spanish", description="es"),
+                StepOption(value="fr", label="French", description="fr"),
+                StepOption(value="de", label="German", description="de"),
+                StepOption(value="ja", label="Japanese", description="ja"),
+                StepOption(value="ko", label="Korean", description="ko"),
+                StepOption(value="pt", label="Portuguese", description="pt"),
+                StepOption(value="ru", label="Russian", description="ru"),
+                StepOption(value="ar", label="Arabic", description="ar"),
+            ]
+
+    def get_form_fields(self) -> List[FormField]:
+        """Return all form fields for the user profile step."""
+        # Fetch defaults
+        try:
+            location_default = self.fetch_geolocation()
+        except Exception:
+            location_default = ""
+
+        language_options = self.get_language_options()
+
+        # Find pre-selected language
+        lang_default = "en"
+        for opt in language_options:
+            if opt.default:
+                lang_default = opt.value
+                break
+
+        return [
+            FormField(
+                name="user_name",
+                label="Your Name",
+                field_type="text",
+                placeholder="What should we call you?",
+                default="",
+            ),
+            FormField(
+                name="location",
+                label="Location",
+                field_type="text",
+                placeholder="City, Country",
+                default=location_default,
+            ),
+            FormField(
+                name="language",
+                label="CraftBot's Language",
+                field_type="select",
+                options=language_options,
+                default=lang_default,
+                placeholder="The language CraftBot will communicate in (not the interface language)",
+            ),
+            FormField(
+                name="tone",
+                label="Communication Tone",
+                field_type="select",
+                options=[
+                    StepOption(value=val, label=label, default=(val == "casual"))
+                    for val, label in self.TONE_OPTIONS
+                ],
+                default="casual",
+            ),
+            FormField(
+                name="proactivity",
+                label="Proactive Level",
+                field_type="select",
+                options=[
+                    StepOption(value=val, label=label, description=desc, default=(val == "medium"))
+                    for val, label, desc in self.PROACTIVITY_OPTIONS
+                ],
+                default="medium",
+            ),
+            FormField(
+                name="approval",
+                label="Require Approval For",
+                field_type="multi_checkbox",
+                options=[
+                    StepOption(value=val, label=label, description=desc)
+                    for val, label, desc in self.APPROVAL_OPTIONS
+                ],
+                default=[],
+            ),
+            FormField(
+                name="messaging_platform",
+                label="Preferred Notification Platform",
+                field_type="select",
+                options=[
+                    StepOption(value=val, label=label, default=(val == "tui"))
+                    for val, label in self.PLATFORM_OPTIONS
+                ],
+                default="tui",
+            ),
+        ]
+
+    def get_options(self) -> List[StepOption]:
+        # Not a single-select step — form fields are used instead
+        return []
+
+    def validate(self, value: Any) -> tuple[bool, Optional[str]]:
+      """Validate the form data dict. All fields are optional."""
+      if not isinstance(value, dict):
+          return False, "Expected a dictionary of form values"
+      user_name = value.get("user_name")
+      if user_name and len(str(user_name)) > 20:
+          return False, "Name must be 20 characters or fewer"
+      # Validate approval is a list if present
+      approval = value.get("approval")
+      if approval is not None and not isinstance(approval, list):
+          return False, "Approval settings must be a list"
+      return True, None
+
+    def get_default(self) -> Dict[str, Any]:
+        """Return defaults for all fields."""
+        fields = self.get_form_fields()
+        return {f.name: f.default for f in fields}
 
 
 class MCPStep:
@@ -343,6 +596,7 @@ ALL_STEPS = [
     ProviderStep,
     ApiKeyStep,
     AgentNameStep,
+    UserProfileStep,
     MCPStep,
     SkillsStep,
 ]

@@ -41,6 +41,8 @@ interface WebSocketState {
   // Onboarding state
   needsHardOnboarding: boolean
   agentName: string
+  agentProfilePictureUrl: string
+  agentProfilePictureHasCustom: boolean
   onboardingStep: OnboardingStep | null
   onboardingError: string | null
   onboardingLoading: boolean
@@ -89,6 +91,11 @@ interface WebSocketContextType extends WebSocketState {
   startLocalLLM: () => void
   requestSuggestedModels: () => void
   pullOllamaModel: (model: string) => void
+  // Option click (interactive buttons in chat)
+  sendOptionClick: (value: string, sessionId?: string, messageId?: string) => void
+  // Agent profile picture
+  uploadAgentProfilePicture: (name: string, mimeType: string, contentBase64: string) => void
+  removeAgentProfilePicture: () => void
 }
 
 // Initialize lastSeenMessageId from localStorage
@@ -127,6 +134,8 @@ const defaultState: WebSocketState = {
   // Onboarding state
   needsHardOnboarding: false,
   agentName: 'Agent',
+  agentProfilePictureUrl: '/api/agent-profile-picture',
+  agentProfilePictureHasCustom: false,
   onboardingStep: null,
   onboardingError: null,
   onboardingLoading: false,
@@ -270,6 +279,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           demoMode: data.demoMode || false,
           needsHardOnboarding: data.needsHardOnboarding || false,
           agentName: data.agentName || 'Agent',
+          agentProfilePictureUrl:
+            (data as InitialState & { agentProfilePictureUrl?: string }).agentProfilePictureUrl
+            || '/api/agent-profile-picture',
+          agentProfilePictureHasCustom:
+            (data as InitialState & { agentProfilePictureHasCustom?: boolean }).agentProfilePictureHasCustom
+            || false,
           hasMoreMessages: initMessages.length >= 50,
           hasMoreActions: initActions.filter((a: ActionItem) => a.itemType === 'task').length >= 15,
         }))
@@ -521,7 +536,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
 
       case 'onboarding_complete': {
-        const response = msg.data as unknown as OnboardingCompleteResponse
+        const response = msg.data as unknown as OnboardingCompleteResponse & {
+          agentProfilePictureUrl?: string
+          agentProfilePictureHasCustom?: boolean
+        }
         if (response.success) {
           setState(prev => ({
             ...prev,
@@ -530,6 +548,43 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             onboardingLoading: false,
             onboardingError: null,
             agentName: response.agentName || 'Agent',
+            agentProfilePictureUrl:
+              response.agentProfilePictureUrl || prev.agentProfilePictureUrl,
+            agentProfilePictureHasCustom:
+              response.agentProfilePictureHasCustom ?? prev.agentProfilePictureHasCustom,
+          }))
+        }
+        break
+      }
+
+      case 'agent_profile_picture_upload': {
+        const r = msg.data as unknown as {
+          success: boolean
+          url?: string
+          has_custom?: boolean
+          error?: string
+        }
+        if (r.success && r.url) {
+          setState(prev => ({
+            ...prev,
+            agentProfilePictureUrl: r.url!,
+            agentProfilePictureHasCustom: r.has_custom ?? true,
+          }))
+        }
+        break
+      }
+
+      case 'agent_profile_picture_remove': {
+        const r = msg.data as unknown as {
+          success: boolean
+          url?: string
+          has_custom?: boolean
+        }
+        if (r.success) {
+          setState(prev => ({
+            ...prev,
+            agentProfilePictureUrl: r.url || '/api/agent-profile-picture',
+            agentProfilePictureHasCustom: r.has_custom ?? false,
           }))
         }
         break
@@ -775,6 +830,32 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const sendOptionClick = useCallback((value: string, sessionId?: string, messageId?: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'option_click', value, sessionId, messageId }))
+    }
+  }, [])
+
+  const uploadAgentProfilePicture = useCallback(
+    (name: string, mimeType: string, contentBase64: string) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'agent_profile_picture_upload',
+          name,
+          mimeType,
+          content: contentBase64,
+        }))
+      }
+    },
+    []
+  )
+
+  const removeAgentProfilePicture = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'agent_profile_picture_remove' }))
+    }
+  }, [])
+
   const openFile = useCallback((path: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'open_file', path }))
@@ -948,6 +1029,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         startLocalLLM,
         requestSuggestedModels,
         pullOllamaModel,
+        sendOptionClick,
+        uploadAgentProfilePicture,
+        removeAgentProfilePicture,
       }}
     >
       {children}

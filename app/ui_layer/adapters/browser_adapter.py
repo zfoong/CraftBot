@@ -200,6 +200,17 @@ class BrowserChatComponent(ChatComponentProtocol):
                         )
                         for att in stored.attachments
                     ]
+                options = None
+                if stored.options:
+                    from app.ui_layer.components.types import ChatMessageOption
+                    options = [
+                        ChatMessageOption(
+                            label=o.get("label", ""),
+                            value=o.get("value", ""),
+                            style=o.get("style", "default"),
+                        )
+                        for o in stored.options
+                    ]
                 self._messages.append(ChatMessage(
                     sender=stored.sender,
                     content=stored.content,
@@ -208,6 +219,8 @@ class BrowserChatComponent(ChatComponentProtocol):
                     message_id=stored.message_id,
                     attachments=attachments,
                     task_session_id=stored.task_session_id,
+                    options=options,
+                    option_selected=stored.option_selected,
                 ))
         except Exception:
             # Storage may not be available, continue without persistence
@@ -233,6 +246,12 @@ class BrowserChatComponent(ChatComponentProtocol):
                         }
                         for att in message.attachments
                     ]
+                options_data = None
+                if message.options:
+                    options_data = [
+                        {"label": o.label, "value": o.value, "style": o.style}
+                        for o in message.options
+                    ]
                 stored = StoredChatMessage(
                     message_id=message.message_id or f"{message.sender}:{message.timestamp}",
                     sender=message.sender,
@@ -241,6 +260,7 @@ class BrowserChatComponent(ChatComponentProtocol):
                     timestamp=message.timestamp,
                     attachments=attachments_data,
                     task_session_id=message.task_session_id,
+                    options=options_data,
                 )
                 self._storage.insert_message(stored)
             except Exception:
@@ -271,6 +291,15 @@ class BrowserChatComponent(ChatComponentProtocol):
         # Include task session ID for reply feature
         if message.task_session_id:
             message_data["taskSessionId"] = message.task_session_id
+
+        # Include options/buttons if present
+        if message.options:
+            message_data["options"] = [
+                {"label": o.label, "value": o.value, "style": o.style}
+                for o in message.options
+            ]
+        if message.option_selected:
+            message_data["optionSelected"] = message.option_selected
 
         await self._adapter._broadcast({
             "type": "chat_message",
@@ -320,6 +349,17 @@ class BrowserChatComponent(ChatComponentProtocol):
                         )
                         for att in s.attachments
                     ]
+                options = None
+                if s.options:
+                    from app.ui_layer.components.types import ChatMessageOption
+                    options = [
+                        ChatMessageOption(
+                            label=o.get("label", ""),
+                            value=o.get("value", ""),
+                            style=o.get("style", "default"),
+                        )
+                        for o in s.options
+                    ]
                 messages.append(ChatMessage(
                     sender=s.sender,
                     content=s.content,
@@ -327,6 +367,8 @@ class BrowserChatComponent(ChatComponentProtocol):
                     timestamp=s.timestamp,
                     message_id=s.message_id,
                     attachments=attachments,
+                    options=options,
+                    option_selected=s.option_selected,
                 ))
             return messages
         except Exception:
@@ -866,6 +908,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         self._app.router.add_get("/api/state", self._state_handler)
         self._app.router.add_get("/api/theme.css", self._theme_css_handler)
         self._app.router.add_get("/api/workspace/{path:.*}", self._workspace_file_handler)
+        self._app.router.add_get("/api/agent-profile-picture", self._agent_profile_picture_handler)
 
         # Serve Vite-built frontend (production)
         frontend_dist = Path(__file__).parent.parent / "browser" / "frontend" / "dist"
@@ -955,10 +998,9 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         from aiohttp import web, WSMsgType
         import asyncio
 
-        # Simple WebSocket configuration - no heartbeat (client handles reconnect)
         ws = web.WebSocketResponse(
             max_msg_size=100 * 1024 * 1024,
-            timeout=None,  # No timeout - let messages flow naturally
+            heartbeat=30.0,  # Send ping every 30s to keep connection alive
         )
         
         try:
@@ -967,7 +1009,18 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             print(f"[BROWSER ADAPTER] Failed to prepare WebSocket: {e}")
             return ws
         
+        is_first_client = len(self._ws_clients) == 0
         self._ws_clients.add(ws)
+
+        # Trigger soft onboarding on first client connection so the UI
+        # is ready to receive the task creation event.
+        if is_first_client:
+            from app.onboarding import onboarding_manager
+            if onboarding_manager.needs_soft_onboarding:
+                agent = self._controller.agent
+                if agent:
+                    import asyncio
+                    asyncio.create_task(agent.trigger_soft_onboarding())
 
         # Send initial state
         try:
@@ -1124,6 +1177,12 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             task_id = data.get("taskId", "")
             await self._handle_task_cancel(task_id)
 
+        elif msg_type == "option_click":
+            value = data.get("value", "")
+            session_id = data.get("sessionId", "")
+            message_id = data.get("messageId", "")
+            await self._handle_option_click(value, session_id, message_id)
+
         # Settings operations
         elif msg_type == "settings_get":
             await self._handle_settings_get()
@@ -1144,6 +1203,12 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         elif msg_type == "agent_file_restore":
             filename = data.get("filename", "")
             await self._handle_agent_file_restore(filename)
+
+        elif msg_type == "agent_profile_picture_upload":
+            await self._handle_agent_profile_picture_upload(data)
+
+        elif msg_type == "agent_profile_picture_remove":
+            await self._handle_agent_profile_picture_remove()
 
         elif msg_type == "reset":
             await self._handle_reset()
@@ -1321,6 +1386,11 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             name = data.get("name", "")
             description = data.get("description", "")
             await self._handle_skill_template(name, description)
+
+        elif msg_type == "skill_run":
+            name = data.get("name", "")
+            args_text = data.get("args", "")
+            await self._handle_skill_run(name, args_text)
 
         # Integration handlers
         elif msg_type == "integration_list":
@@ -1554,6 +1624,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                         ],
                         "default": controller.get_step_default(),
                         "provider": getattr(step, "provider", None),
+                        "form_fields": self._get_step_form_fields(step),
                     },
                 },
             })
@@ -1566,6 +1637,27 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "error": str(e),
                 },
             })
+
+    @staticmethod
+    def _get_step_form_fields(step) -> Optional[list]:
+        """Extract form field definitions from a step, if it supports them."""
+        form_fields = getattr(step, 'get_form_fields', lambda: [])()
+        if not form_fields:
+            return None
+        return [
+            {
+                "name": f.name,
+                "label": f.label,
+                "field_type": f.field_type,
+                "options": [
+                    {"value": o.value, "label": o.label, "description": o.description, "default": o.default}
+                    for o in f.options
+                ],
+                "default": f.default,
+                "placeholder": f.placeholder,
+            }
+            for f in form_fields
+        ]
 
     async def _handle_onboarding_step_submit(self, value: Any) -> None:
         """Submit a value for the current onboarding step."""
@@ -1635,11 +1727,15 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                 # Onboarding complete - controller._complete() already called
                 from app.onboarding import onboarding_manager
 
+                from app.ui_layer.settings.general_settings import get_agent_profile_picture_info
+                picture_info = get_agent_profile_picture_info()
                 await self._broadcast({
                     "type": "onboarding_complete",
                     "data": {
                         "success": True,
                         "agentName": onboarding_manager.state.agent_name or "Agent",
+                        "agentProfilePictureUrl": picture_info["url"],
+                        "agentProfilePictureHasCustom": picture_info["has_custom"],
                     },
                 })
                 # Clear cached controller for fresh state
@@ -1674,6 +1770,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                             ],
                             "default": controller.get_step_default(),
                             "provider": getattr(step, "provider", None),
+                            "form_fields": self._get_step_form_fields(step),
                         },
                     },
                 })
@@ -1711,11 +1808,15 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             if controller.is_complete:
                 from app.onboarding import onboarding_manager
 
+                from app.ui_layer.settings.general_settings import get_agent_profile_picture_info
+                picture_info = get_agent_profile_picture_info()
                 await self._broadcast({
                     "type": "onboarding_complete",
                     "data": {
                         "success": True,
                         "agentName": onboarding_manager.state.agent_name or "Agent",
+                        "agentProfilePictureUrl": picture_info["url"],
+                        "agentProfilePictureHasCustom": picture_info["has_custom"],
                     },
                 })
                 if hasattr(self, "_onboarding_controller"):
@@ -1805,6 +1906,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                         ],
                         "default": controller.get_step_default(),
                         "provider": getattr(step, "provider", None),
+                        "form_fields": self._get_step_form_fields(step),
                     },
                 },
             })
@@ -1979,6 +2081,27 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                 },
             })
 
+    async def _handle_option_click(self, value: str, session_id: str, message_id: str) -> None:
+        """Handle a user clicking an option button in a chat message."""
+        try:
+            # Mark the option as selected in storage and in-memory
+            if self._chat and message_id:
+                if self._chat._storage:
+                    try:
+                        self._chat._storage.update_option_selected(message_id, value)
+                    except Exception:
+                        pass
+                # Update in-memory message so refreshes reflect the selection
+                for m in self._chat._messages:
+                    if m.message_id == message_id:
+                        m.option_selected = value
+                        break
+
+            # Route to the controller
+            await self._controller.handle_option_click(value, session_id)
+        except Exception as e:
+            logger.error(f"[OPTION_CLICK] Error handling option click: {e}", exc_info=True)
+
     # ─────────────────────────────────────────────────────────────────────
     # Settings Operation Handlers
     # ─────────────────────────────────────────────────────────────────────
@@ -1990,6 +2113,12 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             settings = {
                 "agentName": result.get("agent_name", "CraftBot"),
                 "theme": "dark",  # Theme is managed client-side
+                "agentProfilePictureUrl": result.get(
+                    "agent_profile_picture_url", "/api/agent-profile-picture"
+                ),
+                "agentProfilePictureHasCustom": result.get(
+                    "agent_profile_picture_has_custom", False
+                ),
             }
 
             await self._broadcast({
@@ -3197,9 +3326,10 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "name": name,
                 },
             })
-            # Refresh the list
+            # Refresh the list and sync skill commands
             if success:
                 await self._handle_skill_list()
+                self._controller.sync_skill_commands()
         except Exception as e:
             await self._broadcast({
                 "type": "skill_enable",
@@ -3222,9 +3352,10 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "name": name,
                 },
             })
-            # Refresh the list
+            # Refresh the list and sync skill commands
             if success:
                 await self._handle_skill_list()
+                self._controller.sync_skill_commands()
         except Exception as e:
             await self._broadcast({
                 "type": "skill_disable",
@@ -3246,15 +3377,37 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "message": message,
                 },
             })
-            # Refresh the list
+            # Refresh the list and sync skill commands
             if success:
                 await self._handle_skill_list()
+                self._controller.sync_skill_commands()
         except Exception as e:
             await self._broadcast({
                 "type": "skill_reload",
                 "data": {
                     "success": False,
                     "error": str(e),
+                },
+            })
+
+    async def _handle_skill_run(self, name: str, args_text: str = "") -> None:
+        """Run a skill by invoking it through the controller."""
+        try:
+            await self._controller.invoke_skill(name, args_text, self._adapter_id)
+            await self._broadcast({
+                "type": "skill_run",
+                "data": {
+                    "success": True,
+                    "name": name,
+                },
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "skill_run",
+                "data": {
+                    "success": False,
+                    "error": str(e),
+                    "name": name,
                 },
             })
 
@@ -4311,6 +4464,13 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     ]
                 if m.task_session_id:
                     msg_data["taskSessionId"] = m.task_session_id
+                if m.options:
+                    msg_data["options"] = [
+                        {"label": o.label, "value": o.value, "style": o.style}
+                        for o in m.options
+                    ]
+                if m.option_selected:
+                    msg_data["optionSelected"] = m.option_selected
                 messages_data.append(msg_data)
 
             await self._broadcast({
@@ -4542,6 +4702,71 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                     "error": str(e),
                 },
             })
+
+    async def _handle_agent_profile_picture_upload(self, data: Dict[str, Any]) -> None:
+        """Handle uploading a new agent profile picture."""
+        from app.ui_layer.settings.general_settings import (
+            PROFILE_MIME_TO_EXT,
+            ALLOWED_PROFILE_EXTS,
+            MAX_PROFILE_PICTURE_BYTES,
+            save_agent_profile_picture,
+        )
+
+        try:
+            name = data.get("name", "")
+            # Accept "mimeType" (preferred — avoids collision with the envelope "type" key)
+            # and fall back to legacy "type" for compatibility.
+            mime_type = (data.get("mimeType") or data.get("type") or "").lower()
+            content_b64 = data.get("content", "")
+
+            if not content_b64:
+                raise ValueError("No content provided")
+
+            # Resolve extension from MIME first, then fall back to filename.
+            ext: Optional[str] = PROFILE_MIME_TO_EXT.get(mime_type)
+            if not ext and name:
+                guess = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                if guess in ALLOWED_PROFILE_EXTS:
+                    ext = guess
+            if not ext:
+                raise ValueError(
+                    f"Unsupported image type. Allowed: {', '.join(sorted(ALLOWED_PROFILE_EXTS))}"
+                )
+
+            raw_bytes = base64.b64decode(content_b64)
+            if len(raw_bytes) > MAX_PROFILE_PICTURE_BYTES:
+                raise ValueError(
+                    f"Image too large (max {MAX_PROFILE_PICTURE_BYTES // (1024 * 1024)} MB)"
+                )
+
+            result = save_agent_profile_picture(ext, raw_bytes)
+
+            await self._broadcast({
+                "type": "agent_profile_picture_upload",
+                "data": result,
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "agent_profile_picture_upload",
+                "data": {
+                    "success": False,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_agent_profile_picture_remove(self) -> None:
+        """Handle removing the custom agent profile picture."""
+        from app.ui_layer.settings.general_settings import remove_agent_profile_picture
+
+        try:
+            result = remove_agent_profile_picture()
+        except Exception as e:
+            result = {"success": False, "error": str(e)}
+
+        await self._broadcast({
+            "type": "agent_profile_picture_remove",
+            "data": result,
+        })
 
     async def _handle_open_file(self, file_path: str) -> None:
         """Open a file with the system default application."""
@@ -4810,11 +5035,14 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
     def _get_initial_state(self) -> Dict[str, Any]:
         """Get initial state for new connections."""
         from app.onboarding import onboarding_manager
+        from app.ui_layer.settings.general_settings import get_agent_profile_picture_info
 
         state = self._controller.state
         metrics = self._metrics_collector.get_metrics()
 
         from app.config import get_app_version
+
+        picture_info = get_agent_profile_picture_info()
 
         return {
             "version": get_app_version(),
@@ -4823,6 +5051,8 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             "demoMode": os.getenv("DEMO_MODE", "").lower() == "true",
             "needsHardOnboarding": onboarding_manager.needs_hard_onboarding,
             "agentName": onboarding_manager.state.agent_name or "Agent",
+            "agentProfilePictureUrl": picture_info["url"],
+            "agentProfilePictureHasCustom": picture_info["has_custom"],
             "currentTask": {
                 "id": state.current_task_id,
                 "name": state.current_task_name,
@@ -4845,6 +5075,11 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                         for att in m.attachments
                     ]} if m.attachments else {}),
                     **({"taskSessionId": m.task_session_id} if m.task_session_id else {}),
+                    **({"options": [
+                        {"label": o.label, "value": o.value, "style": o.style}
+                        for o in m.options
+                    ]} if m.options else {}),
+                    **({"optionSelected": m.option_selected} if m.option_selected else {}),
                 }
                 for m in self._chat.get_messages()
             ],
@@ -4908,6 +5143,49 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
 
         css = self._theme_adapter.get_theme_css()
         return web.Response(text=css, content_type="text/css")
+
+    async def _agent_profile_picture_handler(self, request: "web.Request") -> "web.Response":
+        """Serve the current agent profile picture (user upload or bundled default)."""
+        from aiohttp import web
+
+        from app.ui_layer.settings.general_settings import (
+            AGENT_PROFILE_DIR,
+            AGENT_PROFILE_DEFAULT_FILENAME,
+            EXT_TO_MIME,
+            _user_profile_picture_path,
+        )
+        from app.onboarding import onboarding_manager
+
+        ext = onboarding_manager.state.agent_profile_picture
+        target: Optional[Path] = None
+        mime_type = "image/png"
+
+        if ext:
+            candidate = _user_profile_picture_path(ext)
+            if candidate.exists():
+                target = candidate
+                mime_type = EXT_TO_MIME.get(ext.lower(), "application/octet-stream")
+
+        if target is None:
+            default_path = AGENT_PROFILE_DIR / AGENT_PROFILE_DEFAULT_FILENAME
+            if default_path.exists():
+                target = default_path
+                mime_type = "image/png"
+
+        if target is None:
+            raise web.HTTPNotFound(reason="Avatar not available")
+
+        try:
+            content = target.read_bytes()
+            return web.Response(
+                body=content,
+                content_type=mime_type,
+                headers={
+                    "Cache-Control": "no-cache, max-age=0",
+                },
+            )
+        except Exception as e:
+            raise web.HTTPInternalServerError(reason=str(e))
 
     async def _workspace_file_handler(self, request: "web.Request") -> "web.Response":
         """Serve files from the workspace directory."""

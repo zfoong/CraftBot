@@ -10,6 +10,7 @@ from app.onboarding.interfaces.steps import (
     ProviderStep,
     ApiKeyStep,
     AgentNameStep,
+    UserProfileStep,
     MCPStep,
     SkillsStep,
 )
@@ -43,6 +44,7 @@ class TUIHardOnboarding(OnboardingInterface):
             ProviderStep(),
             None,  # ApiKeyStep - created dynamically based on provider
             AgentNameStep(),
+            UserProfileStep(),
             MCPStep(),
             SkillsStep(),
         ]
@@ -122,9 +124,16 @@ class TUIHardOnboarding(OnboardingInterface):
                 self._app._interface._agent.llm.reinitialize(provider)
                 logger.info(f"[ONBOARDING] Reinitialized LLM with provider: {provider}")
 
+        # Write user profile data to USER.md
+        profile_data = self._collected_data.get("user_profile", {})
+        if profile_data:
+            from app.onboarding.profile_writer import write_profile_to_user_md
+            write_profile_to_user_md(profile_data)
+
         # Mark hard onboarding as complete
         agent_name = self._collected_data.get("agent_name", "Agent")
-        onboarding_manager.mark_hard_complete(agent_name=agent_name)
+        user_name = profile_data.get("user_name") if profile_data else None
+        onboarding_manager.mark_hard_complete(user_name=user_name, agent_name=agent_name)
 
         logger.info("[ONBOARDING] Hard onboarding completed successfully")
 

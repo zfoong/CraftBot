@@ -21,6 +21,8 @@ Usage:
     pointers = memory.retrieve("user preferences")
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from agent_core.core.registry.base import ComponentRegistry

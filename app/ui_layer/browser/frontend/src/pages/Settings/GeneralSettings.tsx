@@ -9,6 +9,8 @@ import {
   Loader2,
   Download,
   RefreshCw,
+  Upload,
+  Trash2,
 } from 'lucide-react'
 import { Button, Badge, ConfirmModal } from '../../components/ui'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -45,7 +47,7 @@ function getInitialAgentName(): string {
 
 export function GeneralSettings() {
   const { send, onMessage, isConnected } = useSettingsWebSocket()
-  const { version } = useWebSocket()
+  const { version, agentProfilePictureUrl, agentProfilePictureHasCustom } = useWebSocket()
   const { theme: globalTheme, setTheme: setGlobalTheme } = useTheme()
   const [agentName, setAgentName] = useState(getInitialAgentName)
   const [initialAgentName, setInitialAgentName] = useState(getInitialAgentName)
@@ -55,6 +57,21 @@ export function GeneralSettings() {
   const [resetStatus, setResetStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+
+  // Agent profile picture
+  const [profilePictureUrl, setProfilePictureUrl] = useState<string>(agentProfilePictureUrl)
+  const [hasCustomPicture, setHasCustomPicture] = useState<boolean>(agentProfilePictureHasCustom)
+  const [pictureError, setPictureError] = useState<string | null>(null)
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false)
+  const pictureInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Keep local preview in sync with the central context value (e.g. after reconnect)
+  useEffect(() => {
+    setProfilePictureUrl(agentProfilePictureUrl)
+  }, [agentProfilePictureUrl])
+  useEffect(() => {
+    setHasCustomPicture(agentProfilePictureHasCustom)
+  }, [agentProfilePictureHasCustom])
 
   // Agent file states
   const [userMdContent, setUserMdContent] = useState('')
@@ -134,10 +151,45 @@ export function GeneralSettings() {
     // Set up message handlers
     const cleanups = [
       onMessage('settings_get', (data: unknown) => {
-        const d = data as { success: boolean; settings?: { agentName: string; theme: string } }
+        const d = data as {
+          success: boolean
+          settings?: {
+            agentName: string
+            theme: string
+            agentProfilePictureUrl?: string
+            agentProfilePictureHasCustom?: boolean
+          }
+        }
         if (d.success && d.settings) {
           setAgentName(d.settings.agentName)
           setTheme(d.settings.theme)
+          if (d.settings.agentProfilePictureUrl) {
+            setProfilePictureUrl(d.settings.agentProfilePictureUrl)
+          }
+          if (typeof d.settings.agentProfilePictureHasCustom === 'boolean') {
+            setHasCustomPicture(d.settings.agentProfilePictureHasCustom)
+          }
+        }
+      }),
+      onMessage('agent_profile_picture_upload', (data: unknown) => {
+        const d = data as { success: boolean; url?: string; has_custom?: boolean; error?: string }
+        setIsUploadingPicture(false)
+        if (d.success && d.url) {
+          setProfilePictureUrl(d.url)
+          setHasCustomPicture(d.has_custom ?? true)
+          setPictureError(null)
+        } else {
+          setPictureError(d.error || 'Upload failed')
+        }
+      }),
+      onMessage('agent_profile_picture_remove', (data: unknown) => {
+        const d = data as { success: boolean; url?: string; has_custom?: boolean; error?: string }
+        if (d.success) {
+          setProfilePictureUrl(d.url || '/api/agent-profile-picture')
+          setHasCustomPicture(d.has_custom ?? false)
+          setPictureError(null)
+        } else {
+          setPictureError(d.error || 'Remove failed')
         }
       }),
       onMessage('settings_update', (data: unknown) => {
@@ -292,6 +344,41 @@ export function GeneralSettings() {
     setTimeout(() => setSaveStatus('idle'), 3000)
   }
 
+  const handlePictureSelect = () => {
+    pictureInputRef.current?.click()
+  }
+
+  const handlePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''  // allow re-selecting the same file later
+    if (!file) return
+
+    setPictureError(null)
+    setIsUploadingPicture(true)
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      // Strip data URL prefix → raw base64
+      const base64 = result.includes(',') ? result.split(',', 2)[1] : result
+      send('agent_profile_picture_upload', {
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        content: base64,
+      })
+    }
+    reader.onerror = () => {
+      setIsUploadingPicture(false)
+      setPictureError('Could not read file')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handlePictureRemove = () => {
+    setPictureError(null)
+    send('agent_profile_picture_remove')
+  }
+
   const handleReset = () => {
     confirm({
       title: 'Reset Agent',
@@ -384,6 +471,58 @@ export function GeneralSettings() {
       </div>
 
       <div className={styles.settingsForm}>
+        <div className={styles.formGroup}>
+          <label>Avatar</label>
+          <div className={styles.profilePictureRow}>
+            <img
+              src={profilePictureUrl}
+              alt="Agent avatar"
+              className={styles.profilePreview}
+            />
+            <div className={styles.profilePictureActions}>
+              <input
+                ref={pictureInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={handlePictureChange}
+                style={{ display: 'none' }}
+              />
+              <Button
+                variant="secondary"
+                onClick={handlePictureSelect}
+                disabled={isUploadingPicture}
+                icon={
+                  isUploadingPicture ? (
+                    <Loader2 size={14} className={styles.spinning} />
+                  ) : (
+                    <Upload size={14} />
+                  )
+                }
+              >
+                {isUploadingPicture ? 'Uploading...' : 'Upload'}
+              </Button>
+              {hasCustomPicture && (
+                <Button
+                  variant="secondary"
+                  onClick={handlePictureRemove}
+                  disabled={isUploadingPicture}
+                  icon={<Trash2 size={14} />}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
+          <span className={styles.hint}>
+            Shown next to agent messages in chat. PNG/JPG/WEBP/GIF, max 5 MB.
+          </span>
+          {pictureError && (
+            <span className={styles.statusError}>
+              <X size={14} /> {pictureError}
+            </span>
+          )}
+        </div>
+
         <div className={styles.formGroup}>
           <label>Agent Name</label>
           <input

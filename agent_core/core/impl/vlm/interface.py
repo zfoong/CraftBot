@@ -233,7 +233,9 @@ class VLMInterface:
             if log_response:
                 logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
-            if self.provider in ("openai", "minimax", "deepseek", "moonshot", "grok"):
+            if self.provider == "deepseek":
+                raise RuntimeError("DeepSeek does not support vision/VLM. Use a different provider for image description.")
+            elif self.provider in ("openai", "minimax", "moonshot", "grok"):
                 response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt)
             elif self.provider == "remote":
                 response = self._ollama_describe_bytes(image_bytes, system_prompt, user_prompt)
@@ -259,7 +261,7 @@ class VLMInterface:
             return cleaned
         except Exception as e:
             logger.error(f"[ERROR] {e}")
-            return ""
+            raise
 
     async def generate_response_async(
         self,
@@ -287,6 +289,17 @@ class VLMInterface:
         )
 
     # ───────────────────── Provider Helpers ─────────────────────
+
+    @staticmethod
+    def _detect_mime_type(image_bytes: bytes) -> str:
+        """Detect image MIME type from the first few bytes of image data."""
+        if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+            return "image/png"
+        if image_bytes[:4] == b'GIF8':
+            return "image/gif"
+        if image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
+            return "image/webp"
+        return "image/jpeg"
 
     def _report_usage_async(
         self,
@@ -318,8 +331,9 @@ class VLMInterface:
             logger.warning(f"[VLM] Failed to report usage: {e}")
 
     def _openai_describe_bytes(self, image_bytes: bytes, sys: str | None, usr: str) -> Dict[str, Any]:
-        """OpenAI vision request with automatic prompt caching metrics."""
+        """OpenAI/Grok vision request with automatic prompt caching metrics."""
         img_b64 = base64.b64encode(image_bytes).decode()
+        mime_type = self._detect_mime_type(image_bytes)
         messages: list[Dict[str, Any]] = []
         if sys:
             messages.append({"role": "system", "content": sys})
@@ -328,17 +342,33 @@ class VLMInterface:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": usr},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}},
                 ],
             }
         )
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=2048,
-            response_format={"type": "json_object"},
+        # Newer OpenAI models (o1, o3, o4, gpt-5, etc.) require
+        # 'max_completion_tokens' instead of the legacy 'max_tokens' parameter.
+        # Note: response_format=json_object is intentionally NOT set here because
+        # describe_image returns plain text descriptions, not JSON. Enabling JSON
+        # mode would also require the prompt to contain the word "json".
+        request_kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+        }
+        model_lower = (self.model or "").lower()
+        uses_max_completion_tokens = (
+            model_lower.startswith("o1")
+            or model_lower.startswith("o3")
+            or model_lower.startswith("o4")
+            or model_lower.startswith("gpt-5")
         )
+        if uses_max_completion_tokens:
+            request_kwargs["max_completion_tokens"] = 2048
+        else:
+            request_kwargs["max_tokens"] = 2048
+
+        response = self.client.chat.completions.create(**request_kwargs)
         content = response.choices[0].message.content.strip()
         token_count_input = response.usage.prompt_tokens
         token_count_output = response.usage.completion_tokens
@@ -359,9 +389,9 @@ class VLMInterface:
         elif sys and len(sys) >= config.min_cache_tokens:
             metrics.record_miss("openai", "automatic_vlm", total_tokens=token_count_input)
 
-        # Report usage via hook
+        # Report usage via hook (use actual provider name, e.g. "grok", "minimax")
         self._report_usage_async(
-            "vlm_openai", "openai", self.model,
+            f"vlm_{self.provider}", self.provider, self.model,
             token_count_input, token_count_output, cached_tokens
         )
 
@@ -377,16 +407,20 @@ class VLMInterface:
         payload = {
             "model": self.model,
             "prompt": usr,
-            "system": sys,
             "images": [img_b64],
             "stream": False,
-            "temperature": self.temperature,
+            "options": {"temperature": self.temperature},
         }
+        if sys:
+            payload["system"] = sys
         url: str = f"{self.remote_url.rstrip('/')}/api/generate"
         r = requests.post(url, json=payload, timeout=600)
         r.raise_for_status()
-        content = r.json().get("response", "").strip()
-        total_tokens = r.json().get("usage", {}).get("total_tokens", 0)
+        result = r.json()
+        content = result.get("response", "").strip()
+        token_count_input = result.get("prompt_eval_count", 0)
+        token_count_output = result.get("eval_count", 0)
+        total_tokens = token_count_input + token_count_output
 
         return {
             "tokens_used": total_tokens or 0,
@@ -404,7 +438,7 @@ class VLMInterface:
             image_bytes=image_bytes,
             system_prompt=sys,
             temperature=self.temperature,
-            json_mode=True,
+            json_mode=False,
         )
 
         # Record cache metrics
@@ -431,6 +465,7 @@ class VLMInterface:
     def _byteplus_describe_bytes(self, image_bytes: bytes, sys: str | None, usr: str) -> Dict[str, Any]:
         """BytePlus vision request."""
         img_b64 = base64.b64encode(image_bytes).decode()
+        mime_type = self._detect_mime_type(image_bytes)
         messages: list[Dict[str, Any]] = []
         if sys:
             messages.append({"role": "system", "content": sys})
@@ -440,7 +475,7 @@ class VLMInterface:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": usr},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}},
                 ],
             }
         )
@@ -451,7 +486,6 @@ class VLMInterface:
             "messages": messages,
             "temperature": self.temperature,
             "max_tokens": 2048,
-            "response_format": {"type": "json_object"},
         }
         headers = {
             "Content-Type": "application/json",
@@ -486,14 +520,7 @@ class VLMInterface:
         img_b64 = base64.b64encode(image_bytes).decode()
         config = get_cache_config()
 
-        # Detect media type from image bytes
-        media_type = "image/jpeg"
-        if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
-            media_type = "image/png"
-        elif image_bytes[:4] == b'GIF8':
-            media_type = "image/gif"
-        elif image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
-            media_type = "image/webp"
+        media_type = self._detect_mime_type(image_bytes)
 
         message_content = [
             {

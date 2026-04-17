@@ -1,0 +1,28 @@
+{
+    "description": "Model IDs used for API connection testing. Update these when models get deprecated.",
+    "anthropic": {
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 1
+    },
+    "openai": {
+        "model": "gpt-4o-mini"
+    },
+    "gemini": {
+        "model": "gemini-2.0-flash"
+    },
+    "byteplus": {
+        "model": "kimi-k2-250905"
+    },
+    "deepseek": {
+        "model": "deepseek-chat"
+    },
+    "minimax": {
+        "model": "MiniMax-Text-01"
+    },
+    "moonshot": {
+        "model": "moonshot-v1-8k"
+    },
+    "remote": {
+        "model": "llama3"
+    }
+}

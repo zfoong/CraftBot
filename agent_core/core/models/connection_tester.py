@@ -140,6 +140,9 @@ def _test_anthropic(api_key: Optional[str], timeout: float) -> Dict[str, Any]:
     try:
         # Use a minimal messages request to verify API key
         # We send an invalid request that will fail fast but verify auth
+        from app.config import get_connection_test_model, get_connection_test_config
+        test_model = get_connection_test_model("anthropic") or "claude-haiku-4-5-20251001"
+        test_config = get_connection_test_config("anthropic")
         with httpx.Client(timeout=timeout) as client:
             response = client.post(
                 "https://api.anthropic.com/v1/messages",
@@ -149,8 +152,8 @@ def _test_anthropic(api_key: Optional[str], timeout: float) -> Dict[str, Any]:
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-3-haiku-20240307",
-                    "max_tokens": 1,
+                    "model": test_model,
+                    "max_tokens": test_config.get("max_tokens", 1),
                     "messages": [{"role": "user", "content": "hi"}],
                 },
             )

@@ -16,6 +16,8 @@ Usage:
     system_prompt, user_prompt = engine.make_prompt(query="...")
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from agent_core.core.registry.base import ComponentRegistry

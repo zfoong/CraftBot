@@ -5,6 +5,8 @@ This interface contains all the agent actions calling to the agent
 framework internal functions.
 """
 
+from __future__ import annotations
+
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from app.llm import LLMInterface, LLMCallType
 from app.vlm_interface import VLMInterface
@@ -150,22 +152,47 @@ class InternalActionInterface:
         return {"description": description, "file_path": img_path}
 
     @staticmethod
+    def _resolve_outbound_platform(
+        platform: Optional[str],
+        session_id: Optional[str],
+    ) -> str:
+        """Decide which platform an outbound message should be routed to.
+
+        Resolution order:
+            1. Explicit `platform` argument if provided.
+            2. `source_platform` on the task identified by `session_id`.
+            3. User's Preferred Messaging Platform from USER.md (which itself
+               falls back to "CraftBot Interface" when unset).
+        """
+        if platform:
+            return platform
+        if session_id and InternalActionInterface.task_manager is not None:
+            task = InternalActionInterface.task_manager.get_task_by_id(session_id)
+            if task and task.source_platform:
+                return task.source_platform
+        from app.onboarding.profile_writer import read_preferred_messaging_platform
+        return read_preferred_messaging_platform()
+
+    @staticmethod
     async def do_chat(
         message: str,
-        platform: str = "CraftBot TUI",
+        platform: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> None:
         """Record an agent-authored chat message to the event stream.
 
         Args:
             message: The message content to record.
-            platform: The platform the message is sent to (default: "CraftBot TUI").
+            platform: Optional platform override. If omitted, the task's
+                source_platform (looked up via session_id) is used, falling
+                back to "CraftBot Interface".
             session_id: Optional task/session ID for multi-task isolation.
         """
         if InternalActionInterface.state_manager is None:
             raise RuntimeError("InternalActionInterface not initialized with StateManager.")
+        resolved_platform = InternalActionInterface._resolve_outbound_platform(platform, session_id)
         InternalActionInterface.state_manager.record_agent_message(
-            message, session_id=session_id, platform=platform
+            message, session_id=session_id, platform=resolved_platform
         )
 
     @staticmethod
@@ -238,9 +265,11 @@ class InternalActionInterface:
                 raise RuntimeError("InternalActionInterface not initialized with StateManager.")
 
             attachment_notes = "\n".join([f"[Attachment: {fp}]" for fp in file_paths])
+            resolved_platform = InternalActionInterface._resolve_outbound_platform(None, session_id)
             InternalActionInterface.state_manager.record_agent_message(
                 f"{message}\n\n{attachment_notes}",
                 session_id=session_id,
+                platform=resolved_platform,
             )
             # For non-browser adapters, we can't verify files exist, so assume success
             return {"success": True, "files_sent": len(file_paths), "errors": None}
@@ -302,6 +331,7 @@ class InternalActionInterface:
         session_id: Optional[str] = None,
         original_query: Optional[str] = None,
         original_platform: Optional[str] = None,
+        pre_selected_skills: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Create a new task with automatic skill and action set selection.
@@ -319,6 +349,9 @@ class InternalActionInterface:
                            event stream before the task_start event.
             original_platform: Optional platform where the original message came from
                               (e.g., "CraftBot TUI", "Telegram", "Whatsapp").
+            pre_selected_skills: Optional list of skill names to use directly,
+                                bypassing LLM skill selection. Used when skills are
+                                invoked explicitly via slash commands (e.g., /pdf).
 
         Returns:
             Dictionary with task_id, action_sets, action_count, and selected_skills.
@@ -330,12 +363,27 @@ class InternalActionInterface:
         # Each task's stream is created when the task starts and cleaned up when the task ends.
         # Stream lifecycle is managed by TaskManager via on_stream_create/on_stream_remove hooks.
 
-        # Select skills and action sets in a single LLM call (optimized)
-        # Skills are selected first, then action sets with knowledge of skill recommendations
-        selected_skills, all_action_sets = await cls._select_skills_and_action_sets_via_llm(
-            task_name, task_description, source_platform=original_platform
-        )
-        logger.info(f"[TASK] Auto-selected skills for '{task_name}': {selected_skills}")
+        if pre_selected_skills:
+            # Skills explicitly selected via slash command — skip LLM skill selection
+            # but still select action sets (including skill-recommended ones)
+            selected_skills = pre_selected_skills
+            # Get action sets recommended by pre-selected skills
+            from agent_core.core.impl.skill.manager import skill_manager
+            from app.action.action_set import action_set_manager
+
+            skill_action_sets = skill_manager.get_skill_action_sets(selected_skills)
+            # Also run LLM action set selection for additional sets needed
+            llm_action_sets = await cls._select_action_sets_via_llm(task_name, task_description)
+            # Merge: skill-recommended + LLM-selected (deduplicated)
+            all_action_sets = list(dict.fromkeys(skill_action_sets + llm_action_sets))
+            logger.info(f"[TASK] Pre-selected skills (via command): {selected_skills}")
+        else:
+            # Select skills and action sets in a single LLM call (optimized)
+            # Skills are selected first, then action sets with knowledge of skill recommendations
+            selected_skills, all_action_sets = await cls._select_skills_and_action_sets_via_llm(
+                task_name, task_description, source_platform=original_platform
+            )
+            logger.info(f"[TASK] Auto-selected skills for '{task_name}': {selected_skills}")
         logger.info(f"[TASK] Final action sets: {all_action_sets}")
 
         # Create task with selected skills and action sets
@@ -981,4 +1029,78 @@ class InternalActionInterface:
         return {
             "available_sets": available_sets,
             "current_sets": current_sets,
+        }
+
+    @classmethod
+    def list_skills(cls) -> Dict[str, Any]:
+        """
+        List all enabled skills with their names and descriptions.
+
+        Returns:
+            Dictionary with skill names mapped to descriptions.
+        """
+        from agent_core.core.impl.skill.manager import skill_manager
+
+        skills = skill_manager.list_skills_for_selection()
+        return {"skills": skills}
+
+    @classmethod
+    def use_skill(cls, skill_name: str) -> Dict[str, Any]:
+        """
+        Activate a skill for the current task, replacing the current skill
+        in the system prompt. Invalidates and re-creates LLM session caches
+        so the updated system prompt takes effect.
+
+        Args:
+            skill_name: Name of the skill to activate.
+
+        Returns:
+            Dictionary with success status and skill details.
+        """
+        if cls.task_manager is None:
+            raise RuntimeError("InternalActionInterface not initialized with TaskManager.")
+
+        from agent_core.core.impl.skill.manager import skill_manager
+
+        # Validate skill exists and is enabled
+        skill = skill_manager.get_skill(skill_name)
+        if not skill:
+            return {"success": False, "error": f"Skill '{skill_name}' not found."}
+        if not skill.enabled:
+            return {"success": False, "error": f"Skill '{skill_name}' is not enabled."}
+
+        # Get current task and save previous skills
+        task = cls.task_manager.get_task()
+        if not task:
+            return {"success": False, "error": "No active task."}
+
+        previous_skills = list(task.selected_skills)
+
+        # Replace selected skills
+        task.selected_skills = [skill_name]
+
+        # Add skill-recommended action sets (if any new ones)
+        added_action_sets = []
+        recommended_sets = skill_manager.get_skill_action_sets([skill_name])
+        if recommended_sets:
+            current_sets = set(task.action_sets)
+            new_sets = [s for s in recommended_sets if s not in current_sets]
+            if new_sets:
+                cls.add_action_sets(new_sets)  # This also invalidates caches
+                added_action_sets = new_sets
+            else:
+                # No new action sets but system prompt still changed — invalidate caches
+                cls._invalidate_action_selection_caches()
+        else:
+            # No recommended sets — still need to invalidate for skill change
+            cls._invalidate_action_selection_caches()
+
+        logger.info(f"[SKILL] Activated skill '{skill_name}' (replaced: {previous_skills})")
+
+        return {
+            "success": True,
+            "active_skill": skill_name,
+            "skill_description": skill.description,
+            "previous_skills": previous_skills,
+            "added_action_sets": added_action_sets,
         }

@@ -553,19 +553,43 @@ def verify_conda_env(env_name: str) -> bool:
 
 def install_nodejs_linux():
     """
-    Automatically install Node.js on Linux systems (including Kali).
-    Detects the package manager (apt, pacman, yum) and installs accordingly.
+    Automatically install Node.js on Linux/macOS systems (including Kali).
+    Detects the package manager (brew, apt, pacman, yum) and installs accordingly.
     """
     if sys.platform == "win32":
         return True  # Windows users should install Node.js manually from nodejs.org
-    
+
     # Check if node is already installed
     if shutil.which("node") and shutil.which("npm"):
         print("✓ Node.js and npm are already installed")
         return True
-    
+
     print("\n🔧 Installing Node.js...")
-    
+
+    # macOS: try Homebrew first, then nvm
+    if sys.platform == "darwin":
+        if shutil.which("brew"):
+            print("   Found Homebrew, installing Node.js...")
+            try:
+                result = run_command(["brew", "install", "node"], check=False, capture=True, quiet=True, show_error=False)
+                if result and hasattr(result, 'returncode') and result.returncode == 0:
+                    print("✓ Node.js installed via Homebrew")
+                    time.sleep(1)
+                    if shutil.which("node") and shutil.which("npm"):
+                        return True
+                    print("⚠ Node.js installed but not yet in PATH. Restart your terminal.")
+                    return False
+            except Exception as e:
+                print(f"   ⚠ brew install node failed: {str(e)[:100]}")
+        print("\n⚠ Could not automatically install Node.js on macOS")
+        print("\nOptions:")
+        print("  1. Install Homebrew (https://brew.sh), then run: brew install node")
+        print("  2. Download Node.js from: https://nodejs.org/ (LTS version)")
+        print("  3. Use nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash")
+        print("     then: nvm install --lts")
+        print("\n  After installation, restart your terminal and run: python3 install.py")
+        return False
+
     # Detect package manager and prepare install commands
     # Format: (package_manager, update_cmd, install_cmd)
     package_managers = [
@@ -1149,9 +1173,126 @@ def show_api_setup_instructions():
 
 
 # ==========================================
+# LINUX PYTHON COMPATIBILITY CHECK
+# ==========================================
+def _check_linux_python() -> None:
+    """
+    Warn Linux users who are running an old or system-managed Python.
+
+    Common problem scenarios:
+    - Python < 3.9  (Ubuntu 20.04 default is 3.8)
+    - System Python used directly without a venv, which triggers PEP 668
+      "externally-managed-environment" errors on newer distros
+    """
+    ver = sys.version_info
+
+    # Already gated to >= 3.9 above, but warn hard about 3.9 since
+    # it's the bare minimum — 3.11+ is much more reliable.
+    if ver < (3, 10):
+        print("\n" + "=" * 62)
+        print(f" ⚠  Python {ver.major}.{ver.minor} detected — upgrade recommended")
+        print("=" * 62)
+        print(f"\n  You are running Python {ver.major}.{ver.minor}.{ver.micro}.")
+        print("  CraftBot works on 3.9+ but runs best on Python 3.11 or newer.")
+        print("\n  To install Python 3.11 on Ubuntu/Debian/Kali:")
+        print("    sudo apt update")
+        print("    sudo apt install -y software-properties-common")
+        print("    sudo add-apt-repository ppa:deadsnakes/ppa")
+        print("    sudo apt install -y python3.11 python3.11-venv python3.11-pip")
+        print("    python3.11 install.py")
+        print()
+        print("  Or use pyenv (works on any distro):")
+        print("    curl https://pyenv.run | bash")
+        print("    pyenv install 3.11.9")
+        print("    pyenv local 3.11.9")
+        print("    python install.py")
+        print("=" * 62)
+        choice = input("\n  Continue with Python 3.9 anyway? (y/n): ").strip().lower()
+        if choice != "y":
+            print("\n  Installation cancelled. Please upgrade Python and try again.\n")
+            sys.exit(1)
+        print()
+
+
+# ==========================================
+# MAC PYTHON COMPATIBILITY CHECK
+# ==========================================
+def _check_mac_python() -> None:
+    """
+    Warn Mac users who are running a problematic Python interpreter.
+
+    Common bad interpreters on macOS:
+    - Xcode bundled Python  (/Applications/Xcode.app/...)
+    - macOS system Python   (/usr/bin/python3)
+
+    Both are difficult to install packages into and are intended as OS
+    tooling, not for running user applications.  Homebrew or python.org
+    Python is recommended instead.
+    """
+    exe = sys.executable or ""
+    is_xcode = "Xcode.app" in exe or "Python3.framework" in exe
+    is_system = exe.startswith("/usr/bin/python")
+
+    if not (is_xcode or is_system):
+        return  # Running a proper Python — nothing to warn about
+
+    ver = sys.version_info
+    label = "Xcode's built-in Python" if is_xcode else "macOS system Python"
+
+    print("\n" + "=" * 62)
+    print(" ⚠  WARNING: Wrong Python interpreter detected")
+    print("=" * 62)
+    print(f"\n  You are using {label}:")
+    print(f"  {exe}")
+    print(f"\n  This Python ({ver.major}.{ver.minor}.{ver.micro}) is reserved for macOS")
+    print("  system tools. Installing packages into it can be unreliable")
+    print("  and may break system components.")
+    print("\n  Recommended fix — install Python via Homebrew:")
+    print()
+    print("    # 1. Install Homebrew (if not already installed):")
+    print('    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"')
+    print()
+    print("    # 2. Install Python 3.11 (or newer):")
+    print("    brew install python@3.11")
+    print()
+    print("    # 3. Re-run the installer with Homebrew Python:")
+    print("    /opt/homebrew/bin/python3.11 install.py   # Apple Silicon")
+    print("    /usr/local/bin/python3.11 install.py      # Intel Mac")
+    print()
+    print("  Alternative: download Python from https://www.python.org/downloads/")
+    print("=" * 62)
+
+    choice = input("\n  Continue with the current interpreter anyway? (y/n): ").strip().lower()
+    if choice != "y":
+        print("\n  Installation cancelled. Please use a Homebrew or python.org Python.\n")
+        sys.exit(1)
+    print()
+
+
+# ==========================================
 # MAIN
 # ==========================================
 if __name__ == "__main__":
+    # ── Python version gate ────────────────────────────────────────────────
+    _ver = sys.version_info
+    if _ver < (3, 9):
+        print(f"\n❌ Python {_ver.major}.{_ver.minor} is not supported.")
+        print("   CraftBot requires Python 3.9 or newer.")
+        if sys.platform == "darwin":
+            print("\n   Recommended fix:")
+            print("   1. Install Homebrew: https://brew.sh")
+            print("   2. Run: brew install python@3.11")
+            print("   3. Re-run: /opt/homebrew/bin/python3.11 install.py")
+        else:
+            print("\n   Please install Python 3.9+ from https://www.python.org/downloads/")
+        sys.exit(1)
+
+    # ── platform-specific interpreter checks ──────────────────────────────
+    if sys.platform == "darwin":
+        _check_mac_python()
+    elif sys.platform == "linux":
+        _check_linux_python()
+
     args = set(sys.argv[1:])
 
     # Parse flags

@@ -26,12 +26,19 @@ APP_CONFIG_PATH = PROJECT_ROOT / "app" / "config"
 AGENT_FILE_SYSTEM_TEMPLATE_PATH = APP_DATA_PATH / "agent_file_system_template"
 AGENT_MEMORY_CHROMA_PATH = PROJECT_ROOT / "chroma_db_memory"
 SETTINGS_CONFIG_PATH = APP_CONFIG_PATH / "settings.json"
+CONNECTION_TEST_MODELS_CONFIG_PATH = APP_CONFIG_PATH / "connection_test_models.json"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Settings Reader - Single source of truth for all configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
 _settings_cache: Optional[Dict[str, Any]] = None
+
+
+def invalidate_settings_cache() -> None:
+    """Invalidate the settings cache so the next get_settings() call re-reads from disk."""
+    global _settings_cache
+    _settings_cache = None
 
 
 def _get_default_settings() -> Dict[str, Any]:
@@ -177,6 +184,40 @@ def get_base_url(provider: str) -> Optional[str]:
         return endpoints.get("google_api_base") or None
 
     return None
+
+
+def get_connection_test_model(provider: str) -> Optional[str]:
+    """Get the model ID used for connection testing for a provider.
+
+    Args:
+        provider: Provider name (e.g., "anthropic", "openai", "gemini")
+
+    Returns:
+        Model ID string, or None if not configured.
+    """
+    try:
+        with open(CONNECTION_TEST_MODELS_CONFIG_PATH, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return config.get(provider, {}).get("model")
+    except (FileNotFoundError, json.JSONDecodeError, IOError):
+        return None
+
+
+def get_connection_test_config(provider: str) -> Dict[str, Any]:
+    """Get the full connection test config for a provider.
+
+    Args:
+        provider: Provider name (e.g., "anthropic", "openai", "gemini")
+
+    Returns:
+        Dictionary with provider's test config, or empty dict if not found.
+    """
+    try:
+        with open(CONNECTION_TEST_MODELS_CONFIG_PATH, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return config.get(provider, {})
+    except (FileNotFoundError, json.JSONDecodeError, IOError):
+        return {}
 
 
 def get_google_api_version() -> Optional[str]:
