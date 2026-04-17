@@ -6,6 +6,8 @@ This module provides the ActionRouter class that selects actions
 based on user queries using LLM reasoning.
 """
 
+from __future__ import annotations
+
 import json
 import ast
 from typing import Optional, List, Dict, Any, Tuple

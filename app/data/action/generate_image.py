@@ -10,7 +10,7 @@ from agent_core import action
 - TIP: When generating multiple images for the same project or related work, use 'reference_images' parameter with previously generated images to maintain consistent style across all outputs""",
     default=True,
     mode="CLI",
-    action_sets=["content_creation, image, document_processing"],
+    action_sets=["content_creation", "image", "document_processing"],
     input_schema={
         "prompt": {
             "type": "string",
