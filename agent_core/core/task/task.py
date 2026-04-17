@@ -69,6 +69,8 @@ class Task:
     chatserver_action_id: Optional[str] = None
     # Whether the task is waiting for user reply (pauses trigger scheduling)
     waiting_for_user_reply: bool = False
+    # Platform that started (or most recently resumed) this task — outbound messages route here
+    source_platform: Optional[str] = None
 
     def get_current_todo(self) -> Optional[TodoItem]:
         """
@@ -114,6 +116,7 @@ class Task:
             "token_count": self.token_count,
             "chatserver_action_id": self.chatserver_action_id,
             "waiting_for_user_reply": self.waiting_for_user_reply,
+            "source_platform": self.source_platform,
         }
 
     @classmethod
@@ -140,4 +143,5 @@ class Task:
             token_count=data.get("token_count", 0),
             chatserver_action_id=data.get("chatserver_action_id"),
             waiting_for_user_reply=data.get("waiting_for_user_reply", False),
+            source_platform=data.get("source_platform"),
         )

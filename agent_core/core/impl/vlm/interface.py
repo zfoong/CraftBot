@@ -261,7 +261,7 @@ class VLMInterface:
             return cleaned
         except Exception as e:
             logger.error(f"[ERROR] {e}")
-            return ""
+            raise
 
     async def generate_response_async(
         self,
@@ -346,12 +346,29 @@ class VLMInterface:
                 ],
             }
         )
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=2048,
+        # Newer OpenAI models (o1, o3, o4, gpt-5, etc.) require
+        # 'max_completion_tokens' instead of the legacy 'max_tokens' parameter.
+        # Note: response_format=json_object is intentionally NOT set here because
+        # describe_image returns plain text descriptions, not JSON. Enabling JSON
+        # mode would also require the prompt to contain the word "json".
+        request_kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+        }
+        model_lower = (self.model or "").lower()
+        uses_max_completion_tokens = (
+            model_lower.startswith("o1")
+            or model_lower.startswith("o3")
+            or model_lower.startswith("o4")
+            or model_lower.startswith("gpt-5")
         )
+        if uses_max_completion_tokens:
+            request_kwargs["max_completion_tokens"] = 2048
+        else:
+            request_kwargs["max_tokens"] = 2048
+
+        response = self.client.chat.completions.create(**request_kwargs)
         content = response.choices[0].message.content.strip()
         token_count_input = response.usage.prompt_tokens
         token_count_output = response.usage.completion_tokens

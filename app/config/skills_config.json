@@ -2,6 +2,7 @@
   "auto_load": true,
   "enabled_skills": [
     "docx",
+    "file-format",
     "pdf",
     "playwright-mcp",
     "pptx",

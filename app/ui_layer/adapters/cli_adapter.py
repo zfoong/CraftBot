@@ -181,6 +181,14 @@ class CLIAdapter(InterfaceAdapter):
         if onboarding.needs_hard_onboarding:
             await self._run_hard_onboarding(onboarding)
 
+        # Trigger soft onboarding if needed (after hard onboarding check)
+        from app.onboarding import onboarding_manager
+        if onboarding_manager.needs_soft_onboarding:
+            import asyncio
+            agent = self._controller.agent
+            if agent:
+                asyncio.create_task(agent.trigger_soft_onboarding())
+
         # Print logo and welcome
         _get_formatter().print_logo()
         from app.config import get_app_version

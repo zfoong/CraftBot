@@ -78,7 +78,7 @@ class PromptSanitizer:
                 f"[SECURITY] Potential prompt injection detected. "
                 f"Text: {text[:100]}... Patterns: {suspicious_patterns[:2]}"
             )
-        
+            
         return text
     
     @staticmethod

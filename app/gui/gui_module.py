@@ -788,13 +788,15 @@ class GUIModule:
         token_count: int = agent_properties.get("token_count", 0)
         max_tokens: int = agent_properties.get("max_tokens_per_task", 0)
 
-        # Check action limits
+        # Check action limits - returns False to switch to CLI mode,
+        # where the agent_base's _check_agent_limits will handle the
+        # pause-and-ask flow with user options.
         if (action_count / max_actions) >= 1.0:
             return False
 
         # Check token limits
         if (token_count / max_tokens) >= 1.0:
             return False
-        
+
         # No limits close or reached
         return True
