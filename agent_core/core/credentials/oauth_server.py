@@ -22,6 +22,7 @@ Usage:
 """
 
 import asyncio
+import hmac
 import html
 import ipaddress
 import logging
@@ -126,7 +127,16 @@ def _make_callback_handler(result_holder: Dict[str, Any]):
 
             # Validate OAuth state parameter to prevent CSRF
             expected_state = result_holder.get("expected_state")
-            if expected_state and returned_state != expected_state:
+            if expected_state is None:
+                # No state in auth URL -- log warning but allow (some providers don't support state)
+                logger.warning("[OAUTH] No state parameter in auth URL — CSRF protection disabled for this flow")
+                result_holder["code"] = params.get("code", [None])[0]
+            elif returned_state is None:
+                # State was expected but callback didn't include it -- reject
+                result_holder["error"] = "OAuth callback missing state parameter — possible CSRF attack"
+                result_holder["code"] = None
+                logger.warning("[OAUTH] Expected state but callback had none")
+            elif not hmac.compare_digest(str(returned_state), str(expected_state)):
                 result_holder["error"] = "OAuth state mismatch — possible CSRF attack"
                 result_holder["code"] = None
                 logger.warning("[OAUTH] State mismatch: expected %s, got %s", expected_state, returned_state)

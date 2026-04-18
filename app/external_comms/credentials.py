@@ -83,13 +83,11 @@ def save_credential(filename: str, credential) -> None:
     """
     path = _get_credentials_dir() / filename
     try:
-        with open(path, "w", encoding="utf-8") as f:
+        # Create file with restricted permissions atomically (rw-------)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)  # Ensure permissions even if file pre-existed
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(asdict(credential), f, indent=2, default=str)
-        # Restrict file permissions to owner read/write only (rw-------)
-        try:
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-        except OSError:
-            pass  # Best-effort on platforms that don't support chmod
         logger.info(f"Saved credential: {filename}")
     except Exception as e:
         logger.error(f"Failed to save credential {filename}: {e}")
