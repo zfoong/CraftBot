@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from agent_core.core.state.types import MainState
 from agent_core.core.state.session import StateSession
+from agent_core.utils.file_utils import rotate_md_file_if_needed
 from app.state.types import AgentProperties
 from app.state.agent_state import STATE
 from app.event_stream import EventStreamManager
@@ -197,6 +198,7 @@ class StateManager:
         """
         try:
             conversation_file = Path(AGENT_FILE_SYSTEM_PATH) / "CONVERSATION_HISTORY.md"
+            rotate_md_file_if_needed(conversation_file)
             timestamp = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
             entry = f"[{timestamp}] [{sender}]: {content}\n"
 

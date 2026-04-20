@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
 # Set up logger - use shared agent_core logger for consistency
 from agent_core.utils.logger import logger
+from agent_core.utils.file_utils import rotate_md_file_if_needed
 
 
 # =============================================================================
@@ -732,6 +733,7 @@ class TaskManager:
 
             entry_lines.append("")
 
+            rotate_md_file_if_needed(task_history_path)
             with open(task_history_path, "a", encoding="utf-8") as f:
                 f.write("\n".join(entry_lines) + "\n")
 
