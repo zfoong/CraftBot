@@ -130,4 +130,4 @@ def save_state(state: OnboardingState, state_file: Optional[Path] = None) -> boo
         return True
     except Exception as e:
         logger.error(f"[ONBOARDING] Failed to save state: {e}")
-        return False
+        raise

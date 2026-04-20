@@ -1,0 +1,60 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0 -- /Library/Developer/CommandLineTools/usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/alan/Desktop/CraftBot
+plugins: anyio-4.12.1
+collecting ... collected 2 items
+
+tests/onboarding/test_onboarding_error_handling.py::test_save_state_error_bubbles_up FAILED [ 50%]
+tests/onboarding/test_onboarding_error_handling.py::test_save_state_permission_error_bubbles_up FAILED [100%]
+
+=================================== FAILURES ===================================
+_______________________ test_save_state_error_bubbles_up _______________________
+
+onboarding_manager = <agent_core.core.impl.onboarding.manager.OnboardingManager object at 0x12786f070>
+
+    def test_save_state_error_bubbles_up(onboarding_manager):
+        """Test that OSError during file write propagates through OnboardingManager."""
+        with patch("agent_core.core.impl.onboarding.state.get_onboarding_config_file") as mock_get_file:
+            mock_get_file.return_value = Path("/tmp/fake_state.json")
+            with patch("pathlib.Path.write_text") as mock_write:
+                mock_write.side_effect = OSError("Disk full")
+    
+            # Test mark_hard_complete
+            with pytest.raises(OSError) as excinfo:
+>               onboarding_manager.mark_hard_complete(agent_name="TestAgent")
+E               Failed: DID NOT RAISE <class 'OSError'>
+
+tests/onboarding/test_onboarding_error_handling.py:24: Failed
+----------------------------- Captured stderr call -----------------------------
+2026-04-20 21:40:55.786 | DEBUG    | agent_core.core.impl.onboarding.state:save_state:129 - [ONBOARDING] Saved state: hard=True, soft=False
+2026-04-20 21:40:55.786 | INFO     | agent_core.core.impl.onboarding.manager:mark_hard_complete:112 - [ONBOARDING] Hard onboarding marked complete
+_________________ test_save_state_permission_error_bubbles_up __________________
+
+onboarding_manager = <agent_core.core.impl.onboarding.manager.OnboardingManager object at 0x12786f070>
+
+    def test_save_state_permission_error_bubbles_up(onboarding_manager):
+        """Test that PermissionError during file write propagates."""
+        with patch("agent_core.core.impl.onboarding.state.get_onboarding_config_file") as mock_get_file:
+            mock_get_file.return_value = Path("/tmp/fake_state.json")
+            with patch("pathlib.Path.write_text") as mock_write:
+                mock_write.side_effect = PermissionError("Permission denied")
+    
+            with pytest.raises(PermissionError) as excinfo:
+>               onboarding_manager.save()
+E               Failed: DID NOT RAISE <class 'PermissionError'>
+
+tests/onboarding/test_onboarding_error_handling.py:55: Failed
+----------------------------- Captured stderr call -----------------------------
+2026-04-20 21:40:55.896 | DEBUG    | agent_core.core.impl.onboarding.state:save_state:129 - [ONBOARDING] Saved state: hard=False, soft=False
+2026-04-20 21:40:55.896 | DEBUG    | agent_core.core.impl.onboarding.manager:save:126 - [ONBOARDING] State saved manually
+=============================== warnings summary ===============================
+../../Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35
+  /Users/alan/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/onboarding/test_onboarding_error_handling.py::test_save_state_error_bubbles_up
+FAILED tests/onboarding/test_onboarding_error_handling.py::test_save_state_permission_error_bubbles_up
+========================= 2 failed, 1 warning in 1.73s =========================

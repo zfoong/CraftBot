@@ -361,7 +361,14 @@ class CLIHardOnboarding(OnboardingInterface):
         # Mark hard onboarding as complete
         agent_name = self._collected_data.get("agent_name", "Agent")
         user_name = profile_data.get("user_name") if profile_data else None
-        onboarding_manager.mark_hard_complete(user_name=user_name, agent_name=agent_name)
+        try:
+            onboarding_manager.mark_hard_complete(user_name=user_name, agent_name=agent_name)
+        except Exception as e:
+            logger.warning(f"[CLI ONBOARDING] Failed to persist hard onboarding state: {e}")
+            print(CLIFormatter.format_warning(
+                "\nWarning: Setup complete, but preferences couldn't be saved to disk.\n"
+                "You may be asked to start over next time."
+            ))
 
         logger.info("[CLI ONBOARDING] Hard onboarding completed successfully")
 

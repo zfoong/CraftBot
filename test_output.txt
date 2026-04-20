@@ -1,0 +1,214 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/alan/Desktop/CraftBot
+plugins: anyio-4.12.1
+collected 2 items
+
+tests/onboarding/test_onboarding_error_handling.py FF                    [100%]
+
+=================================== FAILURES ===================================
+_______________________ test_save_state_error_bubbles_up _______________________
+
+onboarding_manager = <agent_core.core.impl.onboarding.manager.OnboardingManager object at 0x145b01460>
+
+    def test_save_state_error_bubbles_up(onboarding_manager):
+        """Test that OSError during file write propagates through OnboardingManager."""
+        with patch("pathlib.Path.write_text") as mock_write:
+            mock_write.side_effect = OSError("Disk full")
+    
+            # Test mark_hard_complete
+            with pytest.raises(OSError) as excinfo:
+>               onboarding_manager.mark_hard_complete(agent_name="TestAgent")
+
+tests/onboarding/test_onboarding_error_handling.py:22: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <agent_core.core.impl.onboarding.manager.OnboardingManager object at 0x145b01460>
+user_name = None, agent_name = 'TestAgent', agent_profile_picture = None
+
+    def mark_hard_complete(
+        self,
+        user_name: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        agent_profile_picture: Optional[str] = None,
+    ) -> None:
+        """
+        Mark hard onboarding as complete.
+    
+        Args:
+            user_name: User's name collected during onboarding
+            agent_name: Agent's name configured during onboarding
+            agent_profile_picture: Extension of the uploaded agent profile
+                picture (e.g. "png"). None leaves the current value untouched.
+        """
+        state = self._ensure_state_loaded()
+        state.hard_completed = True
+        state.hard_completed_at = datetime.utcnow().isoformat()
+        if user_name:
+            state.user_name = user_name
+        if agent_name:
+            state.agent_name = agent_name
+        if agent_profile_picture is not None:
+            state.agent_profile_picture = agent_profile_picture
+        try:
+>           save_state(state)
+
+agent_core/core/impl/onboarding/manager.py:111: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+state = OnboardingState(hard_completed=True, soft_completed=False, hard_completed_at='2026-04-20T16:10:17.294269', soft_completed_at=None, user_name=None, agent_name='TestAgent', agent_profile_picture=None)
+state_file = None
+
+    def save_state(state: OnboardingState, state_file: Optional[Path] = None) -> bool:
+        """
+        Save onboarding state to JSON file.
+    
+        Args:
+            state: OnboardingState object to save
+            state_file: Path to the state file (defaults to configured path)
+    
+        Returns:
+            True if save succeeded, False otherwise
+        """
+        if state_file is None:
+>           state_file = get_onboarding_config_file()
+
+agent_core/core/impl/onboarding/state.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def get_onboarding_config_file() -> Path:
+        """Get the path to the onboarding config file."""
+>       workspace = get_workspace_root()
+
+agent_core/core/impl/onboarding/config.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def get_workspace_root() -> str:
+        """Convenience function to get workspace root."""
+>       return ConfigRegistry.get_workspace_root()
+
+agent_core/core/config/__init__.py:97: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'agent_core.core.config.ConfigRegistry'>
+
+    @classmethod
+    def get_workspace_root(cls) -> str:
+        """
+        Get the workspace root path.
+    
+        Returns:
+            The configured workspace root path.
+    
+        Raises:
+            RuntimeError: If workspace root is not configured.
+        """
+        if cls._workspace_root_factory is not None:
+            return cls._workspace_root_factory()
+        if cls._workspace_root is not None:
+            return cls._workspace_root
+>       raise RuntimeError(
+            "ConfigRegistry.workspace_root not configured. "
+            "Call ConfigRegistry.register_workspace_root() at startup."
+        )
+E       RuntimeError: ConfigRegistry.workspace_root not configured. Call ConfigRegistry.register_workspace_root() at startup.
+
+agent_core/core/config/__init__.py:79: RuntimeError
+----------------------------- Captured stderr call -----------------------------
+2026-04-20 21:40:17.294 | WARNING  | agent_core.core.impl.onboarding.manager:mark_hard_complete:114 - [ONBOARDING] Hard onboarding completed in memory but state could not be persisted to disk: ConfigRegistry.workspace_root not configured. Call ConfigRegistry.register_workspace_root() at startup.. Onboarding may re-trigger on next launch.
+_________________ test_save_state_permission_error_bubbles_up __________________
+
+onboarding_manager = <agent_core.core.impl.onboarding.manager.OnboardingManager object at 0x145b01460>
+
+    def test_save_state_permission_error_bubbles_up(onboarding_manager):
+        """Test that PermissionError during file write propagates."""
+        with patch("pathlib.Path.write_text") as mock_write:
+            mock_write.side_effect = PermissionError("Permission denied")
+    
+            with pytest.raises(PermissionError) as excinfo:
+>               onboarding_manager.save()
+
+tests/onboarding/test_onboarding_error_handling.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <agent_core.core.impl.onboarding.manager.OnboardingManager object at 0x145b01460>
+
+    def save(self) -> None:
+        """Persist the current state to disk."""
+        state = self._ensure_state_loaded()
+        try:
+>           save_state(state)
+
+agent_core/core/impl/onboarding/manager.py:125: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+state = OnboardingState(hard_completed=False, soft_completed=False, hard_completed_at=None, soft_completed_at=None, user_name=None, agent_name=None, agent_profile_picture=None)
+state_file = None
+
+    def save_state(state: OnboardingState, state_file: Optional[Path] = None) -> bool:
+        """
+        Save onboarding state to JSON file.
+    
+        Args:
+            state: OnboardingState object to save
+            state_file: Path to the state file (defaults to configured path)
+    
+        Returns:
+            True if save succeeded, False otherwise
+        """
+        if state_file is None:
+>           state_file = get_onboarding_config_file()
+
+agent_core/core/impl/onboarding/state.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def get_onboarding_config_file() -> Path:
+        """Get the path to the onboarding config file."""
+>       workspace = get_workspace_root()
+
+agent_core/core/impl/onboarding/config.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def get_workspace_root() -> str:
+        """Convenience function to get workspace root."""
+>       return ConfigRegistry.get_workspace_root()
+
+agent_core/core/config/__init__.py:97: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'agent_core.core.config.ConfigRegistry'>
+
+    @classmethod
+    def get_workspace_root(cls) -> str:
+        """
+        Get the workspace root path.
+    
+        Returns:
+            The configured workspace root path.
+    
+        Raises:
+            RuntimeError: If workspace root is not configured.
+        """
+        if cls._workspace_root_factory is not None:
+            return cls._workspace_root_factory()
+        if cls._workspace_root is not None:
+            return cls._workspace_root
+>       raise RuntimeError(
+            "ConfigRegistry.workspace_root not configured. "
+            "Call ConfigRegistry.register_workspace_root() at startup."
+        )
+E       RuntimeError: ConfigRegistry.workspace_root not configured. Call ConfigRegistry.register_workspace_root() at startup.
+
+agent_core/core/config/__init__.py:79: RuntimeError
+----------------------------- Captured stderr call -----------------------------
+2026-04-20 21:40:17.408 | WARNING  | agent_core.core.impl.onboarding.manager:save:128 - [ONBOARDING] Failed to save state manually: ConfigRegistry.workspace_root not configured. Call ConfigRegistry.register_workspace_root() at startup.
+=============================== warnings summary ===============================
+../../Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35
+  /Users/alan/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/onboarding/test_onboarding_error_handling.py::test_save_state_error_bubbles_up
+FAILED tests/onboarding/test_onboarding_error_handling.py::test_save_state_permission_error_bubbles_up
+========================= 2 failed, 1 warning in 1.54s =========================
