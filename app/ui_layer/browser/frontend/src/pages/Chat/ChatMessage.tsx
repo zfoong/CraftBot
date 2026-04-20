@@ -112,6 +112,15 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           </div>
         )}
       </div>
+      {message.attachments && message.attachments.length > 0 && (
+        <div className={styles.messageAttachments}>
+          <AttachmentDisplay
+            attachments={message.attachments}
+            onOpenFile={onOpenFile}
+            onOpenFolder={onOpenFolder}
+          />
+        </div>
+      )}
       {/* Reply button - positioned outside the bubble at top-right */}
       {canReply && isHovered && (
         <IconButton
@@ -143,15 +152,6 @@ export const ChatMessageItem = memo(function ChatMessageItem({
         </div>
       ) : (
         bubbleContainer
-      )}
-      {message.attachments && message.attachments.length > 0 && (
-        <div className={styles.messageAttachments}>
-          <AttachmentDisplay
-            attachments={message.attachments}
-            onOpenFile={onOpenFile}
-            onOpenFolder={onOpenFolder}
-          />
-        </div>
       )}
     </div>
   )

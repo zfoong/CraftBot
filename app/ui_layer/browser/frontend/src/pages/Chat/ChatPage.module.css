@@ -748,9 +748,13 @@
   padding-right: var(--space-8);
 }
 
-/* Message bubble container - wraps bubble + reply button */
+/* Message bubble container - wraps bubble + attachments + reply button */
 .messageBubbleContainer {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 /* Reply button outside the bubble - positioned in the padding area */
