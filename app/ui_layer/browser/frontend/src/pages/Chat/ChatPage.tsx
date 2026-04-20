@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, KeyboardEvent, useCallback, ChangeEvent, useMemo } from 'react'
 import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply, Mic, MicOff } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { Button, IconButton, StatusIndicator } from '../../components/ui'
 import { useDerivedAgentStatus } from '../../hooks'
@@ -54,6 +54,15 @@ const formatFileSize = (bytes: number): string => {
 
 export function ChatPage() {
   const { messages, actions, connected, sendMessage, cancelTask, cancellingTaskId, openFile, openFolder, lastSeenMessageId, markMessagesAsSeen, replyTarget, setReplyTarget, clearReplyTarget, loadOlderMessages, hasMoreMessages, loadingOlderMessages, sendOptionClick } = useWebSocket()
+  const navigate = useNavigate()
+
+  const handleOptionClick = useCallback((value: string, sessionId?: string, messageId?: string) => {
+    if (value === 'llm_change_model') {
+      navigate('/settings')
+      return
+    }
+    sendOptionClick(value, sessionId, messageId)
+  }, [navigate, sendOptionClick])
 
   // Derive agent status from actions and messages
   const status = useDerivedAgentStatus({
@@ -74,6 +83,8 @@ export function ChatPage() {
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const [micLang, setMicLang] = useState(() => {
+    const saved = localStorage.getItem('micLang')
+    if (saved && MIC_LANGUAGES.some(l => l.code === saved)) return saved
     const browserLang = navigator.language || 'en-US'
     return MIC_LANGUAGES.some(l => l.code === browserLang) ? browserLang : 'en-US'
   })
@@ -556,7 +567,7 @@ export function ChatPage() {
                       onOpenFile={openFile}
                       onOpenFolder={openFolder}
                       onReply={handleChatReply}
-                      onOptionClick={sendOptionClick}
+                      onOptionClick={handleOptionClick}
                     />
                   </div>
                 )
@@ -614,7 +625,7 @@ export function ChatPage() {
                   <button
                     key={lang.code}
                     className={`${styles.langOption}${micLang === lang.code ? ` ${styles.langOptionActive}` : ''}`}
-                    onClick={() => { setMicLang(lang.code); setLangOpen(false) }}
+                    onClick={() => { localStorage.setItem('micLang', lang.code); setMicLang(lang.code); setLangOpen(false) }}
                   >
                     <span className={styles.langCode}>{lang.label}</span>
                     <span className={styles.langFull}>{lang.full}</span>

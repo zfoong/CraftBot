@@ -154,6 +154,9 @@ class AgentBase:
             data_dir = data_dir, chroma_path=chroma_path
         )
 
+        # Stores original task instructions keyed by session_id for LLM retry after failure
+        self._llm_retry_instructions: dict[str, str] = {}
+
         # LLM + prompt plumbing (may be deferred if API key not yet configured)
         self.llm = LLMInterface(
             provider=llm_provider,
@@ -1250,9 +1253,22 @@ class AgentBase:
                     f"[REACT ERROR] LLMConsecutiveFailureError detected - cancelling task {session_to_use} "
                     "to prevent infinite retry loop."
                 )
+                # Cache instruction BEFORE cancellation removes task from tasks dict
+                failed_task = self.task_manager.tasks.get(session_to_use) if self.task_manager else None
+                if failed_task:
+                    self._llm_retry_instructions[session_to_use] = failed_task.instruction
                 if self.task_manager:
                     await self.task_manager.mark_task_cancel(
                         reason="LLM calls failed too many consecutive times. Task aborted."
+                    )
+                if self.ui_controller:
+                    from app.ui_layer.events import UIEvent, UIEventType
+                    self.ui_controller.event_bus.emit(
+                        UIEvent(
+                            type=UIEventType.LLM_FATAL_ERROR,
+                            data={"session_id": session_to_use},
+                            task_id=session_to_use,
+                        )
                     )
             else:
                 await self._create_new_trigger(session_to_use, action_output, STATE)
@@ -1507,6 +1523,21 @@ class AgentBase:
                 reason="User chose to abort after reaching limit.",
                 task_id=session_id,
             )
+
+    async def handle_llm_retry(self, session_id: str) -> None:
+        """Retry the original task after a fatal LLM failure. Resets the failure counter and re-submits."""
+        instruction = self._llm_retry_instructions.pop(session_id, None)
+        if not instruction:
+            logger.warning(f"[LLM_RETRY] Cannot retry: no cached instruction for session {session_id}")
+            return
+
+        try:
+            self.llm.reset_failure_counter()
+        except Exception as e:
+            logger.debug(f"[LLM_RETRY] Could not reset failure counter: {e}")
+
+        if self.ui_controller:
+            await self.ui_controller.submit_message(instruction)
 
     # ----- Trigger Management -----
 

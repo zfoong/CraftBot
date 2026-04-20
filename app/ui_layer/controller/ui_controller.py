@@ -297,6 +297,8 @@ class UIController:
             await self._agent.handle_limit_continue(session_id)
         elif value == "abort_limit":
             await self._agent.handle_limit_abort(session_id)
+        elif value == "llm_retry":
+            await self._agent.handle_llm_retry(session_id)
 
     # ─────────────────────────────────────────────────────────────────────
     # Event Processing
