@@ -1011,6 +1011,13 @@
   flex-direction: column;
 }
 
+.modalContent form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .modalHeader {
   display: flex;
   align-items: center;

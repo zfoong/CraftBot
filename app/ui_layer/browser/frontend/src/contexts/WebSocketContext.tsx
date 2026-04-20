@@ -826,6 +826,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const sendOptionClick = useCallback((value: string, sessionId?: string, messageId?: string) => {
+    // Optimistically record the selection in local state so the UI lock
+    // survives virtualizer remounts, WS reconnects, and parent re-renders
+    // without waiting for a backend round-trip or page refresh.
+    if (messageId) {
+      setState(prev => {
+        let changed = false
+        const nextMessages = prev.messages.map(m => {
+          if (m.messageId === messageId && !m.optionSelected) {
+            changed = true
+            return { ...m, optionSelected: value }
+          }
+          return m
+        })
+        return changed ? { ...prev, messages: nextMessages } : prev
+      })
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'option_click', value, sessionId, messageId }))
     }
