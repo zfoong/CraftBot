@@ -78,5 +78,3 @@ def perform_ocr(input_data: dict) -> dict:
         return {**result, 'message': ''}
     except Exception as e:
         return {'status': 'error', 'summary': '', 'file_path': '', 'file_saved': False, 'message': str(e)}
-
-execute = perform_ocr

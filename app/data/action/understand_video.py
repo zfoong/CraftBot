@@ -130,5 +130,3 @@ def understand_video(input_data: dict) -> dict:
         return {'status': 'error', 'summary': '', 'file_path': '', 'file_saved': False, 'message': str(e)}
     except Exception as e:
         return {'status': 'error', 'summary': '', 'file_path': '', 'file_saved': False, 'message': str(e)}
-
-execute = understand_video
