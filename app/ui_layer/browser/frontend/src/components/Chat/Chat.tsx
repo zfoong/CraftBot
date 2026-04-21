@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, KeyboardEvent, useCallback, ChangeEvent, useMemo } from 'react'
+import ReactDOM from 'react-dom'
 import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply, Mic, MicOff } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useWebSocket } from '../../contexts/WebSocketContext'
@@ -74,6 +75,8 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
   const [input, setInput] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [previewAttachment, setPreviewAttachment] = useState<PendingAttachment | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -140,6 +143,14 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [langOpen])
+
+  // Close preview on Escape
+  useEffect(() => {
+    if (!previewAttachment) return
+    const handler = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setPreviewAttachment(null) }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [previewAttachment])
 
   // Track scroll position + load older messages on scroll-to-top
   useEffect(() => {
@@ -333,30 +344,25 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
     fileInputRef.current?.click()
   }
 
-  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
+  const processFiles = async (files: globalThis.File[]) => {
+    if (files.length === 0) return
 
     const totalFileCount = pendingAttachments.length + files.length
     if (totalFileCount > MAX_ATTACHMENT_COUNT) {
       setAttachmentError(`Maximum ${MAX_ATTACHMENT_COUNT} files allowed.`)
-      e.target.value = ''
       return
     }
 
     const newAttachments: PendingAttachment[] = []
     let newTotalSize = pendingAttachments.reduce((sum, att) => sum + att.size, 0)
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
+    for (const file of files) {
       if (file.size > MAX_TOTAL_SIZE_BYTES) {
         setAttachmentError(`File "${file.name}" (${formatFileSize(file.size)}) exceeds the 70MB limit.`)
-        e.target.value = ''
         return
       }
       if (newTotalSize + file.size > MAX_TOTAL_SIZE_BYTES) {
         setAttachmentError(`Adding "${file.name}" would exceed the 70MB total size limit.`)
-        e.target.value = ''
         return
       }
       try {
@@ -365,19 +371,53 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
         newTotalSize += file.size
       } catch {
         setAttachmentError(`Failed to read file "${file.name}".`)
-        e.target.value = ''
         return
       }
     }
 
     setAttachmentError(null)
     setPendingAttachments(prev => [...prev, ...newAttachments])
+  }
+
+  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    await processFiles(Array.from(files))
     e.target.value = ''
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false)
+    }
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const files = Array.from(e.dataTransfer.files)
+    await processFiles(files)
+  }
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const files = Array.from(e.clipboardData.files)
+    if (files.length === 0) return
+    e.preventDefault()
+    await processFiles(files)
   }
 
   const removeAttachment = (index: number) => {
     setPendingAttachments(prev => prev.filter((_, i) => i !== index))
     setAttachmentError(null)
+  }
+
+  const openPreview = (att: PendingAttachment) => {
+    setPreviewAttachment(att)
   }
 
   const readFileAsBase64 = (file: globalThis.File): Promise<string> => {
@@ -391,6 +431,21 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
       reader.readAsDataURL(file)
     })
   }
+
+  const pdfBlobUrl = useMemo(() => {
+    if (!previewAttachment) return null
+    const isPdf = previewAttachment.type === 'application/pdf' || previewAttachment.name.toLowerCase().endsWith('.pdf')
+    if (!isPdf) return null
+    try {
+      const bytes = Uint8Array.from(atob(previewAttachment.content), c => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: 'application/pdf' })
+      return URL.createObjectURL(blob)
+    } catch { return null }
+  }, [previewAttachment])
+
+  useEffect(() => {
+    return () => { if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl) }
+  }, [pdfBlobUrl])
 
   return (
     <div className={styles.chat}>
@@ -491,7 +546,12 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
           )}
         </div>
 
-        <div className={styles.inputWrapper}>
+        <div
+          className={`${styles.inputWrapper}${isDragOver ? ` ${styles.inputWrapperDragOver}` : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           {(attachmentError || !attachmentValidation.valid) && (
             <div className={styles.attachmentError}>
               <AlertCircle size={14} />
@@ -516,9 +576,23 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
             <div className={styles.pendingAttachments}>
               {pendingAttachments.map((att, idx) => (
                 <div key={idx} className={styles.pendingAttachment}>
-                  <File size={12} />
-                  <span className={styles.pendingFileName} title={att.name}>{att.name}</span>
-                  <span className={styles.pendingFileSize}>({formatFileSize(att.size)})</span>
+                  <button
+                    className={styles.pendingAttachmentBody}
+                    onClick={() => openPreview(att)}
+                    title="Click to preview"
+                  >
+                    {att.type.startsWith('image/') ? (
+                      <img
+                        src={`data:${att.type};base64,${att.content}`}
+                        alt={att.name}
+                        className={styles.pendingImageThumb}
+                      />
+                    ) : (
+                      <File size={12} />
+                    )}
+                    <span className={styles.pendingFileName} title={att.name}>{att.name}</span>
+                    <span className={styles.pendingFileSize}>({formatFileSize(att.size)})</span>
+                  </button>
                   <button className={styles.removeAttachment} onClick={() => removeAttachment(idx)} title="Remove">
                     <X size={12} />
                   </button>
@@ -540,6 +614,7 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             rows={1}
             lang={micLang}
             inputMode="text"
@@ -552,6 +627,73 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
           disabled={(!input.trim() && pendingAttachments.length === 0) || !attachmentValidation.valid}
         />
       </div>
+
+      {previewAttachment && ReactDOM.createPortal(
+        (() => {
+          const isImage = previewAttachment.type.startsWith('image/')
+          const isPdf = previewAttachment.type === 'application/pdf' || previewAttachment.name.toLowerCase().endsWith('.pdf')
+          const isText = !isPdf && (previewAttachment.type.startsWith('text/') ||
+            ['application/json', 'application/xml', 'application/javascript',
+             'application/typescript', 'application/yaml', 'application/toml',
+             'application/csv', 'application/x-sh'].includes(previewAttachment.type) ||
+            /\.(txt|md|csv|json|xml|yaml|yml|toml|sh|py|js|ts|jsx|tsx|css|html|htm|env|log|ini|cfg|conf)$/i.test(previewAttachment.name))
+
+          let textContent = ''
+          let lineCount = 0
+          if (isText) {
+            try {
+              const bytes = Uint8Array.from(atob(previewAttachment.content), c => c.charCodeAt(0))
+              textContent = new TextDecoder('utf-8').decode(bytes)
+              lineCount = textContent.split('\n').length
+            } catch { textContent = '' }
+          }
+
+          return (
+            <div className={styles.previewOverlay} onClick={() => setPreviewAttachment(null)}>
+              <div className={styles.previewModal} onClick={e => e.stopPropagation()}>
+                <div className={styles.previewHeader}>
+                  <div className={styles.previewHeaderLeft}>
+                    <span className={styles.previewFileName} title={previewAttachment.name}>
+                      {previewAttachment.name}
+                    </span>
+                    <span className={styles.previewMeta}>
+                      {formatFileSize(previewAttachment.size)}
+                      {isText && lineCount > 0 && <> · {lineCount} line{lineCount !== 1 ? 's' : ''}</>}
+                      {isText && <> · Formatting may be inconsistent from source</>}
+                    </span>
+                  </div>
+                  <button className={styles.previewClose} onClick={() => setPreviewAttachment(null)} title="Close (Esc)">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {isImage ? (
+                  <img
+                    src={`data:${previewAttachment.type};base64,${previewAttachment.content}`}
+                    alt={previewAttachment.name}
+                    className={styles.previewImage}
+                  />
+                ) : isPdf && pdfBlobUrl ? (
+                  <iframe
+                    src={pdfBlobUrl}
+                    className={styles.previewPdf}
+                    title={previewAttachment.name}
+                  />
+                ) : isText && textContent ? (
+                  <pre className={styles.previewTextContent}>{textContent}</pre>
+                ) : (
+                  <div className={styles.previewFileInfo}>
+                    <p className={styles.previewUnavailableText}>
+                      Preview isn't available for {previewAttachment.name} ({formatFileSize(previewAttachment.size)}).
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })(),
+        document.body
+      )}
     </div>
   )
 }
