@@ -88,7 +88,7 @@ class OnboardingManager:
         user_name: Optional[str] = None,
         agent_name: Optional[str] = None,
         agent_profile_picture: Optional[str] = None,
-    ) -> None:
+    ) -> bool:
         """
         Mark hard onboarding as complete.
 
@@ -107,22 +107,35 @@ class OnboardingManager:
             state.agent_name = agent_name
         if agent_profile_picture is not None:
             state.agent_profile_picture = agent_profile_picture
-        save_state(state)
-        logger.info("[ONBOARDING] Hard onboarding marked complete")
+        
+        try:
+            save_state(state)
+            logger.info("[ONBOARDING] Hard onboarding marked complete")
+            return True
+        except Exception:
+            return False
 
-    def save(self) -> None:
+    def save(self) -> bool:
         """Persist the current state to disk."""
-        save_state(self._ensure_state_loaded())
+        try:
+            save_state(self._ensure_state_loaded())
+            return True
+        except Exception:
+            return False
 
-    def mark_soft_complete(self) -> None:
+    def mark_soft_complete(self) -> bool:
         """Mark soft onboarding as complete."""
         state = self._ensure_state_loaded()
         state.soft_completed = True
         state.soft_completed_at = datetime.utcnow().isoformat()
-        save_state(state)
-        logger.info("[ONBOARDING] Soft onboarding marked complete")
+        try:
+            save_state(state)
+            logger.info("[ONBOARDING] Soft onboarding marked complete")
+            return True
+        except Exception:
+            return False
 
-    def reset_soft_onboarding(self) -> None:
+    def reset_soft_onboarding(self) -> bool:
         """
         Reset soft onboarding to allow re-run via /onboarding command.
         Does not affect hard onboarding state.
@@ -130,16 +143,24 @@ class OnboardingManager:
         state = self._ensure_state_loaded()
         state.soft_completed = False
         state.soft_completed_at = None
-        save_state(state)
-        logger.info("[ONBOARDING] Soft onboarding reset for re-run")
+        try:
+            save_state(state)
+            logger.info("[ONBOARDING] Soft onboarding reset for re-run")
+            return True
+        except Exception:
+            return False
 
-    def reset_all(self) -> None:
+    def reset_all(self) -> bool:
         """
         Reset all onboarding state (for testing/debugging).
         """
         self._state = OnboardingState()
-        save_state(self._state)
-        logger.info("[ONBOARDING] All onboarding state reset")
+        try:
+            save_state(self._state)
+            logger.info("[ONBOARDING] All onboarding state reset")
+            return True
+        except Exception:
+            return False
 
     def reload_state(self) -> None:
         """Reload state from disk (useful after external modifications)."""
