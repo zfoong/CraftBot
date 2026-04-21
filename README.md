@@ -146,7 +146,7 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 - [ ] **External Tool integration** — Still adding more!
 - [X] **MCP Layer** — Done.
 - [X] **Skill Layer** — Done.
-- [X] **Proactive Behaviour** — Pending
+- [ ] **Proactive Behaviour** — Pending
 
 ---
 
@@ -306,7 +306,7 @@ python service.py logs     # See recent log output
 
 ---
 
-## � Troubleshooting & Common Issues
+## 🔧 Troubleshooting & Common Issues
 
 ### Missing Node.js (for Browser Mode)
 If you see **"npm not found in PATH"** when running `python run.py`:
@@ -339,6 +339,8 @@ The installer automatically detects GPU availability:
 For detailed troubleshooting, see [INSTALLATION_FIX.md](INSTALLATION_FIX.md).
 
 ---
+
+## 🔌 External Service Integration
 
 The agent can connect to various services using OAuth. Release builds come with embedded credentials, but you can also use your own.
 
@@ -414,7 +416,7 @@ LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
 4. Copy Client ID and Client Secret
 
 ---
-## Run with container
+## 🐳 Run with Container
 
 The repository root included a Docker configuration with Python 3.10, key system packages (including Tesseract for OCR), and all Python dependencies defined in `environment.yml`/`requirements.txt` so the agent can run consistently in isolated environments. 
 
@@ -451,7 +453,7 @@ GUI actions (mouse/keyboard events, screenshots) require an X11 server. You can 
 * Use the host display (requires Linux with X11):
 
   ```bash
-  docker run --rm -it 
+  docker run --rm -it \
     -e DISPLAY=$DISPLAY \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $(pwd)/data:/app/app/data \

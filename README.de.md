@@ -146,7 +146,7 @@ Der **Browser-Modus** ist Standard und wird empfohlen. Ohne Node.js gibt dir das
 - [ ] **Externe Tool-Integration** — Wir fügen noch weitere hinzu!
 - [X] **MCP-Schicht** — Fertig.
 - [X] **Skill-Schicht** — Fertig.
-- [X] **Proaktives Verhalten** — In Arbeit
+- [ ] **Proaktives Verhalten** — In Arbeit
 
 ---
 
@@ -306,7 +306,7 @@ python service.py logs     # Aktuelle Log-Ausgabe ansehen
 
 ---
 
-## � Fehlerbehebung und häufige Probleme
+## 🔧 Fehlerbehebung und häufige Probleme
 
 ### Fehlendes Node.js (für den Browser-Modus)
 Erscheint **"npm not found in PATH"** beim Ausführen von `python run.py`:
@@ -339,6 +339,8 @@ Das Installationsprogramm erkennt die GPU-Verfügbarkeit automatisch:
 Ausführliche Hinweise zur Fehlerbehebung findest du in [INSTALLATION_FIX.md](INSTALLATION_FIX.md).
 
 ---
+
+## 🔌 Externe Dienste integrieren
 
 Der Agent kann sich über OAuth mit verschiedenen Diensten verbinden. Release-Builds enthalten eingebettete Zugangsdaten, du kannst aber auch deine eigenen verwenden.
 
@@ -414,7 +416,7 @@ LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
 4. Kopiere Client ID und Client Secret
 
 ---
-## Mit Container ausführen
+## 🐳 Mit Container ausführen
 
 Das Repository-Root enthält eine Docker-Konfiguration mit Python 3.10, wichtigen Systempaketen (inklusive Tesseract für OCR) und allen in `environment.yml`/`requirements.txt` definierten Python-Abhängigkeiten, damit der Agent konsistent in isolierten Umgebungen läuft.
 
@@ -451,7 +453,7 @@ GUI-Aktionen (Maus-/Tastaturereignisse, Screenshots) benötigen einen X11-Server
 * Host-Display verwenden (erfordert Linux mit X11):
 
   ```bash
-  docker run --rm -it 
+  docker run --rm -it \
     -e DISPLAY=$DISPLAY \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $(pwd)/data:/app/app/data \

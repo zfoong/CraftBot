@@ -146,7 +146,7 @@ El **modo navegador** es el predeterminado y recomendado. Si no tienes Node.js, 
 - [ ] **Integración con herramientas externas** — ¡Seguimos añadiendo más!
 - [X] **Capa MCP** — Listo.
 - [X] **Capa de Skills** — Listo.
-- [X] **Comportamiento proactivo** — En curso
+- [ ] **Comportamiento proactivo** — En curso
 
 ---
 
@@ -306,7 +306,7 @@ python service.py logs     # Ver el log reciente
 
 ---
 
-## � Solución de problemas y preguntas frecuentes
+## 🔧 Solución de problemas y preguntas frecuentes
 
 ### Falta Node.js (para el modo navegador)
 Si ves **"npm not found in PATH"** al ejecutar `python run.py`:
@@ -339,6 +339,8 @@ El instalador detecta automáticamente la disponibilidad de GPU:
 Para una solución de problemas más detallada, consulta [INSTALLATION_FIX.md](INSTALLATION_FIX.md).
 
 ---
+
+## 🔌 Integración de servicios externos
 
 El agente puede conectarse a varios servicios usando OAuth. Las builds de release incluyen credenciales integradas, pero también puedes usar las tuyas.
 
@@ -414,7 +416,7 @@ LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
 4. Copia el Client ID y el Client Secret
 
 ---
-## Ejecutar con contenedor
+## 🐳 Ejecutar con contenedor
 
 La raíz del repositorio incluye una configuración Docker con Python 3.10, paquetes clave del sistema (incluido Tesseract para OCR) y todas las dependencias de Python definidas en `environment.yml`/`requirements.txt`, de modo que el agente pueda ejecutarse de forma consistente en entornos aislados.
 
@@ -451,7 +453,7 @@ Las acciones GUI (eventos de ratón/teclado, capturas) requieren un servidor X11
 * Usar el display del host (requiere Linux con X11):
 
   ```bash
-  docker run --rm -it 
+  docker run --rm -it \
     -e DISPLAY=$DISPLAY \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $(pwd)/data:/app/app/data \
