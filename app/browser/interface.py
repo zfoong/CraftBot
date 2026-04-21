@@ -5,6 +5,7 @@ This module provides a browser interface for agent interaction using
 the centralized UI layer components.
 """
 
+from __future__ import annotations
 
 from typing import TYPE_CHECKING
 

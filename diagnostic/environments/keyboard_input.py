@@ -1,4 +1,5 @@
 """Diagnostic environment for the "keyboard input" action."""
+from __future__ import annotations
 
 import types
 from typing import Any, List, Mapping, Tuple

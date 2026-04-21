@@ -1,5 +1,6 @@
 """Skill invocation command - allows invoking skills as slash commands."""
 
+from __future__ import annotations
 
 from typing import List, TYPE_CHECKING
 

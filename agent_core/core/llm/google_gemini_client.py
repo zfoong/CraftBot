@@ -7,6 +7,7 @@ package.  Using the REST interface keeps stderr free from the gRPC warnings the
 SDK emits during import/initialisation (e.g. the ``ALTS creds ignored`` message
 that was polluting the CLI output).
 """
+from __future__ import annotations
 
 
 import base64

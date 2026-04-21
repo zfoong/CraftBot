@@ -9,6 +9,7 @@ The bridge subprocess is managed by ``WhatsAppBridge`` in
 ``app.external_comms.platforms.whatsapp_bridge.client``.
 """
 
+from __future__ import annotations
 
 import asyncio
 import logging

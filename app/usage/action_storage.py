@@ -6,6 +6,7 @@ SQLite-based storage for action panel items (tasks and actions).
 Provides local persistence for action history across agent restarts.
 """
 
+from __future__ import annotations
 
 import logging
 import sqlite3

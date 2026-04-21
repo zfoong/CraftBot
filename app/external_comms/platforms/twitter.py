@@ -6,6 +6,7 @@ and polling for mentions. An optional **watch_tag** lets users restrict
 mention triggers to those containing a specific keyword.
 """
 
+from __future__ import annotations
 
 import asyncio
 import hashlib

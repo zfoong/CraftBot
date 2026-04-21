@@ -7,6 +7,7 @@ Provides persistence across agent restarts so that running tasks and their
 event context can be restored.
 """
 
+from __future__ import annotations
 
 import json
 import logging

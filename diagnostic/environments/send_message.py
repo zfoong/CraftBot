@@ -1,5 +1,6 @@
 """Diagnostic environment for the "send_message" action."""
 
+from __future__ import annotations
 
 from diagnostic.framework import ActionTestCase
 

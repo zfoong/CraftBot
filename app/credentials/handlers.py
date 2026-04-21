@@ -1,4 +1,5 @@
 """All integration credential handlers + registry."""
+from __future__ import annotations
 
 
 import base64

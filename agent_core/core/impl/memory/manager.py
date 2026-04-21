@@ -13,6 +13,7 @@ that tell the agent WHERE to find the full content, rather than returning
 the full content directly. This keeps retrieval lightweight.
 """
 
+from __future__ import annotations
 
 import hashlib
 import re

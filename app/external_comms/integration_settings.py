@@ -1,4 +1,5 @@
 """Integration settings management — shared by browser and TUI frontends."""
+from __future__ import annotations
 
 import asyncio
 import logging

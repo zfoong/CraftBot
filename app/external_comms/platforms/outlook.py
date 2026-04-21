@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Outlook email client — Microsoft Graph API via httpx."""
 
+from __future__ import annotations
 
 import asyncio
 import logging
