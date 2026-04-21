@@ -25,7 +25,7 @@
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": ""
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "google-workspace-mcp",
@@ -57,7 +57,7 @@
         "GOOGLE_CLIENT_ID": "",
         "GOOGLE_CLIENT_SECRET": ""
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "outlook-mcp",
@@ -145,7 +145,7 @@
         "SLACK_BOT_TOKEN": "",
         "SLACK_TEAM_ID": ""
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "discord-mcp",
@@ -481,7 +481,7 @@
         "GOOGLE_CLIENT_ID": "",
         "GOOGLE_CLIENT_SECRET": ""
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "apple-notes-mcp",
@@ -552,7 +552,7 @@
       "env": {
         "NOTION_API_KEY": ""
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "obsidian-mcp",
@@ -568,7 +568,7 @@
         "OBSIDIAN_VERIFY_SSL": "false",
         "OBSIDIAN_ENABLE_CACHE": "true"
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "todoist-mcp",
@@ -582,7 +582,7 @@
       "env": {
         "TODOIST_API_TOKEN": ""
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "jira-mcp",
@@ -2109,7 +2109,7 @@
       "env": {
         "BRAVE_API_KEY": ""
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "google-maps",
