@@ -103,7 +103,7 @@ def load_state(state_file: Optional[Path] = None) -> OnboardingState:
         return OnboardingState()
 
 
-def save_state(state: OnboardingState, state_file: Optional[Path] = None) -> bool:
+def save_state(state: OnboardingState, state_file: Optional[Path] = None) -> None:
     """
     Save onboarding state to JSON file.
 
@@ -111,8 +111,8 @@ def save_state(state: OnboardingState, state_file: Optional[Path] = None) -> boo
         state: OnboardingState object to save
         state_file: Path to the state file (defaults to configured path)
 
-    Returns:
-        True if save succeeded, False otherwise
+    Raises:
+        Exception: If the state file cannot be written (permissions, disk full, etc.)
     """
     if state_file is None:
         state_file = get_onboarding_config_file()
@@ -127,7 +127,6 @@ def save_state(state: OnboardingState, state_file: Optional[Path] = None) -> boo
             encoding="utf-8"
         )
         logger.debug(f"[ONBOARDING] Saved state: hard={state.hard_completed}, soft={state.soft_completed}")
-        return True
     except Exception as e:
         logger.error(f"[ONBOARDING] Failed to save state: {e}")
-        return False
+        raise
