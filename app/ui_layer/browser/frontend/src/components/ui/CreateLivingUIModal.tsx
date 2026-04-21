@@ -85,6 +85,11 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   const nameInputRef = useRef<HTMLInputElement>(null)
   const wordCount = useMemo(() => countWords(description), [description])
 
+  const onCloseRef = useRef(onClose)
+  const onInstalledRef = useRef(onInstalled)
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
+  useEffect(() => { onInstalledRef.current = onInstalled }, [onInstalled])
+
   // Reset on open
   useEffect(() => {
     if (isOpen) {
@@ -131,12 +136,13 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
         }
       }),
       onMessage('living_ui_marketplace_install', (data: any) => {
+        console.log('[CreateLivingUIModal] received living_ui_marketplace_install:', data)
         setInstallingId(null)
         if (data.status === 'success') {
-          onClose()
+          onCloseRef.current()
           const projectId = data.project?.id
-          if (projectId && onInstalled) {
-            onInstalled(projectId)
+          if (projectId && onInstalledRef.current) {
+            onInstalledRef.current(projectId)
           }
         } else {
           setMarketplaceError(data.error || 'Installation failed')
@@ -144,7 +150,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
       }),
     ]
     return () => cleanups.forEach(c => c())
-  }, [onMessage, onClose])
+  }, [onMessage])
 
   const fetchMarketplace = useCallback(() => {
     setMarketplaceLoading(true)
