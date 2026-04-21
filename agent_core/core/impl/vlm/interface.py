@@ -237,10 +237,7 @@ class VLMInterface:
             if self.provider == "deepseek":
                 raise RuntimeError("DeepSeek does not support vision/VLM. Use a different provider for image description.")
             elif self.provider in ("openai", "minimax", "moonshot", "grok"):
-                if json_mode:
-                    response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt)
-                else:
-                    response = self._openai_describe_bytes_plain(image_bytes, system_prompt, user_prompt)
+                response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt, json_mode=json_mode)
             elif self.provider == "remote":
                 response = self._ollama_describe_bytes(image_bytes, system_prompt, user_prompt)
             elif self.provider == "gemini":
@@ -429,29 +426,6 @@ class VLMInterface:
         except Exception as e:
             logger.warning(f"[VLM] Failed to report usage: {e}")
 
-    def _openai_describe_bytes_plain(self, image_bytes: bytes, sys: str | None, usr: str) -> Dict[str, Any]:
-        """OpenAI vision request WITHOUT json_object enforcement — for raw text output (OCR)."""
-        img_b64 = base64.b64encode(image_bytes).decode()
-        messages: list[Dict[str, Any]] = []
-        if sys:
-            messages.append({"role": "system", "content": sys})
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "text", "text": usr},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
-            ],
-        })
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=4096,  # OCR may return large amounts of text
-            # NOTE: No response_format — OCR returns plain text
-        )
-        content = response.choices[0].message.content.strip()
-        total_tokens = response.usage.prompt_tokens + response.usage.completion_tokens
-        return {"tokens_used": total_tokens, "content": content}
 
     def _gemini_describe_video_frames(
         self, frame_bytes_list: list[bytes], sys: str | None, usr: str
@@ -496,7 +470,7 @@ class VLMInterface:
         )
         return synthesis
 
-    def _openai_describe_bytes(self, image_bytes: bytes, sys: str | None, usr: str) -> Dict[str, Any]:
+    def _openai_describe_bytes(self, image_bytes: bytes, sys: str | None, usr: str, json_mode: bool = True) -> Dict[str, Any]:
         """OpenAI/Grok vision request with automatic prompt caching metrics."""
         img_b64 = base64.b64encode(image_bytes).decode()
         mime_type = self._detect_mime_type(image_bytes)
@@ -514,14 +488,13 @@ class VLMInterface:
         )
         # Newer OpenAI models (o1, o3, o4, gpt-5, etc.) require
         # 'max_completion_tokens' instead of the legacy 'max_tokens' parameter.
-        # Note: response_format=json_object is intentionally NOT set here because
-        # describe_image returns plain text descriptions, not JSON. Enabling JSON
-        # mode would also require the prompt to contain the word "json".
         request_kwargs: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature,
         }
+        if json_mode:
+            request_kwargs["response_format"] = {"type": "json_object"}
         model_lower = (self.model or "").lower()
         uses_max_completion_tokens = (
             model_lower.startswith("o1")
