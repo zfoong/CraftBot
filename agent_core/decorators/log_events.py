@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import annotations
 """
 Flexible function-level logging:
 - logs start
@@ -9,7 +8,7 @@ Allows custom message templates:
   {id}, {name}, {args}, {kwargs}, {result}, {exception}, {duration_ms}
 """
 
-
+from __future__ import annotations
 
 import logging
 import time

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import annotations
 """
 Profiler Module - Comprehensive performance tracking for the agent.
 
@@ -29,7 +28,7 @@ Configuration:
     Set "auto_save_interval" to N to save after every N loops (0 = only at exit).
 """
 
-
+from __future__ import annotations
 
 import atexit
 import asyncio
