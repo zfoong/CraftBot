@@ -37,6 +37,10 @@
   color: #3b82f6;
 }
 
+.paused {
+  color: #3b82f6;
+}
+
 /* Spinning animation for loader icon */
 .spinning {
   animation: spin 1s linear infinite;
@@ -98,6 +102,10 @@
 }
 
 .dot_waiting {
+  background: #3b82f6;
+}
+
+.dot_paused {
   background: #3b82f6;
 }
 

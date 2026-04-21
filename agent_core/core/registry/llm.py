@@ -18,6 +18,8 @@ Usage:
     response = await llm.generate_response_async(prompt)
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from agent_core.core.registry.base import ComponentRegistry

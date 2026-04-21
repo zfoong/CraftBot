@@ -56,6 +56,7 @@ _suppress_console_logging_early()
 import argparse
 import asyncio
 import sys
+import pathlib
 
 # Register agent_core state provider and config before importing AgentBase
 # This ensures shared code can access state via get_state()
@@ -64,7 +65,9 @@ from app.state.agent_state import STATE
 
 # CraftBot uses global STATE singleton - always available
 StateRegistry.register(lambda: STATE)
-ConfigRegistry.register_workspace_root(".")
+ConfigRegistry.register_workspace_root(
+    str(pathlib.Path(__file__).parent.parent.resolve())
+)
 
 # Import settings reader (reads directly from settings.json)
 from app.config import get_llm_provider, get_vlm_provider, get_api_key, get_base_url, get_llm_model, get_vlm_model
@@ -122,12 +125,12 @@ def _initial_settings() -> tuple:
     api_key = get_api_key(provider)
     base_url = get_base_url(provider)
     model = get_llm_model()  # None → use registry default for the provider
+    vlm_prov = get_vlm_provider()
+    vlm_mod = get_vlm_model()
 
     # Remote (Ollama) doesn't require API key
     has_key = bool(api_key) or provider == "remote"
 
-    vlm_prov = get_vlm_provider()   # falls back to llm_provider if not set
-    vlm_mod  = get_vlm_model()      # falls back to registry default if None
 
     return provider, api_key, base_url, model, vlm_prov, vlm_mod, has_key
 

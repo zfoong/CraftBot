@@ -217,11 +217,17 @@ class LLMInterface:
             target_base_url = base_url
 
         try:
-            logger.info(f"[LLM] Reinitializing with provider: {target_provider}")
+            from app.config import get_llm_model as _get_llm_model  # type: ignore[import]
+            target_model = _get_llm_model()
+        except Exception:
+            target_model = None  # app context not available (e.g. agent_core standalone)
+
+        try:
+            logger.info(f"[LLM] Reinitializing with provider: {target_provider}, model: {target_model or 'registry default'}")
             ctx = ModelFactory.create(
                 provider=target_provider,
                 interface=InterfaceType.LLM,
-                model_override=None,
+                model_override=target_model,
                 api_key=target_api_key,
                 base_url=target_base_url,
                 deferred=False,
@@ -260,6 +266,16 @@ class LLMInterface:
                 )
             else:
                 self._gemini_cache_manager = None
+
+            # Reset consecutive failure counter — a config change is an explicit
+            # user-initiated retry signal. Without this, a prior run that hit the
+            # failure threshold would continue to abort even with the new config.
+            if self._consecutive_failures > 0:
+                logger.info(
+                    f"[LLM] Resetting consecutive failure counter on reinitialize "
+                    f"(was {self._consecutive_failures})"
+                )
+                self._consecutive_failures = 0
 
             logger.info(f"[LLM] Reinitialized successfully with provider: {self.provider}, model: {self.model}")
             return self._initialized
@@ -1149,15 +1165,29 @@ class LLMInterface:
                 "model": self.model,
                 "messages": messages,
                 "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
             }
+
+            # Newer OpenAI models (o1, o3, o4, gpt-5, etc.) require
+            # 'max_completion_tokens' instead of the legacy 'max_tokens' parameter.
+            model_lower = (self.model or "").lower()
+            uses_max_completion_tokens = (
+                model_lower.startswith("o1")
+                or model_lower.startswith("o3")
+                or model_lower.startswith("o4")
+                or model_lower.startswith("gpt-5")
+            )
+            if uses_max_completion_tokens:
+                request_kwargs["max_completion_tokens"] = self.max_tokens
+            else:
+                request_kwargs["max_tokens"] = self.max_tokens
 
             # Always enforce JSON output format
             request_kwargs["response_format"] = {"type": "json_object"}
 
-            # Add prompt_cache_key when call_type is provided for better cache routing
-            # This helps when alternating between different call types (reasoning, action_selection)
-            if call_type and system_prompt and len(system_prompt) >= config.min_cache_tokens:
+            # Add prompt_cache_key for OpenAI/DeepSeek cache routing.
+            # Grok (xAI) does not support prompt_cache_key — it uses automatic
+            # prefix caching and ignores this parameter, so skip it for Grok.
+            if self.provider != "grok" and call_type and system_prompt and len(system_prompt) >= config.min_cache_tokens:
                 prompt_hash = hashlib.sha256(system_prompt.encode()).hexdigest()[:16]
                 cache_key = f"{call_type}_{prompt_hash}"
                 request_kwargs["extra_body"] = {"prompt_cache_key": cache_key}
@@ -1168,21 +1198,26 @@ class LLMInterface:
             token_count_input = response.usage.prompt_tokens
             token_count_output = response.usage.completion_tokens
 
-            # Extract cached tokens from prompt_tokens_details (OpenAI automatic caching)
-            # Available for prompts ≥1024 tokens
-            prompt_tokens_details = getattr(response.usage, "prompt_tokens_details", None)
-            if prompt_tokens_details:
-                cached_tokens = getattr(prompt_tokens_details, "cached_tokens", 0) or 0
+            # Extract cached tokens — field name differs by provider:
+            # - OpenAI:  response.usage.prompt_tokens_details.cached_tokens
+            # - Grok (xAI): response.usage.prompt_cache_hit_tokens
+            if self.provider == "grok":
+                cached_tokens = getattr(response.usage, "prompt_cache_hit_tokens", 0) or 0
+            else:
+                prompt_tokens_details = getattr(response.usage, "prompt_tokens_details", None)
+                if prompt_tokens_details:
+                    cached_tokens = getattr(prompt_tokens_details, "cached_tokens", 0) or 0
 
             # Record cache metrics
+            provider_label = self.provider  # "openai", "grok", "deepseek", etc.
             metrics = get_cache_metrics()
             if cached_tokens > 0:
-                logger.info(f"[CACHE] OpenAI {cache_type} cache hit: {cached_tokens}/{token_count_input} tokens from cache")
-                metrics.record_hit("openai", cache_type, cached_tokens=cached_tokens, total_tokens=token_count_input)
+                logger.info(f"[CACHE] {provider_label} {cache_type} cache hit: {cached_tokens}/{token_count_input} tokens from cache")
+                metrics.record_hit(provider_label, cache_type, cached_tokens=cached_tokens, total_tokens=token_count_input)
             elif system_prompt and len(system_prompt) >= config.min_cache_tokens:
                 # Caching should have been attempted (prompt long enough)
                 # This is a miss - either first call or cache expired
-                metrics.record_miss("openai", cache_type, total_tokens=token_count_input)
+                metrics.record_miss(provider_label, cache_type, total_tokens=token_count_input)
 
             status = "success"
         except Exception as exc:
@@ -1233,22 +1268,24 @@ class LLMInterface:
         try:
             payload = {
                 "model": self.model,
-                "system": system_prompt,
                 "prompt": user_prompt,
                 "stream": False,
+                "format": "json",
                 "options": {
                     "temperature": self.temperature,
                 }
             }
+            if system_prompt:
+                payload["system"] = system_prompt
             url: str = f"{self.remote_url.rstrip('/')}/api/generate"
             response = requests.post(url, json=payload, timeout=600)
             response.raise_for_status()
             result = response.json()
 
             content = result.get("response", "").strip()
-            total_tokens = result.get("usage", {}).get("total_tokens", 0)
             token_count_input = result.get("prompt_eval_count", 0)
             token_count_output = result.get("eval_count", 0)
+            total_tokens = token_count_input + token_count_output
             status = "success"
         except Exception as exc:
             exc_obj = exc

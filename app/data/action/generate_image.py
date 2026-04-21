@@ -108,8 +108,7 @@ def generate_image(input_data: dict) -> dict:
             'message': 'Image generated successfully (simulated mode).'
         }
 
-    # Check for API key first - before any package installation
-    # Read from settings.json (google/gemini provider key)
+    # Pre-flight validation: check API key is configured
     from app.config import get_api_key
     api_key = get_api_key('gemini')
     if not api_key:
@@ -118,7 +117,7 @@ def generate_image(input_data: dict) -> dict:
             'image_paths': [],
             'prompt_used': '',
             'resolution': '',
-            'message': 'Google API key is not configured. Please set it in Settings > Model Settings > API Keys. Steps: 1) Go to https://aistudio.google.com/apikey 2) Create a new API key 3) Add it in Settings under the Google/Gemini provider.'
+            'message': 'Gemini API key is not configured. Tell the user the Google Gemini API key is required for image generation, and ask if they need help setting it up.'
         }
 
     # Validate required input
@@ -141,24 +140,98 @@ def generate_image(input_data: dict) -> dict:
     reference_images = input_data.get('reference_images', [])
     safety_filter_level = input_data.get('safety_filter_level', 'block_medium_and_above')
 
-    # Validate resolution
+    # Validate resolution with user feedback
     valid_resolutions = ['1K', '2K', '4K']
+    warnings = []
     if resolution not in valid_resolutions:
+        warnings.append(f"Invalid resolution '{resolution}'. Defaulting to '1K'. Valid options: {', '.join(valid_resolutions)}.")
         resolution = '1K'
 
-    # Validate aspect ratio
+    # Validate aspect ratio with user feedback
     valid_ratios = ['1:1', '3:4', '4:3', '9:16', '16:9']
     if aspect_ratio not in valid_ratios:
+        warnings.append(f"Invalid aspect ratio '{aspect_ratio}'. Defaulting to '1:1'. Valid options: {', '.join(valid_ratios)}.")
         aspect_ratio = '1:1'
 
-    # Validate safety filter level
+    # Validate safety filter level with user feedback
     valid_safety_levels = ['block_none', 'block_only_high', 'block_medium_and_above', 'block_low_and_above']
     if safety_filter_level not in valid_safety_levels:
+        warnings.append(f"Invalid safety filter level '{safety_filter_level}'. Defaulting to 'block_medium_and_above'. Valid options: {', '.join(valid_safety_levels)}.")
         safety_filter_level = 'block_medium_and_above'
+
+    # Validate number_of_images with user feedback
+    raw_num = int(input_data.get('number_of_images', 1))
+    if raw_num < 1 or raw_num > 4:
+        warnings.append(f"number_of_images '{raw_num}' out of range. Clamped to {number_of_images}. Valid range: 1-4.")
 
     # Limit reference images to 14
     if len(reference_images) > 14:
+        warnings.append(f"Too many reference images ({len(reference_images)}). Only the first 14 will be used.")
         reference_images = reference_images[:14]
+
+    # Helper: extract images from Gemini response
+    def _extract_images_from_response(response):
+        images = []
+        # Primary path: candidates[].content.parts[].inline_data
+        if hasattr(response, 'candidates') and response.candidates:
+            for candidate in response.candidates:
+                if not (hasattr(candidate, 'content') and hasattr(candidate.content, 'parts')):
+                    continue
+                for part in candidate.content.parts:
+                    if hasattr(part, 'inline_data') and part.inline_data:
+                        if hasattr(part.inline_data, 'mime_type') and part.inline_data.mime_type.startswith('image/'):
+                            images.append(part.inline_data.data)
+        # Fallback: response.images (older SDK versions)
+        if not images and hasattr(response, 'images'):
+            for img in response.images:
+                if hasattr(img, 'data'):
+                    images.append(img.data)
+                elif hasattr(img, '_pil_image'):
+                    images.append(img)
+        return images
+
+    # Helper: check if response was blocked by safety filters
+    def _get_block_reason(response):
+        if hasattr(response, 'prompt_feedback'):
+            feedback = response.prompt_feedback
+            if hasattr(feedback, 'block_reason') and feedback.block_reason:
+                return str(feedback.block_reason)
+        if hasattr(response, 'candidates') and response.candidates:
+            for candidate in response.candidates:
+                if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
+                    reason = str(candidate.finish_reason)
+                    if 'SAFETY' in reason.upper():
+                        return reason
+        return None
+
+    # Helper: build the save path for a generated image
+    def _build_save_path(output_path, timestamp, index, number_of_images, total_found):
+        if output_path:
+            if number_of_images > 1 or total_found > 1:
+                base, ext = os.path.splitext(output_path)
+                if not ext:
+                    ext = '.png'
+                return f"{base}_{index+1}{ext}"
+            else:
+                save_path = output_path
+                if not os.path.splitext(save_path)[1]:
+                    save_path += '.png'
+                return save_path
+        else:
+            temp_dir = tempfile.gettempdir()
+            return os.path.join(temp_dir, f"generated_image_{timestamp}_{index+1}.png")
+
+    # Helper: convert image data to PIL Image
+    def _to_pil_image(img_data, Image, io, base64):
+        if isinstance(img_data, str):
+            image_bytes = base64.b64decode(img_data)
+            return Image.open(io.BytesIO(image_bytes))
+        elif isinstance(img_data, bytes):
+            return Image.open(io.BytesIO(img_data))
+        elif hasattr(img_data, '_pil_image'):
+            return img_data._pil_image
+        else:
+            return img_data
 
     # Ensure required packages are installed
     def _ensure_package(pkg_name):
@@ -274,55 +347,31 @@ Image specifications:
         image_paths = []
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Process response parts to find generated images
-        images_found = []
-        if hasattr(response, 'candidates') and response.candidates:
-            for candidate in response.candidates:
-                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                    for part in candidate.content.parts:
-                        # Check for inline image data
-                        if hasattr(part, 'inline_data') and part.inline_data:
-                            if part.inline_data.mime_type.startswith('image/'):
-                                images_found.append(part.inline_data.data)
-                        # Check for file data
-                        elif hasattr(part, 'file_data') and part.file_data:
-                            if part.file_data.mime_type.startswith('image/'):
-                                # Would need to download from file URI
-                                pass
+        # Process response to find generated images
+        images_found = _extract_images_from_response(response)
 
         if not images_found:
-            # Try alternative response structure
-            if hasattr(response, 'images'):
-                for img in response.images:
-                    if hasattr(img, 'data'):
-                        images_found.append(img.data)
-                    elif hasattr(img, '_pil_image'):
-                        images_found.append(img)
-
-        if not images_found:
+            # Check if response was blocked by safety filters
+            block_reason = _get_block_reason(response)
+            if block_reason:
+                return {
+                    'status': 'error',
+                    'image_paths': [],
+                    'prompt_used': prompt,
+                    'resolution': resolution,
+                    'message': f'Image generation was blocked by safety filters: {block_reason}. Try modifying your prompt or adjusting safety_filter_level.'
+                }
             return {
                 'status': 'error',
                 'image_paths': [],
                 'prompt_used': prompt,
                 'resolution': resolution,
-                'message': 'No images were generated. The model may not have produced image output for this prompt. Try rephrasing your prompt or check if your API key has access to image generation.'
+                'message': 'No images were generated. The model did not produce image output for this prompt. Try rephrasing your prompt or check if your API key has access to image generation.'
             }
 
         # Save each generated image
         for i, img_data in enumerate(images_found[:number_of_images]):
-            if output_path:
-                if number_of_images > 1 or len(images_found) > 1:
-                    base, ext = os.path.splitext(output_path)
-                    if not ext:
-                        ext = '.png'
-                    save_path = f"{base}_{i+1}{ext}"
-                else:
-                    save_path = output_path
-                    if not os.path.splitext(save_path)[1]:
-                        save_path += '.png'
-            else:
-                temp_dir = tempfile.gettempdir()
-                save_path = os.path.join(temp_dir, f"generated_image_{timestamp}_{i+1}.png")
+            save_path = _build_save_path(output_path, timestamp, i, number_of_images, len(images_found))
 
             # Ensure parent directory exists
             parent_dir = os.path.dirname(os.path.abspath(save_path))
@@ -330,26 +379,20 @@ Image specifications:
                 os.makedirs(parent_dir, exist_ok=True)
 
             # Save the image
-            if isinstance(img_data, str):
-                # Base64 encoded data
-                image_bytes = base64.b64decode(img_data)
-                pil_image = Image.open(io.BytesIO(image_bytes))
-            elif isinstance(img_data, bytes):
-                pil_image = Image.open(io.BytesIO(img_data))
-            elif hasattr(img_data, '_pil_image'):
-                pil_image = img_data._pil_image
-            else:
-                pil_image = img_data
-
+            pil_image = _to_pil_image(img_data, Image, io, base64)
             pil_image.save(save_path, 'PNG')
             image_paths.append(save_path)
+
+        message = f'Successfully generated {len(image_paths)} image(s) using Nano Banana Pro.'
+        if warnings:
+            message += ' Warnings: ' + ' '.join(warnings)
 
         return {
             'status': 'success',
             'image_paths': image_paths,
             'prompt_used': prompt,
             'resolution': resolution,
-            'message': f'Successfully generated {len(image_paths)} image(s) using Nano Banana Pro.'
+            'message': message
         }
 
     except Exception as e:

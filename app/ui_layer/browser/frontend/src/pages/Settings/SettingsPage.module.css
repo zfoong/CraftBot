@@ -185,6 +185,30 @@
   color: var(--text-muted);
 }
 
+/* Agent profile picture editor */
+.profilePictureRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.profilePreview {
+  width: 80px;
+  height: 80px;
+  /* Square with the same fillet as chat bubbles */
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+.profilePictureActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .labelHint {
   font-size: var(--text-xs);
   font-weight: var(--font-normal);

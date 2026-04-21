@@ -192,6 +192,7 @@ AGENT_PROFILE_PROMPT = """
 ENVIRONMENTAL_CONTEXT_PROMPT = """
 <agent_environment>
 - User Location: {user_location}
+- Current Working Directory: {working_directory}
 - Operating System: {operating_system} {os_version} ({os_platform})
 - VM Operating System: {vm_operating_system} {vm_os_version} ({vm_os_platform})
 - VM's screen resolution (GUI mode): {vm_resolution}

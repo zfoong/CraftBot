@@ -30,6 +30,22 @@ class Attachment:
 
 
 @dataclass
+class ChatMessageOption:
+    """
+    Data structure for an interactive option/button in a chat message.
+
+    Attributes:
+        label: Button text displayed to the user (e.g. "Continue")
+        value: Machine-readable value sent back on click (e.g. "continue_limit")
+        style: Visual style - "primary", "danger", or "default"
+    """
+
+    label: str
+    value: str
+    style: str = "default"
+
+
+@dataclass
 class ChatMessage:
     """
     Data structure for a chat message.
@@ -44,6 +60,8 @@ class ChatMessage:
         message_id: Optional unique identifier for the message
         attachments: Optional list of file attachments
         task_session_id: Optional task session ID for reply feature
+        options: Optional list of interactive options/buttons
+        option_selected: Value of the option that was selected, if any
     """
 
     sender: str
@@ -53,6 +71,8 @@ class ChatMessage:
     message_id: Optional[str] = None
     attachments: Optional[List[Attachment]] = None
     task_session_id: Optional[str] = None
+    options: Optional[List[ChatMessageOption]] = None
+    option_selected: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Generate message_id if not provided."""

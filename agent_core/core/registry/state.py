@@ -19,6 +19,8 @@ Usage:
     await manager.start_session()
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from agent_core.core.registry.base import ComponentRegistry

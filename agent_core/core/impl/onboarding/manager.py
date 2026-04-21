@@ -86,7 +86,8 @@ class OnboardingManager:
     def mark_hard_complete(
         self,
         user_name: Optional[str] = None,
-        agent_name: Optional[str] = None
+        agent_name: Optional[str] = None,
+        agent_profile_picture: Optional[str] = None,
     ) -> None:
         """
         Mark hard onboarding as complete.
@@ -94,6 +95,8 @@ class OnboardingManager:
         Args:
             user_name: User's name collected during onboarding
             agent_name: Agent's name configured during onboarding
+            agent_profile_picture: Extension of the uploaded agent profile
+                picture (e.g. "png"). None leaves the current value untouched.
         """
         state = self._ensure_state_loaded()
         state.hard_completed = True
@@ -102,8 +105,14 @@ class OnboardingManager:
             state.user_name = user_name
         if agent_name:
             state.agent_name = agent_name
+        if agent_profile_picture is not None:
+            state.agent_profile_picture = agent_profile_picture
         save_state(state)
         logger.info("[ONBOARDING] Hard onboarding marked complete")
+
+    def save(self) -> None:
+        """Persist the current state to disk."""
+        save_state(self._ensure_state_loaded())
 
     def mark_soft_complete(self) -> None:
         """Mark soft onboarding as complete."""

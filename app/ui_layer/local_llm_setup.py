@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Local LLM setup utilities for Ollama."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging

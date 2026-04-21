@@ -547,6 +547,9 @@ def _install_windows(run_args: List[str]) -> None:
 
 
 def _uninstall_windows() -> None:
+    removed_any = False
+
+    # Remove from Task Scheduler
     try:
         result = subprocess.run(
             ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
@@ -554,11 +557,31 @@ def _uninstall_windows() -> None:
         )
         if result.returncode == 0:
             print(f"Auto-start removed (task '{TASK_NAME}' deleted).")
-        else:
-            # Task may not exist
-            print(f"Could not remove task (it may not be registered): {result.stderr.strip()}")
+            removed_any = True
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Warning: Could not query Task Scheduler — {e}")
+
+    # Remove from Registry (HKCU\...\Run) — the fallback auto-start method
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0, winreg.KEY_SET_VALUE,
+        )
+        try:
+            winreg.DeleteValue(key, TASK_NAME)
+            print(f"Auto-start removed (registry entry '{TASK_NAME}' deleted).")
+            removed_any = True
+        except FileNotFoundError:
+            pass  # Entry didn't exist in registry — that's fine
+        finally:
+            winreg.CloseKey(key)
+    except Exception as e:
+        print(f"Warning: Could not clean registry — {e}")
+
+    if not removed_any:
+        print("No auto-start registration found (already uninstalled?).")
 
 
 # ─── Auto-start: Linux systemd (user service) ─────────────────────────────────
@@ -789,12 +812,32 @@ def cmd_install(extra_args: List[str]) -> None:
     _close_console_window()
 
 
+def _remove_desktop_shortcut() -> None:
+    """Remove the CraftBot desktop shortcut if it exists."""
+    desktop = _find_desktop()
+    if not desktop:
+        return
+    if _PLATFORM == "win32":
+        shortcut_path = os.path.join(desktop, SHORTCUT_NAME)
+    else:
+        shortcut_path = os.path.join(desktop, "CraftBot.desktop")
+    if os.path.isfile(shortcut_path):
+        try:
+            os.remove(shortcut_path)
+            print(f"Desktop shortcut removed: {shortcut_path}")
+        except Exception as e:
+            print(f"Warning: Could not remove desktop shortcut — {e}")
+
+
 def cmd_uninstall() -> None:
     """Remove auto-start registration and uninstall dependencies."""
     # Stop the service first if running
     pid = _read_pid()
     if pid and _is_running(pid):
         cmd_stop()
+
+    # Clean up PID file
+    _remove_pid()
 
     # Remove auto-start registration
     plat = _PLATFORM
@@ -804,6 +847,9 @@ def cmd_uninstall() -> None:
         _uninstall_macos()
     else:
         _uninstall_linux()
+
+    # Remove desktop shortcut
+    _remove_desktop_shortcut()
 
     # Uninstall pip packages
     req_file = os.path.join(BASE_DIR, "requirements.txt")

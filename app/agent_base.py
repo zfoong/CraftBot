@@ -105,6 +105,7 @@ class TriggerData:
     is_self_message: bool = False  # True when the user sent themselves a message
     contact_id: str | None = None  # Sender/chat ID from external platform
     channel_id: str | None = None  # Channel/group ID from external platform
+    payload: dict | None = None  # Full trigger payload for passing extra data
 
 class AgentBase:
     """
@@ -138,8 +139,7 @@ class AgentBase:
                 history, etc.) is stored.
             chroma_path: Directory for the local Chroma vector store used by the
                 RAG components.
-            llm_provider: Provider name passed to :class:`LLMInterface` and
-                :class:`VLMInterface`.
+            llm_provider: Provider name passed to :class:`LLMInterface`.
             llm_api_key: API key for the LLM provider.
             llm_base_url: Base URL for the LLM provider (optional).
             llm_model: Model name override (None = use registry default).
@@ -604,6 +604,7 @@ class AgentBase:
             is_self_message=payload.get("is_self_message", False),
             contact_id=payload.get("contact_id", ""),
             channel_id=payload.get("channel_id", ""),
+            payload=payload,
         )
 
     def _extract_user_message_from_trigger(self, trigger: Trigger) -> Optional[str]:
@@ -1105,6 +1106,9 @@ class AgentBase:
             if action.name == "task_start":
                 params["_original_query"] = trigger_data.user_message or trigger_data.query
                 params["_original_platform"] = trigger_data.platform
+                # Pass pre-selected skills from skill slash commands (e.g., /pdf, /docx)
+                if trigger_data.payload and trigger_data.payload.get("pre_selected_skills"):
+                    params["_pre_selected_skills"] = trigger_data.payload["pre_selected_skills"]
 
         action_names = [a[0].name for a in actions_with_input]
         logger.info(f"[ACTION] Ready to run {len(actions_with_input)} action(s): {action_names}")
@@ -1279,18 +1283,17 @@ class AgentBase:
 
         # Check action limits
         if (action_count / max_actions) >= 1.0:
-            # Log warning BEFORE cancelling task (stream is removed during cancel)
             if self.event_stream_manager:
                 self.event_stream_manager.log(
                     "warning",
-                    f"Action limit reached: 100% of the maximum actions ({max_actions} actions) has been used. Aborting task.",
-                    display_message=f"Action limit reached: 100% of the maximum ({max_actions} actions) has been used. Aborting task.",
+                    f"Action limit reached: 100% of the maximum actions ({max_actions} actions) has been used. Waiting for user decision.",
+                    display_message=None,
                     task_id=current_task_id,
                 )
                 self.state_manager.bump_event_stream()
-            response = await self.task_manager.mark_task_cancel(reason=f"Task reached the maximum actions allowed limit: {max_actions}")
-            task_cancelled: bool = response
-            return not task_cancelled
+            await self._send_limit_choice_message("action", current_task_id)
+            await self._pause_task_for_limit_choice(current_task_id)
+            return False
         elif (action_count / max_actions) >= 0.8:
             if self.event_stream_manager:
                 self.event_stream_manager.log(
@@ -1306,18 +1309,17 @@ class AgentBase:
 
         # Check token limits
         if (token_count / max_tokens) >= 1.0:
-            # Log warning BEFORE cancelling task (stream is removed during cancel)
             if self.event_stream_manager:
                 self.event_stream_manager.log(
                     "warning",
-                    f"Token limit reached: 100% of the maximum tokens ({max_tokens} tokens) has been used. Aborting task.",
-                    display_message=f"Token limit reached: 100% of the maximum ({max_tokens} tokens) has been used. Aborting task.",
+                    f"Token limit reached: 100% of the maximum tokens ({max_tokens} tokens) has been used. Waiting for user decision.",
+                    display_message=None,
                     task_id=current_task_id,
                 )
                 self.state_manager.bump_event_stream()
-            response = await self.task_manager.mark_task_cancel(reason=f"Task reached the maximum tokens allowed limit: {max_tokens}")
-            task_cancelled: bool = response
-            return not task_cancelled
+            await self._send_limit_choice_message("token", current_task_id)
+            await self._pause_task_for_limit_choice(current_task_id)
+            return False
         elif (token_count / max_tokens) >= 0.8:
             if self.event_stream_manager:
                 self.event_stream_manager.log(
@@ -1333,6 +1335,178 @@ class AgentBase:
 
         # No limits close or reached
         return True
+
+    async def _send_limit_choice_message(
+        self, limit_type: str, session_id: str
+    ) -> None:
+        """Send a chat message with Continue/Abort options when a limit is reached."""
+        label = "Action" if limit_type == "action" else "Token"
+
+        # Include task name so user knows which task hit the limit
+        task_name_suffix = ""
+        if self.task_manager:
+            task = self.task_manager.tasks.get(session_id)
+            if task and task.name:
+                task_name_suffix = f' for task "{task.name}"'
+
+        message = (
+            f"{label} limit reached{task_name_suffix}. "
+            f"Would you like to continue (reset limits) or abort the task?"
+        )
+        logger.info(f"[LIMIT] Sending limit choice message for session {session_id}: {message}")
+
+        # Log to event stream for task context persistence only (display_message=None
+        # to avoid a duplicate chat message from the event watcher).
+        if self.event_stream_manager:
+            try:
+                self.event_stream_manager.log(
+                    "internal",
+                    message,
+                    display_message=None,
+                    task_id=session_id,
+                )
+            except Exception as e:
+                logger.error(f"[LIMIT] Failed to log to event stream: {e}", exc_info=True)
+
+        # Display message with options directly in the chat UI (awaited).
+        # We bypass the event bus (which uses fire-and-forget create_task)
+        # to ensure the message is broadcast before the method returns.
+        if self.ui_controller and self.ui_controller.active_adapter:
+            try:
+                from app.ui_layer.components.types import ChatMessage, ChatMessageOption
+                from app.onboarding import onboarding_manager
+                import time as _time
+                agent_name = onboarding_manager.state.agent_name or "Agent"
+                options = [
+                    ChatMessageOption(label="Continue", value="continue_limit", style="primary"),
+                    ChatMessageOption(label="Abort", value="abort_limit", style="danger"),
+                ]
+                await self.ui_controller.active_adapter.chat_component.append_message(
+                    ChatMessage(
+                        sender=agent_name,
+                        content=message,
+                        style="agent",
+                        timestamp=_time.time(),
+                        task_session_id=session_id,
+                        options=options,
+                    )
+                )
+                logger.info(f"[LIMIT] Options message displayed in chat for session {session_id}")
+            except Exception as e:
+                logger.error(f"[LIMIT] Failed to display options in chat: {e}", exc_info=True)
+        else:
+            logger.warning(f"[LIMIT] No active UI adapter - options message not displayed")
+
+    async def _pause_task_for_limit_choice(self, session_id: str) -> None:
+        """Pause the task and create a long-delay trigger to keep it alive."""
+        logger.info(f"[LIMIT] Pausing task {session_id} for limit choice")
+        task = self.task_manager.tasks.get(session_id) if self.task_manager else None
+        if task:
+            task.waiting_for_user_reply = True
+
+        # Update UI task status to "paused" - directly await to ensure
+        # the WebSocket broadcast completes before the react loop cleans up.
+        if self.ui_controller and self.ui_controller.active_adapter:
+            try:
+                action_panel = self.ui_controller.active_adapter.action_panel
+                if action_panel:
+                    await action_panel.update_item(session_id, "paused")
+            except Exception as e:
+                logger.error(f"[LIMIT] Failed to update task status to paused: {e}", exc_info=True)
+
+            from app.ui_layer.events import UIEvent, UIEventType
+            self.ui_controller.event_bus.emit(
+                UIEvent(
+                    type=UIEventType.AGENT_STATE_CHANGED,
+                    data={"state": "waiting", "status_message": "Paused - waiting for user decision..."},
+                )
+            )
+
+        # Create a long-delay trigger so the task stays alive
+        try:
+            await self.triggers.put(
+                Trigger(
+                    fire_at=time.time() + 10800,
+                    priority=5,
+                    next_action_description="Waiting for user decision on limit reached",
+                    session_id=session_id,
+                    payload={"gui_mode": STATE.gui_mode},
+                    waiting_for_reply=True,
+                ),
+                skip_merge=True,
+            )
+        except Exception as e:
+            logger.error(f"[LIMIT] Failed to create pause trigger for {session_id}: {e}", exc_info=True)
+
+    async def handle_limit_continue(self, session_id: str) -> None:
+        """User chose to continue past the limit. Reset counters and resume."""
+        task = self.task_manager.tasks.get(session_id) if self.task_manager else None
+        if not task:
+            logger.warning(f"[LIMIT] Task {session_id} not found for limit continue")
+            return
+
+        # Reset counters
+        STATE.set_agent_property("action_count", 0)
+        STATE.set_agent_property("token_count", 0)
+
+        # Also reset on the StateSession for this session
+        from agent_core.core.state.session import StateSession
+        session = StateSession.get(session_id)
+        if session:
+            session.agent_properties.set_property("action_count", 0)
+            session.agent_properties.set_property("token_count", 0)
+
+        # Clear waiting flag
+        task.waiting_for_user_reply = False
+
+        # Log to event stream as system message
+        task_label = f' for task "{task.name}"' if task.name else ""
+        if self.event_stream_manager:
+            msg = f"User chose to continue{task_label}. Action and token counters have been reset."
+            self.event_stream_manager.log(
+                "system", msg, display_message=msg, task_id=session_id,
+            )
+            self.state_manager.bump_event_stream()
+
+        # Update UI state back to working
+        if self.ui_controller:
+            from app.ui_layer.events import UIEvent, UIEventType
+            self.ui_controller.event_bus.emit(
+                UIEvent(
+                    type=UIEventType.TASK_UPDATE,
+                    data={"task_id": session_id, "status": "running"},
+                )
+            )
+            self.ui_controller.event_bus.emit(
+                UIEvent(
+                    type=UIEventType.AGENT_STATE_CHANGED,
+                    data={"state": "working", "status_message": "Agent is working..."},
+                )
+            )
+
+        # Fire the trigger to resume execution
+        await self.triggers.fire(session_id)
+
+    async def handle_limit_abort(self, session_id: str) -> None:
+        """User chose to abort after reaching limit."""
+        task = self.task_manager.tasks.get(session_id) if self.task_manager else None
+        task_label = f' for task "{task.name}"' if task and task.name else ""
+        if task:
+            task.waiting_for_user_reply = False
+
+        # Log system message before cancelling (stream is removed during cancel)
+        if self.event_stream_manager:
+            msg = f"User chose to abort{task_label}. Task has been cancelled."
+            self.event_stream_manager.log(
+                "system", msg, display_message=msg, task_id=session_id,
+            )
+            self.state_manager.bump_event_stream()
+
+        if self.task_manager:
+            await self.task_manager.mark_task_cancel(
+                reason="User chose to abort after reaching limit.",
+                task_id=session_id,
+            )
 
     # ----- Trigger Management -----
 
@@ -1404,12 +1578,16 @@ class AgentBase:
             if pending_platform:
                 trigger_payload["pending_platform"] = pending_platform
 
+            # Determine priority based on task mode:
+            # simple task = 5, complex task = 7
+            task_priority = 5 if self.task_manager.is_simple_task() else 7
+
             # Build and enqueue trigger safely
             try:
                 await self.triggers.put(
                     Trigger(
                         fire_at=fire_at,
-                        priority=5,
+                        priority=task_priority,
                         next_action_description=next_action_desc,
                         session_id=new_session_id,
                         payload=trigger_payload,
@@ -1637,6 +1815,14 @@ class AgentBase:
 
             chat_content = user_input
             logger.info(f"[CHAT RECEIVED] {chat_content}")
+
+            # clear any stuck consecutive-failure state from a prior aborted task so the next
+            # LLM call actually hits the provider instead of short-circuiting.
+            try:
+                self.llm.reset_failure_counter()
+            except Exception as e:
+                logger.debug(f"[CHAT] Could not reset LLM failure counter: {e}")
+
             gui_mode = payload.get("gui_mode")
 
             # Determine platform - use payload's platform if available, otherwise default
@@ -1743,12 +1929,20 @@ class AgentBase:
                             f"(fired={fired}, reason: {routing_result.get('reason', 'N/A')})"
                         )
 
-                        # Reset task's waiting_for_user_reply flag
+                        # Reset task's waiting_for_user_reply flag and switch source_platform
+                        # so subsequent outbound messages route to the platform the user is now on.
                         if self.task_manager:
                             task = self.task_manager.tasks.get(matched_session_id)
-                            if task and task.waiting_for_user_reply:
-                                task.waiting_for_user_reply = False
-                                logger.info(f"[TASK] Task {matched_session_id} no longer waiting for user reply")
+                            if task:
+                                if task.waiting_for_user_reply:
+                                    task.waiting_for_user_reply = False
+                                    logger.info(f"[TASK] Task {matched_session_id} no longer waiting for user reply")
+                                if platform and task.source_platform != platform:
+                                    logger.info(
+                                        f"[TASK] Task {matched_session_id} source_platform switched "
+                                        f"from {task.source_platform!r} to {platform!r}"
+                                    )
+                                    task.source_platform = platform
 
                         # Reset task status from "waiting" to "running" when user replies
                         # Update UI regardless of fire() result - user has replied so we should
@@ -1811,6 +2005,10 @@ class AgentBase:
                 trigger_payload["contact_id"] = payload.get("contact_id", "")
                 trigger_payload["channel_id"] = payload.get("channel_id", "")
 
+            # Carry pre-selected skills from skill slash commands (e.g., /pdf, /docx)
+            if payload.get("pre_selected_skills"):
+                trigger_payload["pre_selected_skills"] = payload["pre_selected_skills"]
+
             # Include platform in the action description so the LLM picks
             # the correct platform-specific send action for replies.
             # Must be directive (not just informational) for weaker LLMs.
@@ -1821,7 +2019,7 @@ class AgentBase:
             await self.triggers.put(
                 Trigger(
                     fire_at=time.time(),
-                    priority=1,
+                    priority=3,
                     next_action_description=(
                         "Please perform action that best suit this user chat "
                         f"you just received{platform_hint}: {chat_content}"
@@ -1914,7 +2112,8 @@ class AgentBase:
                 # Add context so the agent knows it's from the user, not a third party.
                 event_content = (
                     f"[USER SELF-MESSAGE via {source}]\n"
-                    f"{message_body}"
+                    f"{message_body}\n\n"
+                    f"INSTRUCTIONS: Reply to the message to the user on {source}"
                 )
             else:
                 # Third-party message — DO NOT act on it, only notify the user
@@ -2126,6 +2325,8 @@ class AgentBase:
 
         logger.info("[RESET] Agent file system reinitialized from templates")
 
+    _soft_onboarding_triggered: bool = False
+
     async def trigger_soft_onboarding(self, reset: bool = False) -> Optional[str]:
         """
         Trigger soft onboarding interview task.
@@ -2143,6 +2344,12 @@ class AgentBase:
         from app.onboarding.soft.task_creator import create_soft_onboarding_task
         from app.trigger import Trigger
         import time
+
+        # Prevent double-triggering (multiple adapters/paths may call this)
+        if not reset and self._soft_onboarding_triggered:
+            logger.debug("[ONBOARDING] Soft onboarding already triggered, skipping")
+            return None
+        self._soft_onboarding_triggered = True
 
         if reset:
             onboarding_manager.reset_soft_onboarding()
@@ -2497,11 +2704,15 @@ class AgentBase:
                 continue
 
             try:
+                # Determine priority based on task mode: simple=5, complex=7
+                is_simple = getattr(task, 'mode', 'complex') == 'simple'
+                restore_priority = 5 if is_simple else 7
+
                 if task.waiting_for_user_reply:
                     await self.triggers.put(
                         Trigger(
                             fire_at=time.time(),
-                            priority=5,
+                            priority=restore_priority,
                             next_action_description=(
                                 "Waiting for user reply "
                                 "(resumed after restart)"
@@ -2520,7 +2731,7 @@ class AgentBase:
                     await self.triggers.put(
                         Trigger(
                             fire_at=time.time(),
-                            priority=5,
+                            priority=restore_priority,
                             next_action_description=(
                                 "Resume task after agent restart"
                             ),
@@ -2603,11 +2814,17 @@ class AgentBase:
         automatically to apply changes without restart.
         """
         try:
-            from app.config import PROJECT_ROOT
+            from app.config import PROJECT_ROOT, invalidate_settings_cache
 
             # Initialize settings manager
             settings_path = PROJECT_ROOT / "app" / "config" / "settings.json"
             settings_manager.initialize(settings_path)
+
+            # Invalidate app.config cache when SettingsManager reloads,
+            # so get_api_key() and other getters pick up fresh values.
+            settings_manager.register_reload_callback(
+                lambda new_settings, old_settings: invalidate_settings_cache()
+            )
 
             # Get event loop for async callbacks
             event_loop = asyncio.get_event_loop()
@@ -2633,9 +2850,17 @@ class AgentBase:
             skills_config_path = PROJECT_ROOT / "app" / "config" / "skills_config.json"
             if skills_config_path.exists():
                 from app.skill import skill_manager
+
+                async def _reload_skills_and_sync():
+                    """Reload skills and sync skill slash commands."""
+                    result = await skill_manager.reload()
+                    if self.ui_controller:
+                        self.ui_controller.sync_skill_commands()
+                    return result
+
                 config_watcher.register(
                     skills_config_path,
-                    skill_manager.reload,
+                    _reload_skills_and_sync,
                     name="skills_config.json"
                 )
 
@@ -2751,13 +2976,6 @@ class AgentBase:
 
         # Resume triggers for tasks restored from previous session
         await self._schedule_restored_task_triggers()
-
-        # Trigger soft onboarding if needed (BEFORE starting interface)
-        # This ensures agent handles onboarding logic, not the interfaces
-        from app.onboarding import onboarding_manager
-        if onboarding_manager.needs_soft_onboarding:
-            logger.info("[ONBOARDING] Soft onboarding needed, triggering from agent")
-            await self.trigger_soft_onboarding()
 
         # Initialize external communications (WhatsApp, Telegram)
         print_startup_step(8, 8, "Starting communications")

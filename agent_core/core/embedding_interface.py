@@ -12,6 +12,8 @@ Environment variables:
 - GOOGLE_API_KEY (for provider="gemini")
 """
 
+from __future__ import annotations
+
 import os
 from typing import List, Optional
 

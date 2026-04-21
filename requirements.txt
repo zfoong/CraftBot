@@ -46,3 +46,5 @@ telethon
 croniter>=2.0.0        # Cron expression parsing for scheduler
 playwright             # WhatsApp Web browser automation
 opencv-python-headless # Video analysis keyframe extraction
+babel>=2.14.0          # Language list for onboarding
+

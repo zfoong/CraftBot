@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import stat
 from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Optional, Type, TypeVar
@@ -32,6 +34,11 @@ def _get_credentials_dir() -> Path:
         from app.config import PROJECT_ROOT
         _credentials_dir = PROJECT_ROOT / ".credentials"
     _credentials_dir.mkdir(parents=True, exist_ok=True)
+    # Restrict directory permissions to owner only (rwx------)
+    try:
+        os.chmod(_credentials_dir, stat.S_IRWXU)
+    except OSError:
+        pass  # Best-effort on platforms that don't support chmod (e.g. Windows)
     return _credentials_dir
 
 
@@ -78,6 +85,11 @@ def save_credential(filename: str, credential) -> None:
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(asdict(credential), f, indent=2, default=str)
+        # Restrict file permissions to owner read/write only (rw-------)
+        try:
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass  # Best-effort on platforms that don't support chmod
         logger.info(f"Saved credential: {filename}")
     except Exception as e:
         logger.error(f"Failed to save credential {filename}: {e}")
