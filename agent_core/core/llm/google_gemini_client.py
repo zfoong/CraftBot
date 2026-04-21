@@ -168,8 +168,7 @@ class GeminiClient:
         model: str,
         *,
         text: str,
-        image_bytes: Optional[bytes] = None,
-        image_bytes_list: Optional[List[bytes]] = None,
+        image_bytes_list: List[bytes],
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         json_mode: bool = False,
@@ -189,7 +188,7 @@ class GeminiClient:
         Args:
             model: Model identifier
             text: The text prompt
-            image_bytes: Single PNG image data (for backward compatibility)
+
             image_bytes_list: List of image data (PNG/JPEG)
             system_prompt: Optional system instruction
             temperature: Sampling temperature
@@ -198,16 +197,9 @@ class GeminiClient:
         Returns:
             Dict with generation results and token counts
         """
-        # Normalise: single image wraps into list; list takes priority if both provided
-        images = image_bytes_list if image_bytes_list is not None else ([image_bytes] if image_bytes else [])
-        if not images:
-            raise ValueError("At least one of `image_bytes` or `image_bytes_list` must be provided.")
-
         parts: List[Dict[str, Any]] = [{"text": text}]
-        for img in images:
-            # Preserve existing mime-type logic: single-image callers stay PNG index,
-            # multi-image callers (video frames) use JPEG.
-            mime = "image/jpeg" if image_bytes_list is not None else "image/png"
+        for img in image_bytes_list:
+            mime = "image/jpeg"
             parts.append({
                 "inlineData": {
                     "mimeType": mime,

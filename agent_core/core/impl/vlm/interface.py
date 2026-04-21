@@ -601,7 +601,7 @@ class VLMInterface:
         result = self._gemini_client.generate_multimodal(
             self.model,
             text=usr,
-            image_bytes=image_bytes,
+            image_bytes_list=[image_bytes],
             system_prompt=sys,
             temperature=self.temperature,
             json_mode=False,
