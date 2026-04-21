@@ -913,11 +913,12 @@ def create_memory_processing_task(
     if needs_pruning:
         instruction += (
             f" MEMORY.md has reached the item-count cap. After processing events, "
-            f"run the Pruning phase: consolidate/merge/drop the oldest ~{prune_target} "
-            f"items (the header block stays at the top; oldest items come right after it). "
-            "Merge related memories about the same subject, drop duplicates and "
-            "low-utility items first, and preserve high-utility items regardless of age. "
-            f"Target a final count at least {prune_target} below the pre-prune count."
+            f"run the Pruning phase: remove the FIRST (oldest) ~{prune_target} items "
+            f"from the items section — they appear at the top, immediately after the header block. "
+            f"Merge related items about the same subject before dropping, then drop duplicates "
+            f"and low-utility items. Preserve high-utility items regardless of age. "
+            f"The header block must NOT be modified. Keep only the newest items (bottom of file). "
+            f"Target: remove at least {prune_target} items so only the latest 1/3 remain."
         )
 
     return task_manager.create_task(

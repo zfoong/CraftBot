@@ -611,6 +611,7 @@ class AgentBase:
             # Count items in MEMORY.md to decide whether the pruning phase
             # should run alongside event processing.
             needs_pruning = False
+            prune_target = MEMORY_PRUNE_TARGET  # default fallback
             memory_file = AGENT_FILE_SYSTEM_PATH / "MEMORY.md"
             if memory_file.exists():
                 try:
@@ -619,9 +620,12 @@ class AgentBase:
                     )
                     if len(memory_items) >= MEMORY_MAX_ITEMS:
                         needs_pruning = True
+                        # Prune the first 2/3 (oldest), keep the latest 1/3.
+                        prune_target = (len(memory_items) * 2) // 3
                         logger.info(
                             f"[MEMORY] MEMORY.md has {len(memory_items)} items "
-                            f"(>= {MEMORY_MAX_ITEMS}); pruning phase will run"
+                            f"(>= {MEMORY_MAX_ITEMS}); pruning phase will run "
+                            f"(pruning {prune_target} oldest, keeping {len(memory_items) - prune_target})"
                         )
                 except Exception as e:
                     logger.warning(f"[MEMORY] Failed to count MEMORY.md items: {e}")
@@ -629,7 +633,7 @@ class AgentBase:
             logger.info(f"[MEMORY] Processing {len(event_lines)} unprocessed events")
             task_id = self.create_process_memory_task(
                 needs_pruning=needs_pruning,
-                prune_target=MEMORY_PRUNE_TARGET,
+                prune_target=prune_target,
             )
 
             if not task_id:
