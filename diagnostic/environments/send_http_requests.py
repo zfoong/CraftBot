@@ -1,6 +1,5 @@
 """Diagnostic environment for the "send HTTP requests" action."""
 
-from __future__ import annotations
 
 import types
 from typing import Any, Mapping

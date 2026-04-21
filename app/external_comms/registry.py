@@ -5,7 +5,6 @@ app.external_comms.registry
 Simple registry of platform clients.
 """
 
-from __future__ import annotations
 
 import logging
 from typing import Dict, Optional, Type

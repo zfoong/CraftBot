@@ -6,7 +6,6 @@ Manager for external communication channels.
 Uses the platform registry to discover and start all platforms that support listening.
 """
 
-from __future__ import annotations
 
 import asyncio
 import logging

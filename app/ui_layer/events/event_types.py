@@ -1,6 +1,5 @@
 """UI Event types and data structures."""
 
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime

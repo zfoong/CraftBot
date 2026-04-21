@@ -1,6 +1,5 @@
 """Onboarding flow controller."""
 
-from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type
 from dataclasses import dataclass, field

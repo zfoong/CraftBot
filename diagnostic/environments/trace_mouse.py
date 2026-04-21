@@ -1,5 +1,4 @@
 """Diagnostic environment for the "trace mouse" action."""
-from __future__ import annotations
 
 from diagnostic.framework import ActionTestCase
 

@@ -8,7 +8,6 @@ Example:
 - python3 scripts/options_links.py NVDA
 """
 
-from __future__ import annotations
 
 import argparse
 

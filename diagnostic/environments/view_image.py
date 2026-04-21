@@ -1,5 +1,4 @@
 """Diagnostic environment for the "view image" action."""
-from __future__ import annotations
 
 from diagnostic.framework import ActionTestCase
 

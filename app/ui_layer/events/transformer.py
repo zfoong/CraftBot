@@ -1,6 +1,5 @@
 """Transform agent events to UI events."""
 
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional, Any, TYPE_CHECKING

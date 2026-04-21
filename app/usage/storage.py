@@ -6,7 +6,6 @@ SQLite-based storage for usage events.
 Provides local persistence for LLM/VLM token usage tracking.
 """
 
-from __future__ import annotations
 
 import json
 import logging

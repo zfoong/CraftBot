@@ -6,7 +6,6 @@ Local usage reporter for LLM/VLM operations.
 Adapts the WhiteCollarAgent UsageReporter pattern for local SQLite storage.
 """
 
-from __future__ import annotations
 
 import asyncio
 import logging

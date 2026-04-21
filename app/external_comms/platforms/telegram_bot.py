@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Telegram Bot API client — direct HTTP via httpx."""
 
-from __future__ import annotations
 
 import asyncio
 import logging

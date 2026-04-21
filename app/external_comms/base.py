@@ -5,7 +5,6 @@ app.external_comms.base
 Base classes for platform clients.
 """
 
-from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod

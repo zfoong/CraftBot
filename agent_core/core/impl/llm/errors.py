@@ -6,7 +6,7 @@ Provides user-friendly error messages for LLM-related failures.
 Uses proper exception types and HTTP status codes - no string pattern matching.
 """
 
-from __future__ import annotations
+
 
 from typing import Optional
 

@@ -1,5 +1,4 @@
 """Diagnostic tool for validating action implementations."""
-from __future__ import annotations
 
 import argparse
 import json

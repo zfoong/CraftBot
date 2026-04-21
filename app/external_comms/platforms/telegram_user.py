@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Telegram MTProto (user account) client — uses Telethon with StringSession."""
 
-from __future__ import annotations
 
 import asyncio
 import logging

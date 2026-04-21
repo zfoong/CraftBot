@@ -5,7 +5,6 @@ All connect / disconnect / status operations go through the centralised
 share the same logic and side-effects (e.g. platform-listener startup).
 """
 
-from __future__ import annotations
 
 from typing import List
 

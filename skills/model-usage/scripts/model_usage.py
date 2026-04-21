@@ -5,7 +5,6 @@ Summarize CodexBar local cost usage by model.
 Defaults to current model (most recent daily entry), or list all models.
 """
 
-from __future__ import annotations
 
 import argparse
 import json

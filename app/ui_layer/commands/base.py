@@ -1,6 +1,5 @@
 """Base command class and result type."""
 
-from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

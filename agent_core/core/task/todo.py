@@ -6,7 +6,6 @@ This replaces the complex Step-based workflow with a straightforward
 todo list mechanism similar to Claude Code's TodoWrite tool.
 """
 
-from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, Literal

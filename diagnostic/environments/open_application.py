@@ -1,6 +1,5 @@
 """Diagnostic environment for the "open application" action."""
 
-from __future__ import annotations
 
 import types
 from pathlib import Path

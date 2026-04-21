@@ -1,6 +1,5 @@
 """Command executor for parsing and executing commands."""
 
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
 

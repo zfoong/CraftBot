@@ -2,7 +2,6 @@
 """
 Protocol definition for TriggerQueue.
 """
-from __future__ import annotations
 
 from typing import List, Protocol, Optional, runtime_checkable
 

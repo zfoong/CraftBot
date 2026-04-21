@@ -6,7 +6,6 @@ SQLite-based storage for task events.
 Provides local persistence for task execution history.
 """
 
-from __future__ import annotations
 
 import json
 import logging

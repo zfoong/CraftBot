@@ -4,7 +4,6 @@ core.trigger
 
 Trigger dataclass - the entry point for all agent reactions.
 """
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional

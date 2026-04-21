@@ -1,5 +1,4 @@
 """Diagnostic environment for the "find file by name" action."""
-from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Mapping, Tuple

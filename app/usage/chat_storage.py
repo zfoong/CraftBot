@@ -6,7 +6,6 @@ SQLite-based storage for chat messages.
 Provides local persistence for chat history across agent restarts.
 """
 
-from __future__ import annotations
 
 import json
 import logging

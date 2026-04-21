@@ -5,7 +5,6 @@ app.external_comms.config
 Configuration for external communication channels (WhatsApp, Telegram).
 """
 
-from __future__ import annotations
 
 import json
 import logging

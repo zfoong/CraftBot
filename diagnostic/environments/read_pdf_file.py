@@ -1,5 +1,4 @@
 """Environment and validation for the "read pdf file" action."""
-from __future__ import annotations
 
 import textwrap
 import types

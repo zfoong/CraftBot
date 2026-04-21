@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """LinkedIn REST API v2 client — direct HTTP via httpx."""
 
-from __future__ import annotations
 
 import time
 from dataclasses import dataclass

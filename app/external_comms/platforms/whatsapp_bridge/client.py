@@ -6,7 +6,6 @@ Manages the Node.js subprocess lifecycle and provides an async API for
 sending commands and receiving events via stdin/stdout JSON lines.
 """
 
-from __future__ import annotations
 
 import asyncio
 import json

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Notion API client — direct HTTP via httpx."""
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional

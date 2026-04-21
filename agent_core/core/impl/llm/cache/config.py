@@ -5,7 +5,7 @@ core.llm.cache.config
 Shared cache configuration for all LLM providers.
 """
 
-from __future__ import annotations
+
 
 import os
 from dataclasses import dataclass

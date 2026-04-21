@@ -1,5 +1,4 @@
 """Diagnostic environment for the "switch to CLI mode" action."""
-from __future__ import annotations
 
 import types
 from pathlib import Path
