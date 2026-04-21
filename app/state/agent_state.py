@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """Global runtime state for a single-user, single-agent process."""
 
-from dataclasses import dataclass
-from typing import Optional
+import json
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
 from app.state.types import AgentProperties
 from app.task import Task
 

@@ -1,3 +1,5 @@
 export { useConfirmModal } from './useConfirmModal'
 export type { ConfirmModalState, ConfirmOptions } from './useConfirmModal'
 export { useDerivedAgentStatus } from './useDerivedAgentStatus'
+export { useRotatingHint } from './useRotatingHint'
+export type { RotatingHint } from './useRotatingHint'

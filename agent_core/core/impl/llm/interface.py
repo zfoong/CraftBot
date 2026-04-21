@@ -1754,7 +1754,6 @@ class LLMInterface:
             for block in response.content:
                 if block.type == "text":
                     content += block.text
-
             content = content.strip()
 
             # Token usage from Anthropic response

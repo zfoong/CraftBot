@@ -1,13 +1,18 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   MessageSquare,
   ListTodo,
   LayoutDashboard,
-  Monitor,
   FolderOpen,
-  Settings
+  Settings,
+  Plus,
+  Box,
+  Loader2
 } from 'lucide-react'
+import { useWebSocket } from '../../contexts/WebSocketContext'
+import { CreateLivingUIModal } from '../ui/CreateLivingUIModal'
+import type { LivingUICreateRequest } from '../../types'
 import styles from './NavBar.module.css'
 
 interface NavItem {
@@ -17,11 +22,10 @@ interface NavItem {
   path: string
 }
 
-const navItems: NavItem[] = [
+const staticNavItems: NavItem[] = [
   { id: 'chat', label: 'Chat', icon: <MessageSquare size={16} />, path: '/' },
   { id: 'tasks', label: 'Tasks', icon: <ListTodo size={16} />, path: '/tasks' },
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} />, path: '/dashboard' },
-  // { id: 'screen', label: 'Screen', icon: <Monitor size={16} />, path: '/screen' },
   { id: 'workspace', label: 'Workspace', icon: <FolderOpen size={16} />, path: '/workspace' },
   { id: 'settings', label: 'Settings', icon: <Settings size={16} />, path: '/settings' },
 ]
@@ -29,6 +33,19 @@ const navItems: NavItem[] = [
 export function NavBar() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { livingUIProjects, createLivingUI } = useWebSocket()
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+
+  // Create dynamic nav items for Living UIs
+  const livingUINavItems: NavItem[] = livingUIProjects.map(project => ({
+    id: `living-ui-${project.id}`,
+    label: project.name,
+    icon: project.status === 'creating' ? <Loader2 size={16} className={styles.spinner} /> : <Box size={16} />,
+    path: `/living-ui/${project.id}`,
+  }))
+
+  const hasLivingUI = livingUINavItems.length > 0
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -37,20 +54,66 @@ export function NavBar() {
     return location.pathname.startsWith(path)
   }
 
+  const handleCreateSubmit = (data: LivingUICreateRequest) => {
+    createLivingUI(data)
+    setShowCreateModal(false)
+  }
+
   return (
-    <nav className={styles.navBar}>
-      <div className={styles.navItems}>
-        {navItems.map(item => (
+    <>
+      <nav
+        className={styles.navBar}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <div className={styles.navItems}>
+          {/* Static nav items */}
+          {staticNavItems.map(item => (
+            <button
+              key={item.id}
+              className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}
+              onClick={() => navigate(item.path)}
+              title={item.label}
+            >
+              <span className={styles.icon}>{item.icon}</span>
+              <span className={styles.label}>{item.label}</span>
+            </button>
+          ))}
+
+          {/* Separator between static items and Living UI */}
+          {hasLivingUI && <span className={styles.separator}>|</span>}
+
+          {/* Living UI nav items */}
+          {livingUINavItems.map(item => (
+            <button
+              key={item.id}
+              className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}
+              onClick={() => navigate(item.path)}
+              title={item.label}
+            >
+              <span className={styles.icon}>{item.icon}</span>
+              <span className={styles.label}>{item.label}</span>
+            </button>
+          ))}
+
+          {/* Add Living UI button */}
           <button
-            key={item.id}
-            className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}
-            onClick={() => navigate(item.path)}
+            className={`${styles.addButton} ${isHovered ? styles.visible : ''}`}
+            onClick={() => setShowCreateModal(true)}
+            title="Create Living UI"
           >
-            <span className={styles.icon}>{item.icon}</span>
-            <span className={styles.label}>{item.label}</span>
+            <Plus size={16} />
           </button>
-        ))}
-      </div>
-    </nav>
+        </div>
+
+      </nav>
+
+      <CreateLivingUIModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={handleCreateSubmit}
+        onInstalled={(projectId) => navigate(`/living-ui/${projectId}`)}
+      />
+    </>
   )
 }

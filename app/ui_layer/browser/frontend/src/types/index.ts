@@ -130,6 +130,16 @@ export type WSMessageType =
   // Agent profile picture
   | 'agent_profile_picture_upload'
   | 'agent_profile_picture_remove'
+  // Living UI operations
+  | 'living_ui_create'
+  | 'living_ui_status'
+  | 'living_ui_ready'
+  | 'living_ui_list'
+  | 'living_ui_launch'
+  | 'living_ui_stop'
+  | 'living_ui_delete'
+  | 'living_ui_state_update'
+  | 'living_ui_error'
 
 export interface WSMessage {
   type: WSMessageType
@@ -531,7 +541,7 @@ export interface TaskCancelResponse {
 // Navigation
 // ─────────────────────────────────────────────────────────────────────
 
-export type NavTab = 'chat' | 'tasks' | 'dashboard' | 'screen' | 'workspace' | 'settings'
+export type NavTab = 'chat' | 'tasks' | 'dashboard' | 'screen' | 'workspace' | 'settings' | 'living-ui'
 
 // ─────────────────────────────────────────────────────────────────────
 // Onboarding Types
@@ -654,5 +664,94 @@ export interface OnboardingSubmitResponse {
 export interface OnboardingCompleteResponse {
   success: boolean
   agentName?: string
+  error?: string
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Living UI Types
+// ─────────────────────────────────────────────────────────────────────
+
+export type LivingUIStatus = 'creating' | 'ready' | 'running' | 'stopped' | 'error'
+export type LivingUICreationPhase = 'initializing' | 'scaffolding' | 'coding' | 'testing' | 'building' | 'launching'
+
+export interface LivingUIProject {
+  id: string
+  name: string
+  description: string
+  status: LivingUIStatus
+  path: string
+  port?: number
+  url?: string
+  createdAt: number
+  icon?: string
+  features?: string[]
+  error?: string
+}
+
+export interface LivingUICreateRequest {
+  name: string
+  description: string
+  features?: string[]  // Optional, defaults to empty array
+  dataSource?: string
+  theme?: 'light' | 'dark' | 'system'
+}
+
+export interface LivingUIStatusUpdate {
+  projectId: string
+  phase: LivingUICreationPhase
+  progress: number  // 0-100
+  message: string
+  logs?: string[]
+}
+
+export interface LivingUIStateUpdate {
+  projectId: string
+  state: {
+    componentTree: LivingUIComponentState[]
+    visibleText: string[]
+    inputValues: Record<string, string>
+    currentView: string
+    scrollPosition: { x: number; y: number }
+    timestamp: number
+  }
+}
+
+export interface LivingUIComponentState {
+  name: string
+  props: Record<string, unknown>
+  children?: LivingUIComponentState[]
+}
+
+// Response types for Living UI operations
+export interface LivingUICreateResponse {
+  success: boolean
+  projectId?: string
+  project?: LivingUIProject
+  error?: string
+}
+
+export interface LivingUIListResponse {
+  success: boolean
+  projects?: LivingUIProject[]
+  error?: string
+}
+
+export interface LivingUILaunchResponse {
+  success: boolean
+  projectId?: string
+  url?: string
+  port?: number
+  error?: string
+}
+
+export interface LivingUIStopResponse {
+  success: boolean
+  projectId?: string
+  error?: string
+}
+
+export interface LivingUIDeleteResponse {
+  success: boolean
+  projectId?: string
   error?: string
 }
