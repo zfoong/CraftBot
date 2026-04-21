@@ -55,7 +55,13 @@ from agent_core.core.impl.llm.errors import classify_llm_error, LLMConsecutiveFa
 from app.vlm_interface import VLMInterface
 from app.database_interface import DatabaseInterface
 from app.logger import logger
-from agent_core import MemoryManager, MemoryPointer, MemoryFileWatcher, create_memory_processing_task
+from agent_core import (
+    MemoryManager,
+    MemoryPointer,
+    MemoryFileWatcher,
+    create_memory_processing_task,
+    WorkflowLockManager,
+)
 from app.context_engine import ContextEngine
 from app.state.state_manager import StateManager
 from app.state.agent_state import STATE
@@ -69,7 +75,12 @@ from app.gui.gui_module import GUIModule
 from app.gui.handler import GUIHandler
 from app.scheduler import SchedulerManager
 from app.proactive import initialize_proactive_manager, get_proactive_manager
-from app.ui_layer.settings.memory_settings import is_memory_enabled
+from app.ui_layer.settings.memory_settings import (
+    is_memory_enabled,
+    _parse_memory_items,
+    MEMORY_MAX_ITEMS,
+    MEMORY_PRUNE_TARGET,
+)
 from agent_core import profile, profile_loop, OperationCategory
 from agent_core import (
     # Registries for dependency injection
@@ -203,6 +214,11 @@ class AgentBase:
         )
         self.action_router = ActionRouter(self.action_library, self.llm, self.context_engine)
 
+        # Workflow lock registry — prevents overlapping runs of named background
+        # workflows (e.g. memory processing, proactive cycle). Locks are released
+        # automatically when the owning task ends.
+        self.workflow_lock_manager = WorkflowLockManager()
+
         self.task_manager = TaskManager(
             db_interface=self.db_interface,
             event_stream_manager=self.event_stream_manager,
@@ -210,6 +226,7 @@ class AgentBase:
             llm_interface=self.llm,
             context_engine=self.context_engine,
             on_task_end_callback=self._cleanup_session_triggers,
+            workflow_lock_manager=self.workflow_lock_manager,
         )
 
         # Bind task_manager so state_manager can look up tasks by session_id
@@ -444,7 +461,11 @@ class AgentBase:
     # Memory Processing
     # =====================================
 
-    def create_process_memory_task(self) -> Optional[str]:
+    def create_process_memory_task(
+        self,
+        needs_pruning: bool = False,
+        prune_target: int = MEMORY_PRUNE_TARGET,
+    ) -> Optional[str]:
         """
         Create a task to process unprocessed events and move them to memory.
 
@@ -455,6 +476,7 @@ class AgentBase:
         3. Check for duplicate memories using memory_search
         4. Write important, unique events to MEMORY.md
         5. Clear processed events from EVENT_UNPROCESSED.md
+        6. If needs_pruning, run the pruning phase on MEMORY.md afterwards
 
         Returns:
             The task ID of the created task, or None if memory is disabled.
@@ -464,7 +486,10 @@ class AgentBase:
             logger.info("[MEMORY] Memory is disabled, skipping process memory task")
             return None
 
-        logger.info("[MEMORY] Creating process memory task")
+        logger.info(
+            "[MEMORY] Creating process memory task"
+            + (" with pruning phase" if needs_pruning else "")
+        )
 
         # Enable skip_unprocessed_logging to prevent infinite loops
         # (events generated during memory processing won't be added to EVENT_UNPROCESSED.md)
@@ -472,7 +497,11 @@ class AgentBase:
         self.event_stream_manager.set_skip_unprocessed_logging(True)
 
         # Create task using the memory-processor skill
-        task_id = create_memory_processing_task(self.task_manager)
+        task_id = create_memory_processing_task(
+            self.task_manager,
+            needs_pruning=needs_pruning,
+            prune_target=prune_target,
+        )
         logger.info(f"[MEMORY] Process memory task created: {task_id}")
 
         return task_id
@@ -549,41 +578,84 @@ class AgentBase:
             logger.info("[MEMORY] Memory is disabled, skipping memory processing trigger")
             return False
 
-        task_created = False
+        # Early-exit if there's nothing to process (avoid touching the lock for a no-op).
+        unprocessed_file = AGENT_FILE_SYSTEM_PATH / "EVENT_UNPROCESSED.md"
+        if not unprocessed_file.exists():
+            logger.debug("[MEMORY] EVENT_UNPROCESSED.md not found")
+            return False
 
         try:
-            # Check if there are events to process
-            unprocessed_file = AGENT_FILE_SYSTEM_PATH / "EVENT_UNPROCESSED.md"
-            if unprocessed_file.exists():
-                content = unprocessed_file.read_text(encoding="utf-8")
-                lines = content.strip().split("\n")
-                event_lines = [l for l in lines if l.strip() and l.strip().startswith("[")]
+            content = unprocessed_file.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"[MEMORY] Failed to read EVENT_UNPROCESSED.md: {e}")
+            return False
 
-                if event_lines:
-                    logger.info(f"[MEMORY] Processing {len(event_lines)} unprocessed events")
-                    task_id = self.create_process_memory_task()
+        event_lines = [
+            l for l in content.strip().split("\n")
+            if l.strip() and l.strip().startswith("[")
+        ]
+        if not event_lines:
+            logger.info("[MEMORY] No unprocessed events to process")
+            return False
 
-                    if task_id:
-                        # Queue trigger to start the task
-                        trigger = Trigger(
-                            fire_at=time.time(),
-                            priority=60,
-                            next_action_description="Process unprocessed events into long-term memory",
-                            session_id=task_id,
-                            payload={},
+        # Acquire the exclusive workflow lock. If another memory-processing task
+        # is still running (e.g. a slow prior run when 3am fires), skip this
+        # trigger — the lock is released automatically by TaskManager._end_task.
+        if not await self.workflow_lock_manager.try_acquire("memory_processing"):
+            logger.info(
+                "[MEMORY] memory_processing workflow already active; skipping trigger"
+            )
+            return False
+
+        try:
+            # Count items in MEMORY.md to decide whether the pruning phase
+            # should run alongside event processing.
+            needs_pruning = False
+            memory_file = AGENT_FILE_SYSTEM_PATH / "MEMORY.md"
+            if memory_file.exists():
+                try:
+                    memory_items = _parse_memory_items(
+                        memory_file.read_text(encoding="utf-8")
+                    )
+                    if len(memory_items) >= MEMORY_MAX_ITEMS:
+                        needs_pruning = True
+                        logger.info(
+                            f"[MEMORY] MEMORY.md has {len(memory_items)} items "
+                            f"(>= {MEMORY_MAX_ITEMS}); pruning phase will run"
                         )
-                        await self.triggers.put(trigger)
-                        logger.info(f"[MEMORY] Queued trigger for memory processing task: {task_id}")
-                        task_created = True
-                else:
-                    logger.info("[MEMORY] No unprocessed events to process")
-            else:
-                logger.debug("[MEMORY] EVENT_UNPROCESSED.md not found")
+                except Exception as e:
+                    logger.warning(f"[MEMORY] Failed to count MEMORY.md items: {e}")
+
+            logger.info(f"[MEMORY] Processing {len(event_lines)} unprocessed events")
+            task_id = self.create_process_memory_task(
+                needs_pruning=needs_pruning,
+                prune_target=MEMORY_PRUNE_TARGET,
+            )
+
+            if not task_id:
+                # Task was not created (e.g. memory disabled mid-trigger). Release
+                # the lock so the next trigger can try again.
+                await self.workflow_lock_manager.release("memory_processing")
+                return False
+
+            # Queue trigger to start the task. Lock is now owned by the task and
+            # will be released by TaskManager when the task ends.
+            trigger = Trigger(
+                fire_at=time.time(),
+                priority=60,
+                next_action_description="Process unprocessed events into long-term memory",
+                session_id=task_id,
+                payload={},
+            )
+            await self.triggers.put(trigger)
+            logger.info(f"[MEMORY] Queued trigger for memory processing task: {task_id}")
+            return True
 
         except Exception as e:
+            # Anything went wrong before the task took ownership — release the lock.
             logger.warning(f"[MEMORY] Failed to process memory: {e}")
-
-        return task_created
+            await self.workflow_lock_manager.release("memory_processing")
+            return False
 
     # =====================================
     # Workflow Routing

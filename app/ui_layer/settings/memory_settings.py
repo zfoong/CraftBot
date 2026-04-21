@@ -23,6 +23,11 @@ MEMORY_ITEM_PATTERN = re.compile(
     r'^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s+\[(\w+)\]\s+(.+)$'
 )
 
+# Memory size and length thresholds (LLM-enforced; Python signals when to act)
+MEMORY_MAX_ITEMS = 200
+MEMORY_PRUNE_TARGET = 100
+MEMORY_ITEM_WORD_LIMIT = 150
+
 
 # ─────────────────────────────────────────────────────────────────────
 # Memory Mode Control

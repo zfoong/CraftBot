@@ -874,7 +874,11 @@ class MemoryManager:
 # ───────────────────────────── Task Creation Helper ─────────────────────────────
 
 
-def create_memory_processing_task(task_manager) -> str:
+def create_memory_processing_task(
+    task_manager,
+    needs_pruning: bool = False,
+    prune_target: int = 100,
+) -> str:
     """
     Create a task to process unprocessed events into distilled memories.
 
@@ -884,26 +888,45 @@ def create_memory_processing_task(task_manager) -> str:
     - Check for duplicate memories
     - Write to MEMORY.md in strict format
     - Clear processed events
+    - Optionally prune MEMORY.md when it has grown past the configured cap
 
     Args:
         task_manager: The TaskManager instance to create the task with
+        needs_pruning: True when MEMORY.md has reached the max-items threshold
+            and the task should also run the pruning phase after distillation.
+        prune_target: Approximate number of oldest items the pruning phase
+            should consolidate or drop.
 
     Returns:
         The task ID of the created task
     """
+    instruction = (
+        "SILENT BACKGROUND TASK - NEVER use send_message or run_python. "
+        "Read agent_file_system/EVENT_UNPROCESSED.md. "
+        "DISTILL (rewrite, don't copy) into agent_file_system/MEMORY.md. "
+        "Format: [YYYY-MM-DD HH:MM:SS] [category] Subject predicate object. "
+        "DISCARD 95%+ events. Agent messages and greetings are ALWAYS discarded. "
+        "Each memory item must be <= 150 words. "
+        "Use stream_edit only. Never write code."
+    )
+
+    if needs_pruning:
+        instruction += (
+            f" MEMORY.md has reached the item-count cap. After processing events, "
+            f"run the Pruning phase: consolidate/merge/drop the oldest ~{prune_target} "
+            f"items (the header block stays at the top; oldest items come right after it). "
+            "Merge related memories about the same subject, drop duplicates and "
+            "low-utility items first, and preserve high-utility items regardless of age. "
+            f"Target a final count at least {prune_target} below the pre-prune count."
+        )
+
     return task_manager.create_task(
         task_name="Process Memory Events",
-        task_instruction=(
-            "SILENT BACKGROUND TASK - NEVER use send_message or run_python. "
-            "Read agent_file_system/EVENT_UNPROCESSED.md. "
-            "DISTILL (rewrite, don't copy) into agent_file_system/MEMORY.md. "
-            "Format: [YYYY-MM-DD HH:MM:SS] [category] Subject predicate object. "
-            "DISCARD 95%+ events. Agent messages and greetings are ALWAYS discarded. "
-            "Use stream_edit only. Never write code."
-        ),
+        task_instruction=instruction,
         mode="complex",
         action_sets=["file_operations"],
-        selected_skills=["memory-processor"]
+        selected_skills=["memory-processor"],
+        workflow_id="memory_processing",
     )
 
 
