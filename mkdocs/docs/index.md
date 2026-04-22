@@ -1,70 +1,102 @@
+---
+hide:
+  - navigation
+  - toc
+---
 
 # CraftBot
 
-CraftBot is a minimal yet powerful computer-use AI agent that can perform complex computer-based and browser-based tasks. It can autonomously interpret tasks, plan actions, and execute actions to achieve goals. Depending on the task, it can switch between CLI and GUI mode, and the codebase is designed to serve as a foundation for building your own agents.
+Your personal AI assistant — lives inside your machine, works for you 24/7. CraftBot autonomously interprets tasks, plans actions, and executes them across the browser, filesystem, connected services, and the shell.
 
-## Why this project exists
+<div class="grid cards" markdown>
 
-CraftBot is aimed at teams and builders exploring:
-- system-based agentic AI
-- runtime code generation
-- autonomous execution for real workflows
+- :material-rocket-launch-outline:{ .lg .middle } __Get started__
 
-It is open-source and still in active development — suggestions, feedback, and contributions are welcome.
+    ---
 
-## What you can do with it
+    Install CraftBot, run the onboarding wizard, and send your first task in under 5 minutes.
 
-- Use the built-in agent to plan and execute multi-step tasks
-- Subclass the base agent to build specialized behaviors or workflows
-- Interact with the agent through a TUI (text-based interface)
+    [:octicons-arrow-right-24: Install](start/install.md) ·
+    [Quickstart](start/quickstart.md)
 
-## Key features
+- :material-lightbulb-on-outline:{ .lg .middle } __Concepts__
 
-- **Single Base Agent Architecture** — a simple, extendable core for reasoning, planning, and execution
-- **CLI/GUI mode** — the agent can switch between CLI and GUI depending on task complexity (GUI is experimental)
-- **Subclass & Extend** — build your own agents by inheriting from the base class
-- **Task Document Interface** — define structured tasks for in-context learning
-- **Actions Library** — reusable tools (web search, code execution, I/O, etc.)
-- **Lightweight & Cross-Platform** — works across Linux and Windows
+    ---
+
+    Learn the mental model: agent loop, triggers, actions, memory, context, skills.
+
+    [:octicons-arrow-right-24: Concepts](concepts/index.md)
+
+- :material-hammer-wrench:{ .lg .middle } __Extend CraftBot__
+
+    ---
+
+    Build custom skills, actions, and subclassed agents. Plug in MCP servers.
+
+    [:octicons-arrow-right-24: Develop](develop/index.md)
+
+</div>
+
+## What CraftBot does
+
+<div class="grid cards" markdown>
+
+- :material-brain:{ .lg .middle } __Reasons & plans__
+
+    ---
+
+    Breaks down complex tasks into todos, picks the right action at each step, and iterates until done.
+
+- :material-database-outline:{ .lg .middle } __Remembers__
+
+    ---
+
+    RAG-based memory with ChromaDB. Distills events at midnight and recalls them when relevant.
+
+- :material-connection:{ .lg .middle } __Connects__
+
+    ---
+
+    13 external services — Discord, Slack, Telegram, Notion, Google Workspace, LinkedIn, Zoom, WhatsApp, and more.
+
+- :material-puzzle-outline:{ .lg .middle } __Extensible__
+
+    ---
+
+    Skills, custom actions, MCP servers, and subclassable agents. Build your own CraftBot.
+
+- :material-bell-ring-outline:{ .lg .middle } __Proactive__
+
+    ---
+
+    Learns your preferences and goals. Proposes tasks, reminds you, schedules follow-ups (with approval).
+
+- :material-monitor-dashboard:{ .lg .middle } __Runs anywhere__
+
+    ---
+
+    Browser, TUI, CLI, or desktop GUI mode. Cross-platform (Windows, Linux, macOS). Service-mode background daemon.
+
+</div>
+
+## Start here
+
+<div class="grid cards" markdown>
+
+- [Getting started :octicons-arrow-right-24:](start/index.md) — install, onboard, first task
+- [Task modes :octicons-arrow-right-24:](modes/index.md) — simple, complex, special, proactive
+- [Interfaces :octicons-arrow-right-24:](interfaces/index.md) — browser, TUI, CLI, GUI
+- [Connections :octicons-arrow-right-24:](connections/index.md) — connect Discord, Slack, Google, …
+- [Configuration :octicons-arrow-right-24:](configuration/index.md) — config.json, env vars
+- [Troubleshooting :octicons-arrow-right-24:](troubleshooting/index.md) — when things go wrong
+
+</div>
 
 ## Project status
 
-GUI mode is still experimental. You should expect issues if/when the agent switches to GUI mode.
+!!! warning "GUI mode is experimental"
+    GUI mode is still being hardened — expect issues when the agent switches to vision-based desktop control. Browser and TUI modes are stable.
 
-## Roadmap
-
-- Memory module (coming next)
-- External tool integration (pending)
-- MCP layer (pending)
-- Proactive behaviour (pending)
-
-## Docs
-
-- Start here: [Getting started](getting-started.md)
-
-## Community & contributing
-
-This project welcomes suggestions and feedback.
-
-- Read: `README.md` (project overview and key concepts)
-- Read: `CONTRIBUTING.md` (contribution guidance)
-
-At the moment, the project does not have checks set up for direct code contributions, but feedback and suggestions are appreciated. If you’d like to contribute, the easiest ways to help are:
-- open an issue with a bug report or feature request
-- share a minimal repro case for problems you hit
-- propose design/architecture improvements
-- help improve docs (clarity, examples, structure)
-
-You can contact the maintainer at:
-- GitHub: `@zfoong`
-- Email: `thamyikfoong(at)craftos.net`
-
-## License
-
-This project is licensed under the MIT License. You are free to use, host, and monetize this project (credit is required for distribution/monetization).
-
-## Acknowledgements
-
-Developed and maintained by CraftOS and contributors `@zfoong` and `@ahmad-ajmal`.
-
-If you find CraftBot useful, please star the repository and share it with others.
+- **License:** [MIT](https://github.com/zfoong/CraftBot/blob/main/LICENSE). Free to use, host, and monetize (credit required for distribution).
+- **Community:** [GitHub](https://github.com/zfoong/CraftBot) · [Discord](https://discord.gg/ZN9YHc37HG)
+- **Maintainers:** [CraftOS](https://craftos.net/), [@zfoong](https://github.com/zfoong), [@ahmad-ajmal](https://github.com/ahmad-ajmal)

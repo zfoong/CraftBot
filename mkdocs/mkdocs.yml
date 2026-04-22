@@ -1,7 +1,8 @@
 site_name: CraftBot
+site_description: Self-hostable personal AI assistant that lives inside your machine.
 repo_url: https://github.com/zfoong/CraftBot
 repo_name: zfoong/CraftBot
-
+edit_uri: edit/main/mkdocs/docs/
 
 theme:
   name: material
@@ -9,13 +10,18 @@ theme:
   logo: assets/logo.png
   features:
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
-    - navigation.expand
     - navigation.instant
     - navigation.tracking
+    - navigation.top
+    - navigation.indexes
     - toc.follow
     - content.code.copy
+    - content.code.annotate
     - content.tabs.link
+    - search.suggest
+    - search.highlight
   palette:
     - scheme: default
       toggle:
@@ -28,38 +34,134 @@ theme:
   font:
     text: Inter
     code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
 
 extra_css:
   - stylesheets/extra.css
 
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
+  - def_list
+  - footnotes
+  - tables
   - toc:
       permalink: true
-  - pymdownx.superfences
   - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.keys
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
 
 plugins:
   - search
-  - mkdocstrings:
-      handlers:
-        python:
-          paths: [".."]
-          options:
-            show_source: true
-            show_root_heading: true
-            heading_level: 2
-            members_order: source
-            docstring_section_style: table
-  - gen-files:
-      scripts:
-        - scripts/gen_ref_pages.py
-  - literate-nav:
-      nav_file: SUMMARY.md
-  - section-index
 
 nav:
   - Home: index.md
-  - Getting started: getting-started.md
-  - Connections: connections.md
-  - API Reference: reference/
+  - Getting started:
+      - start/index.md
+      - Install: start/install.md
+      - Quickstart: start/quickstart.md
+      - Onboarding: start/onboarding.md
+      - Your first task: start/hello-task.md
+      - Service mode: start/service-mode.md
+  - Concepts:
+      - concepts/index.md
+      - Agent loop: concepts/agent-loop.md
+      - Triggers: concepts/trigger.md
+      - Task sessions: concepts/task-session.md
+      - Event stream: concepts/event-stream.md
+      - Actions: concepts/action.md
+      - Skill & action selection: concepts/skill-selection.md
+      - Prompts: concepts/prompt.md
+      - Context engine: concepts/context-engine.md
+      - Memory: concepts/memory.md
+      - Agent file system: concepts/agent-file-system.md
+      - Logs: concepts/logs.md
+  - Task modes:
+      - modes/index.md
+      - Simple task: modes/simple-task.md
+      - Complex task: modes/complex-task.md
+      - Special workflows: modes/special-workflows.md
+      - Proactive: modes/proactive.md
+  - Interfaces:
+      - interfaces/index.md
+      - CLI: interfaces/cli.md
+      - TUI: interfaces/tui.md
+      - Browser: interfaces/browser.md
+      - GUI / Vision: interfaces/gui-vision.md
+      - UI layer: interfaces/ui-layer.md
+      - Living UI: interfaces/living-ui.md
+  - Commands:
+      - commands/index.md
+      - Built-in commands: commands/builtin.md
+      - CLI-anything: commands/cli-anything.md
+  - Providers:
+      - providers/index.md
+      - LLM providers: providers/llm.md
+      - VLM providers: providers/vlm.md
+  - Connections:
+      - connections/index.md
+      - Credentials: connections/credentials.md
+      - MCP servers: connections/mcp.md
+      - Discord: connections/discord.md
+      - Slack: connections/slack.md
+      - Telegram (Bot): connections/telegram-bot.md
+      - Telegram (User): connections/telegram-user.md
+      - Notion: connections/notion.md
+      - Google Workspace: connections/google-workspace.md
+      - LinkedIn: connections/linkedin.md
+      - Outlook: connections/outlook.md
+      - WhatsApp Web: connections/whatsapp-web.md
+      - WhatsApp Business: connections/whatsapp-business.md
+      - GitHub: connections/github.md
+      - Jira: connections/jira.md
+      - Twitter: connections/twitter.md
+  - Develop:
+      - develop/index.md
+      - Skills overview: develop/skills/index.md
+      - Write a CraftBot skill: develop/skills/craftbot-skill.md
+      - External skills: develop/skills/external-skill.md
+      - Custom action: develop/custom-action.md
+      - Custom agent: develop/custom-agent.md
+  - Configuration:
+      - configuration/index.md
+      - config.json: configuration/config-json.md
+      - Agent bundle config.yaml: configuration/agent-config-yaml.md
+      - Environment variables: configuration/env-vars.md
+  - Reference:
+      - reference/index.md
+      - Actions catalogue: reference/actions.md
+      - Event types: reference/events.md
+      - Agent MD files: reference/agent-md-files.md
+  - Troubleshooting:
+      - troubleshooting/index.md
+      - Runtime issues: troubleshooting/runtime.md
+      - Connection issues: troubleshooting/connections.md
+      - Provider issues: troubleshooting/providers.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/zfoong/CraftBot
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/ZN9YHc37HG
