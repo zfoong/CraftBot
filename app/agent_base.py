@@ -155,7 +155,7 @@ class AgentBase:
             llm_api_key: API key for the LLM provider.
             llm_base_url: Base URL for the LLM provider (optional).
             llm_model: Model name override (None = use registry default).
-            vlm_provider: Provider name for VLM (defaults to llm_provider).
+            vlm_provider: Provider name for VLM (defaults to llm_provider if None).
             vlm_model: VLM model name override (None = use registry default).
             deferred_init: If True, allow LLM/VLM initialization to be deferred
                 until API key is configured (useful for first-time setup).
@@ -177,11 +177,11 @@ class AgentBase:
             base_url=llm_base_url,
             deferred=deferred_init,
         )
-
         # VLM uses its own provider/model settings, falling back to LLM values
-        _vlm_provider = vlm_provider or llm_provider
-        _vlm_api_key = get_api_key(_vlm_provider) if vlm_provider else llm_api_key
-        _vlm_base_url = get_base_url(_vlm_provider) if vlm_provider else llm_base_url
+        _vlm_provider  = vlm_provider or llm_provider
+        _vlm_api_key   = get_api_key(_vlm_provider)   if vlm_provider else llm_api_key
+        _vlm_base_url  = get_base_url(_vlm_provider)  if vlm_provider else llm_base_url
+
         self.vlm = VLMInterface(
             provider=_vlm_provider,
             model=vlm_model,

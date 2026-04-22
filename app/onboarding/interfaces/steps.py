@@ -242,8 +242,13 @@ class AgentNameStep:
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
         # Accept legacy string submissions (plain text name) for backward compat.
         if isinstance(value, str):
+            if len(value) > 20:
+                return False, "Agent name must be 20 characters or fewer"
             return True, None
         if isinstance(value, dict):
+            agent_name = value.get("agent_name")
+            if agent_name and len(str(agent_name)) > 20:
+                return False, "Agent name must be 20 characters or fewer"
             picture = value.get("agent_profile_picture")
             if picture not in (None, ""):
                 if not isinstance(picture, str) or picture.lower() not in self.ALLOWED_PICTURE_EXTS:
@@ -446,14 +451,17 @@ class UserProfileStep:
         return []
 
     def validate(self, value: Any) -> tuple[bool, Optional[str]]:
-        """Validate the form data dict. All fields are optional."""
-        if not isinstance(value, dict):
-            return False, "Expected a dictionary of form values"
-        # Validate approval is a list if present
-        approval = value.get("approval")
-        if approval is not None and not isinstance(approval, list):
-            return False, "Approval settings must be a list"
-        return True, None
+      """Validate the form data dict. All fields are optional."""
+      if not isinstance(value, dict):
+          return False, "Expected a dictionary of form values"
+      user_name = value.get("user_name")
+      if user_name and len(str(user_name)) > 20:
+          return False, "Name must be 20 characters or fewer"
+      # Validate approval is a list if present
+      approval = value.get("approval")
+      if approval is not None and not isinstance(approval, list):
+          return False, "Approval settings must be a list"
+      return True, None
 
     def get_default(self) -> Dict[str, Any]:
         """Return defaults for all fields."""

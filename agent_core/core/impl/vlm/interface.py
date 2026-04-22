@@ -217,6 +217,7 @@ class VLMInterface:
         system_prompt: str | None = None,
         user_prompt: str | None = "Describe this image in detail.",
         log_response: bool = True,
+        json_mode: bool = True,
     ) -> str:
         """Describe an image from raw bytes using the VLM.
 
@@ -233,8 +234,10 @@ class VLMInterface:
             if log_response:
                 logger.info(f"[LLM SEND] system={system_prompt} | user={user_prompt}")
 
-            if self.provider in ("openai", "minimax", "deepseek", "moonshot", "grok"):
-                response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt)
+            if self.provider == "deepseek":
+                raise RuntimeError("DeepSeek does not support vision/VLM. Use a different provider for image description.")
+            elif self.provider in ("openai", "minimax", "moonshot", "grok"):
+                response = self._openai_describe_bytes(image_bytes, system_prompt, user_prompt, json_mode=json_mode)
             elif self.provider == "remote":
                 response = self._ollama_describe_bytes(image_bytes, system_prompt, user_prompt)
             elif self.provider == "gemini":
@@ -286,7 +289,113 @@ class VLMInterface:
             log_response,
         )
 
+    def describe_image_ocr(
+        self,
+        image_path: str,
+        user_prompt: str | None = None,
+    ) -> str:
+        """
+        Run OCR on an image. Returns raw extracted text, not a description.
+        Uses a structured extraction system prompt regardless of provider.
+        """
+        if not os.path.isfile(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+    
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+    
+        system_prompt = (
+            "You are a precise OCR engine. Extract ALL text from this image exactly as it appears. "
+            "Preserve line breaks, indentation, and formatting. "
+            "Do NOT add commentary, interpretation, or markdown. "
+            "Output only the raw extracted text. If no text is present, output an empty string."
+        )
+        effective_user = user_prompt or "Extract all text from this image."
+    
+        logger.info(f"[LLM SEND] OCR request | path={image_path}")
+    
+        cleaned = self.describe_image_bytes(
+            image_bytes,
+            system_prompt=system_prompt,
+            user_prompt=effective_user,
+            log_response=False,  # Logged below
+            json_mode=False,
+        )
+    
+        logger.info(f"[LLM RECV OCR] {cleaned[:120]}...")
+        return cleaned
+
+    def describe_video_frames(
+        self,
+        video_path: str,
+        query: str | None = None,
+        max_frames: int = 8,
+    ) -> str:
+        """
+        Analyse video by extracting evenly-spaced keyframes and sending to VLM.
+        Falls back to graceful error if OpenCV is unavailable.
+        """
+        try:
+            import cv2
+        except ImportError:
+            raise RuntimeError(
+                "opencv-python-headless is required for video analysis. "
+                "Install with: pip install opencv-python-headless"
+            )
+    
+        if not os.path.isfile(video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+    
+        cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames == 0:
+            cap.release()
+            raise ValueError("Video has 0 frames or could not be read.")
+    
+        indices = [int(i * total_frames / max_frames) for i in range(max_frames)]
+        frame_bytes_list: list[bytes] = []
+    
+        for idx in indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ret, frame = cap.read()
+            if ret:
+                success, buf = cv2.imencode(".jpg", frame)
+                if success:
+                    frame_bytes_list.append(buf.tobytes())
+        cap.release()
+    
+        if not frame_bytes_list:
+            raise ValueError("Could not extract any frames from the video.")
+    
+        system_prompt = (
+            f"You are analysing a video represented by {len(frame_bytes_list)} evenly-spaced keyframes. "
+            "Provide: 1) An overall narrative summary of what is happening, "
+            "2) Any visible text or titles, "
+            "3) Key objects, people, or scenes, "
+            "4) Notable transitions between frames."
+        )
+        effective_user = query or "Summarise the content of this video."
+    
+        # For multi-frame, send frames sequentially (all providers support single-image per call)
+        # Gemini 1.5 Pro supports native multi-image; others receive concatenated descriptions
+        if self.provider == "gemini" and len(frame_bytes_list) > 1:
+            return self._gemini_describe_video_frames(frame_bytes_list, system_prompt, effective_user)
+        else:
+            # Universal fallback: describe each frame, then synthesise
+            return self._multi_frame_describe_fallback(frame_bytes_list, system_prompt, effective_user)
+
     # ───────────────────── Provider Helpers ─────────────────────
+
+    @staticmethod
+    def _detect_mime_type(image_bytes: bytes) -> str:
+        """Detect image MIME type from the first few bytes of image data."""
+        if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+            return "image/png"
+        if image_bytes[:4] == b'GIF8':
+            return "image/gif"
+        if image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
+            return "image/webp"
+        return "image/jpeg"
 
     def _report_usage_async(
         self,
@@ -317,9 +426,54 @@ class VLMInterface:
         except Exception as e:
             logger.warning(f"[VLM] Failed to report usage: {e}")
 
-    def _openai_describe_bytes(self, image_bytes: bytes, sys: str | None, usr: str) -> Dict[str, Any]:
-        """OpenAI vision request with automatic prompt caching metrics."""
+
+    def _gemini_describe_video_frames(
+        self, frame_bytes_list: list[bytes], sys: str | None, usr: str
+    ) -> str:
+        """Gemini-specific multi-image frame analysis in a single API call."""
+        result = self._gemini_client.generate_multimodal(
+            self.model,
+            text=usr,
+            image_bytes_list=frame_bytes_list,
+            system_prompt=sys,
+            temperature=self.temperature,
+            json_mode=False,
+        )
+        tokens_used = result.get("tokens_used", 0)
+        if tokens_used:
+            self._set_token_count(self._get_token_count() + tokens_used)
+        return re.sub(self._CODE_BLOCK_RE, "", result.get("content", "").strip())
+
+    def _multi_frame_describe_fallback(
+        self, frame_bytes_list: list[bytes], system_prompt: str, user_prompt: str
+    ) -> str:
+        """Describe each frame individually, then synthesise into a narrative."""
+        frame_descriptions = []
+        for i, fb in enumerate(frame_bytes_list):
+            desc = self.describe_image_bytes(
+                fb,
+                system_prompt=f"Frame {i+1} of {len(frame_bytes_list)}: Describe what you see.",
+                user_prompt=user_prompt,
+                log_response=False,
+            )
+            frame_descriptions.append(f"[Frame {i+1}]: {desc}")
+    
+        synthesis_prompt = (
+            "You received descriptions of video keyframes. Write a coherent video summary:\n\n"
+            + "\n".join(frame_descriptions)
+        )
+        synthesis = self.describe_image_bytes(
+            frame_bytes_list[-1],  # anchor with last frame for context
+            system_prompt=system_prompt,
+            user_prompt=synthesis_prompt,
+            log_response=True,
+        )
+        return synthesis
+
+    def _openai_describe_bytes(self, image_bytes: bytes, sys: str | None, usr: str, json_mode: bool = True) -> Dict[str, Any]:
+        """OpenAI/Grok vision request with automatic prompt caching metrics."""
         img_b64 = base64.b64encode(image_bytes).decode()
+        mime_type = self._detect_mime_type(image_bytes)
         messages: list[Dict[str, Any]] = []
         if sys:
             messages.append({"role": "system", "content": sys})
@@ -328,20 +482,19 @@ class VLMInterface:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": usr},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}},
                 ],
             }
         )
         # Newer OpenAI models (o1, o3, o4, gpt-5, etc.) require
         # 'max_completion_tokens' instead of the legacy 'max_tokens' parameter.
-        # Note: response_format=json_object is intentionally NOT set here because
-        # describe_image returns plain text descriptions, not JSON. Enabling JSON
-        # mode would also require the prompt to contain the word "json".
         request_kwargs: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature,
         }
+        if json_mode:
+            request_kwargs["response_format"] = {"type": "json_object"}
         model_lower = (self.model or "").lower()
         uses_max_completion_tokens = (
             model_lower.startswith("o1")
@@ -375,9 +528,9 @@ class VLMInterface:
         elif sys and len(sys) >= config.min_cache_tokens:
             metrics.record_miss("openai", "automatic_vlm", total_tokens=token_count_input)
 
-        # Report usage via hook
+        # Report usage via hook (use actual provider name, e.g. "grok", "minimax")
         self._report_usage_async(
-            "vlm_openai", "openai", self.model,
+            f"vlm_{self.provider}", self.provider, self.model,
             token_count_input, token_count_output, cached_tokens
         )
 
@@ -393,16 +546,20 @@ class VLMInterface:
         payload = {
             "model": self.model,
             "prompt": usr,
-            "system": sys,
             "images": [img_b64],
             "stream": False,
-            "temperature": self.temperature,
+            "options": {"temperature": self.temperature},
         }
+        if sys:
+            payload["system"] = sys
         url: str = f"{self.remote_url.rstrip('/')}/api/generate"
         r = requests.post(url, json=payload, timeout=600)
         r.raise_for_status()
-        content = r.json().get("response", "").strip()
-        total_tokens = r.json().get("usage", {}).get("total_tokens", 0)
+        result = r.json()
+        content = result.get("response", "").strip()
+        token_count_input = result.get("prompt_eval_count", 0)
+        token_count_output = result.get("eval_count", 0)
+        total_tokens = token_count_input + token_count_output
 
         return {
             "tokens_used": total_tokens or 0,
@@ -417,10 +574,10 @@ class VLMInterface:
         result = self._gemini_client.generate_multimodal(
             self.model,
             text=usr,
-            image_bytes=image_bytes,
+            image_bytes_list=[image_bytes],
             system_prompt=sys,
             temperature=self.temperature,
-            json_mode=True,
+            json_mode=False,
         )
 
         # Record cache metrics
@@ -447,6 +604,7 @@ class VLMInterface:
     def _byteplus_describe_bytes(self, image_bytes: bytes, sys: str | None, usr: str) -> Dict[str, Any]:
         """BytePlus vision request."""
         img_b64 = base64.b64encode(image_bytes).decode()
+        mime_type = self._detect_mime_type(image_bytes)
         messages: list[Dict[str, Any]] = []
         if sys:
             messages.append({"role": "system", "content": sys})
@@ -456,7 +614,7 @@ class VLMInterface:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": usr},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}},
                 ],
             }
         )
@@ -501,14 +659,7 @@ class VLMInterface:
         img_b64 = base64.b64encode(image_bytes).decode()
         config = get_cache_config()
 
-        # Detect media type from image bytes
-        media_type = "image/jpeg"
-        if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
-            media_type = "image/png"
-        elif image_bytes[:4] == b'GIF8':
-            media_type = "image/gif"
-        elif image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
-            media_type = "image/webp"
+        media_type = self._detect_mime_type(image_bytes)
 
         message_content = [
             {
