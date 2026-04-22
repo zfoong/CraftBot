@@ -256,22 +256,6 @@ def cleanup_background_processes():
                     pass
 
 
-def _restart_self(args: list[str]) -> None:
-    """Relaunch run.py with the given args and exit.
-
-    On POSIX, os.execv replaces the process in place (same PID, same console).
-    On Windows, os.execv spawns a new PID and the original process exits —
-    which detaches the terminal and usually results in the user seeing nothing
-    happen. We use CREATE_NEW_CONSOLE so the new instance gets a visible
-    window, then exit the current process.
-    """
-    new_cmd = [sys.executable, os.path.abspath(__file__)] + args
-    if sys.platform == "win32":
-        subprocess.Popen(new_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-        sys.exit(0)
-    else:
-        os.execv(sys.executable, new_cmd)
-
 # Register cleanup on exit
 atexit.register(cleanup_background_processes)
 
@@ -967,10 +951,6 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
             sys.argv = [sys.argv[0]] + pass_args
             from main import main as main_entry
             main_entry()
-        except SystemExit as e:
-            if getattr(e, 'code', None) == 42:
-                print("\n🔄 Restarting CraftBot after update...")
-                _restart_self(sys.argv[1:])
         except KeyboardInterrupt:
             print("\nInterrupted.")
             sys.exit(0)
@@ -988,15 +968,9 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
         cmd = [sys.executable, "-u", main_script] + pass_args
 
     # Run in current terminal with all environment variables.
-    # If the process exits with code 42, an update was applied — restart.
     try:
-        while True:
-            result = subprocess.run(cmd, cwd=os.path.dirname(main_script), env=os.environ.copy())
-            if result.returncode == 42:
-                print("\n🔄 Restarting CraftBot after update...")
-                time.sleep(2)
-                continue
-            sys.exit(result.returncode)
+        result = subprocess.run(cmd, cwd=os.path.dirname(main_script), env=os.environ.copy())
+        sys.exit(result.returncode)
     except KeyboardInterrupt:
         print("\nInterrupted.")
         sys.exit(0)
@@ -1199,16 +1173,11 @@ if __name__ == "__main__":
         # Wait for agent to finish (keeps script running)
         # If the agent exits with code 42, it means an update was applied
         # and we need to restart the entire stack (frontend + backend).
+        # Wait for agent to finish. Updates are handled by the external
+        # updater script (scripts/updater.bat) which spawns in its own window
+        # and relaunches us — no exit-code magic, no in-process restart.
         try:
-            while True:
-                agent_process.wait()
-                if agent_process.returncode == 42:
-                    print("\n🔄 Restarting CraftBot after update...")
-                    cleanup_background_processes()
-                    time.sleep(2)
-                    # Re-launch run.py so it relaunches frontend + backend
-                    _restart_self(sys.argv[1:])
-                break
+            agent_process.wait()
         except KeyboardInterrupt:
             print("\nShutting down...")
             cleanup_background_processes()
