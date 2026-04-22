@@ -111,13 +111,7 @@ async def perform_update(
     project_root = str(Path(__file__).resolve().parent.parent)
 
     # 1. Stash local changes if the working tree is dirty
-    proc = await asyncio.create_subprocess_exec(
-        "git", "status", "--porcelain",
-        cwd=project_root,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await proc.communicate()
+    stdout, _ = await _run_git(["git", "status", "--porcelain"], project_root)
     if stdout.strip():
         await emit("Stashing local changes...")
         await _run_git(["git", "stash"], project_root)
@@ -131,18 +125,21 @@ async def perform_update(
     await _run_git(["git", "pull", "origin", "main"], project_root)
 
     # 3. Re-run install.py for dependency updates
-    await emit("Installing dependencies...")
     install_script = os.path.join(project_root, "install.py")
     if os.path.exists(install_script):
+        await emit("Installing dependencies...")
         proc = await asyncio.create_subprocess_exec(
             sys.executable, install_script,
             cwd=project_root,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        await proc.communicate()
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"install.py failed (exit {proc.returncode}): {err[:500]}")
 
-    # 4. Signal restart
+    # 4. Signal restart — only reached if every step above succeeded
     await emit("Update complete! Restarting CraftBot...")
     await asyncio.sleep(1)  # allow the message to reach the UI
 
@@ -155,11 +152,15 @@ async def perform_update(
 # ---------------------------------------------------------------------------
 
 async def _run_git(cmd: list, cwd: str) -> Tuple[bytes, bytes]:
-    """Run a git command asynchronously and return (stdout, stderr)."""
+    """Run a git command asynchronously; raise on non-zero exit."""
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=cwd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    return await proc.communicate()
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        err = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"{' '.join(cmd)} failed (exit {proc.returncode}): {err[:500]}")
+    return stdout, stderr
