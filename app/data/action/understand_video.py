@@ -83,6 +83,26 @@ def understand_video(input_data: dict) -> dict:
     from app.config import get_api_key, get_vlm_model
     api_key = get_api_key('gemini')
 
+# --- Dual-path execution ---
+# This is the only video action that contains its own dispatch logic rather than
+# delegating entirely to InternalActionInterface. The reason is architectural:
+#
+# PATH 1 — Gemini Native (below, runs when api_key is present):
+#   Uses the Gemini Files API (genai.upload_file) for true native video
+#   understanding. The full video is uploaded and processed by the model with
+#   temporal context — no frame sampling needed. The uploaded file is deleted
+#   from Gemini servers after the call. The full summary is saved to disk.
+#   This path is preferred: more accurate, handles long videos, no OpenCV dep.
+#
+# PATH 2 — OpenCV Keyframe Fallback (bottom of function):
+#   Used when no Gemini API key is configured, or if PATH 1 raises any exception.
+#   Delegates to InternalActionInterface.understand_video(), which extracts
+#   evenly-spaced keyframes using OpenCV and sends them to whatever VLM provider
+#   is currently configured. Results are returned directly without saving to disk.
+#
+# The Gemini Files API is not accessible through VLMInterface, which is why
+# this action cannot follow the standard single-delegation pattern.
+
     if api_key:
         try:
             import google.generativeai as genai
