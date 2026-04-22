@@ -23,11 +23,12 @@ MEMORY_ITEM_PATTERN = re.compile(
     r'^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s+\[(\w+)\]\s+(.+)$'
 )
 
-# Memory size and length thresholds (LLM-enforced; Python signals when to act)
-MEMORY_MAX_ITEMS = 200
-MEMORY_PRUNE_TARGET = 100
-MEMORY_ITEM_WORD_LIMIT = 150
-
+# Memory size and length thresholds — live-read from settings.json via the
+# getter functions below, so values can be tuned without a code change.
+# Defaults kick in only when a key is missing from settings.json.
+_MEMORY_MAX_ITEMS_DEFAULT = 200
+_MEMORY_PRUNE_TARGET_DEFAULT = 135
+_MEMORY_ITEM_WORD_LIMIT_DEFAULT = 150
 
 # ─────────────────────────────────────────────────────────────────────
 # Memory Mode Control
@@ -72,6 +73,33 @@ def is_memory_enabled() -> bool:
     """
     settings = _load_settings()
     return settings.get("memory", {}).get("enabled", True)
+
+
+def get_memory_max_items() -> int:
+    """Upper bound on MEMORY.md item count before pruning kicks in."""
+    return int(
+        _load_settings().get("memory", {}).get(
+            "max_items", _MEMORY_MAX_ITEMS_DEFAULT
+        )
+    )
+
+
+def get_memory_prune_target() -> int:
+    """Approximate number of oldest items the pruning phase should remove."""
+    return int(
+        _load_settings().get("memory", {}).get(
+            "prune_target", _MEMORY_PRUNE_TARGET_DEFAULT
+        )
+    )
+
+
+def get_memory_item_word_limit() -> int:
+    """Maximum words allowed per distilled memory item."""
+    return int(
+        _load_settings().get("memory", {}).get(
+            "item_word_limit", _MEMORY_ITEM_WORD_LIMIT_DEFAULT
+        )
+    )
 
 
 def get_memory_mode() -> Dict[str, Any]:

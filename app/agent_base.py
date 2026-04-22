@@ -78,8 +78,8 @@ from app.proactive import initialize_proactive_manager, get_proactive_manager
 from app.ui_layer.settings.memory_settings import (
     is_memory_enabled,
     _parse_memory_items,
-    MEMORY_MAX_ITEMS,
-    MEMORY_PRUNE_TARGET,
+    get_memory_max_items,
+    get_memory_prune_target,
 )
 from agent_core import profile, profile_loop, OperationCategory
 from agent_core import (
@@ -464,7 +464,7 @@ class AgentBase:
     def create_process_memory_task(
         self,
         needs_pruning: bool = False,
-        prune_target: int = MEMORY_PRUNE_TARGET,
+        prune_target: int = 0,
     ) -> Optional[str]:
         """
         Create a task to process unprocessed events and move them to memory.
@@ -610,22 +610,19 @@ class AgentBase:
         try:
             # Count items in MEMORY.md to decide whether the pruning phase
             # should run alongside event processing.
+            max_items = get_memory_max_items()
             needs_pruning = False
-            prune_target = MEMORY_PRUNE_TARGET  # default fallback
             memory_file = AGENT_FILE_SYSTEM_PATH / "MEMORY.md"
             if memory_file.exists():
                 try:
                     memory_items = _parse_memory_items(
                         memory_file.read_text(encoding="utf-8")
                     )
-                    if len(memory_items) >= MEMORY_MAX_ITEMS:
+                    if len(memory_items) >= max_items:
                         needs_pruning = True
-                        # Prune the first 2/3 (oldest), keep the latest 1/3.
-                        prune_target = (len(memory_items) * 2) // 3
                         logger.info(
                             f"[MEMORY] MEMORY.md has {len(memory_items)} items "
-                            f"(>= {MEMORY_MAX_ITEMS}); pruning phase will run "
-                            f"(pruning {prune_target} oldest, keeping {len(memory_items) - prune_target})"
+                            f"(>= {max_items}); pruning phase will run"
                         )
                 except Exception as e:
                     logger.warning(f"[MEMORY] Failed to count MEMORY.md items: {e}")
@@ -633,7 +630,7 @@ class AgentBase:
             logger.info(f"[MEMORY] Processing {len(event_lines)} unprocessed events")
             task_id = self.create_process_memory_task(
                 needs_pruning=needs_pruning,
-                prune_target=prune_target,
+                prune_target=get_memory_prune_target(),
             )
 
             if not task_id:
