@@ -6,13 +6,14 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/OS-Windows-blue?logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/OS-macOS-lightgrey?logo=apple&logoColor=white" alt="macOS">
   <img src="https://img.shields.io/badge/OS-Linux-yellow?logo=linux&logoColor=black" alt="Linux">
-  
-  <a href="https://github.com/zfoong/CraftBot">
-    <img src="https://img.shields.io/github/stars/zfoong/CraftBot?style=social" alt="GitHub Repo stars">
+
+  <a href="https://github.com/CraftOS-dev/CraftBot">
+    <img src="https://img.shields.io/github/stars/CraftOS-dev/CraftBot?style=social" alt="GitHub Repo stars">
   </a>
 
-  <img src="https://img.shields.io/github/license/zfoong/CraftBot" alt="License">
+  <img src="https://img.shields.io/github/license/CraftOS-dev/CraftBot" alt="License">
 
   <a href="https://discord.gg/ZN9YHc37HG">
     <img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Discord">
@@ -21,10 +22,12 @@
 <br/>
 
 [![SPONSORED BY E2B FOR STARTUPS](https://img.shields.io/badge/SPONSORED%20BY-E2B%20FOR%20STARTUPS-ff8800?style=for-the-badge)](https://e2b.dev/startups)
+
+<a href="https://www.producthunt.com/products/craftbot?embed=true&amp;utm_source=badge-top-post-badge&amp;utm_medium=badge&amp;utm_campaign=badge-craftbot" target="_blank" rel="noopener noreferrer"><img alt="CraftBot - Self-hosted proactive AI assistant that lives locally | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/top-post-badge.svg?post_id=1110300&amp;theme=dark&amp;period=daily&amp;t=1776679679509"></a>
 </div>
 
 <p align="center">
-  <a href="README.ja.md"> 日本語版はこちら</a> | <a href="README.cn.md"> 中文版README </a>
+  <a href="README.ja.md">日本語</a> | <a href="README.cn.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a> | <a href="README.pt-BR.md">Português</a> | <a href="README.fr.md">Français</a> | <a href="README.de.md">Deutsch</a>
 </p>
 
 ## 🚀 Overview
@@ -52,7 +55,7 @@ CraftBot awaits your orders. Set up your own CraftBot now.
 - **External Tools Integration** — Connect to Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord, and Telegram (more to come!) with embedded credentials and OAuth support.
 - **MCP** — Model Context Protocol integration for extending agent capabilities with external tools and services.
 - **Skills** — Extensible skill framework with built-in skills for task planning, research, code review, git operations, and more.
-- **Cross-Platform** — Full support for Windows and Linux with platform-specific code variants and Docker containerization.
+- **Cross-Platform** — Full support for Windows, macOS, and Linux with platform-specific code variants and Docker containerization.
 
 > [!IMPORTANT]
 > **Note for GUI mode:** The GUI mode is still in experimental phase. This means you may encounter issues when the agent switches to GUI mode. We are actively improving this feature.
@@ -78,7 +81,7 @@ CraftBot awaits your orders. Set up your own CraftBot now.
 
 ```bash
 # Clone the repository
-git clone https://github.com/zfoong/CraftBot.git
+git clone https://github.com/CraftOS-dev/CraftBot.git
 cd CraftBot
 
 # Install dependencies
@@ -143,7 +146,7 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 - [ ] **External Tool integration** — Still adding more!
 - [X] **MCP Layer** — Done.
 - [X] **Skill Layer** — Done.
-- [X] **Proactive Behaviour** — Pending
+- [ ] **Proactive Behaviour** — Pending
 
 ---
 
@@ -303,7 +306,7 @@ python service.py logs     # See recent log output
 
 ---
 
-## � Troubleshooting & Common Issues
+## 🔧 Troubleshooting & Common Issues
 
 ### Missing Node.js (for Browser Mode)
 If you see **"npm not found in PATH"** when running `python run.py`:
@@ -336,6 +339,8 @@ The installer automatically detects GPU availability:
 For detailed troubleshooting, see [INSTALLATION_FIX.md](INSTALLATION_FIX.md).
 
 ---
+
+## 🔌 External Service Integration
 
 The agent can connect to various services using OAuth. Release builds come with embedded credentials, but you can also use your own.
 
@@ -411,7 +416,7 @@ LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
 4. Copy Client ID and Client Secret
 
 ---
-## Run with container
+## 🐳 Run with Container
 
 The repository root included a Docker configuration with Python 3.10, key system packages (including Tesseract for OCR), and all Python dependencies defined in `environment.yml`/`requirements.txt` so the agent can run consistently in isolated environments. 
 
@@ -448,7 +453,7 @@ GUI actions (mouse/keyboard events, screenshots) require an X11 server. You can 
 * Use the host display (requires Linux with X11):
 
   ```bash
-  docker run --rm -it 
+  docker run --rm -it \
     -e DISPLAY=$DISPLAY \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $(pwd)/data:/app/app/data \
@@ -469,7 +474,7 @@ By default the image uses Python 3.10 and bundles the Python dependencies from `
 
 ## 🤝 How to Contribute
 
-Contributions and suggestions are welcome! You can contact [@zfoong](https://github.com/zfoong) @ thamyikfoong(at)craftos.net. We currently don't have checks set up, so we can't allow direct contributions but we appreciate any suggestions and feedback.
+PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (fork → branch from `dev` → PR). All pull requests run through lint + smoke-test CI automatically. For questions or a faster conversation, join us on [Discord](https://discord.gg/ZN9YHc37HG) or email thamyikfoong(at)craftos.net.
 
 ## 🧾 License
 
