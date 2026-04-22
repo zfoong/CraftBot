@@ -9,3 +9,6 @@ DO NOT copy and paste events here: This memory file only stores distilled memory
 
 ## Memory
 
+[2026-03-26 13:20:40] [system_warning] Token usage reached 80% of maximum limit (6000000 tokens)
+[2026-03-26 13:22:25] [system_limit] Task cancelled due to reaching maximum token limit (6000000 tokens)
+

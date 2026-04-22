@@ -1,5 +1,15 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
-import type { ChatMessage, ActionItem, AgentStatus, InitialState, WSMessage, DashboardMetrics, TaskCancelResponse, FilteredDashboardMetrics, MetricsTimePeriod, OnboardingStep, OnboardingStepResponse, OnboardingSubmitResponse, OnboardingCompleteResponse, LocalLLMState, LocalLLMCheckResponse, LocalLLMTestResponse, LocalLLMInstallResponse, LocalLLMProgressResponse, LocalLLMPullProgressResponse, SuggestedModel } from '../types'
+import type {
+  ChatMessage, ActionItem, AgentStatus, InitialState, WSMessage, DashboardMetrics,
+  TaskCancelResponse, FilteredDashboardMetrics, MetricsTimePeriod, OnboardingStep,
+  OnboardingStepResponse, OnboardingSubmitResponse, OnboardingCompleteResponse, 
+  LocalLLMState, LocalLLMCheckResponse, LocalLLMTestResponse, LocalLLMInstallResponse, 
+  LocalLLMProgressResponse, LocalLLMPullProgressResponse, SuggestedModel,
+  // Living UI types
+  LivingUIProject, LivingUICreateRequest, LivingUIStatusUpdate, LivingUIStateUpdate,
+  LivingUITodo, LivingUITodosUpdate,
+  LivingUICreateResponse, LivingUIListResponse, LivingUILaunchResponse, LivingUIStopResponse, LivingUIDeleteResponse
+} from '../types'
 import { getWsUrl } from '../utils/connection'
 
 // Pending attachment type for upload
@@ -56,10 +66,16 @@ interface WebSocketState {
   loadingOlderActions: boolean
   // Local LLM (Ollama) state
   localLLM: LocalLLMState
+  // Living UI state
+  livingUIProjects: LivingUIProject[]
+  livingUICreating: LivingUIStatusUpdate | null
+  livingUITodos: Record<string, LivingUITodo[]>
+  activeLivingUIId: string | null
+  livingUIStates: Record<string, LivingUIStateUpdate['state']>
 }
 
 interface WebSocketContextType extends WebSocketState {
-  sendMessage: (content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => void
+  sendMessage: (content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext, livingUIId?: string) => void
   sendCommand: (command: string) => void
   clearMessages: () => void
   cancelTask: (taskId: string) => void
@@ -94,6 +110,13 @@ interface WebSocketContextType extends WebSocketState {
   // Agent profile picture
   uploadAgentProfilePicture: (name: string, mimeType: string, contentBase64: string) => void
   removeAgentProfilePicture: () => void
+  // Living UI methods
+  createLivingUI: (data: LivingUICreateRequest) => void
+  requestLivingUIList: () => void
+  launchLivingUI: (projectId: string) => void
+  stopLivingUI: (projectId: string) => void
+  deleteLivingUI: (projectId: string) => void
+  setActiveLivingUI: (projectId: string | null) => void
 }
 
 // Initialize lastSeenMessageId from localStorage
@@ -154,6 +177,12 @@ const defaultState: WebSocketState = {
     pullBytes: null,
     suggestedModels: [],
   },
+  // Living UI state
+  livingUIProjects: [],
+  livingUICreating: null,
+  livingUITodos: {},
+  activeLivingUIId: null,
+  livingUIStates: {},
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined)
@@ -194,6 +223,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         isConnectingRef.current = false
         reconnectCountRef.current = 0  // Reset reconnect counter on successful connection
         setState(prev => ({ ...prev, connected: true }))
+
+        // Request initial data after connection
+        ws.send(JSON.stringify({ type: 'living_ui_list' }))
       }
 
       ws.onmessage = (event) => {
@@ -648,6 +680,29 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         break
       }
 
+      // Living UI message handlers
+      case 'living_ui_list': {
+        const response = msg.data as unknown as LivingUIListResponse
+        if (response.success && response.projects) {
+          setState(prev => ({
+            ...prev,
+            livingUIProjects: response.projects!,
+          }))
+        }
+        break
+      }
+
+      case 'living_ui_create': {
+        const response = msg.data as unknown as LivingUICreateResponse
+        if (response.success && response.project) {
+          setState(prev => ({
+            ...prev,
+            livingUIProjects: [...prev.livingUIProjects, response.project!],
+          }))
+        }
+        break
+      }
+
       case 'local_llm_install_progress': {
         const r = msg.data as unknown as LocalLLMProgressResponse
         setState(prev => ({
@@ -656,6 +711,30 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             ...prev.localLLM,
             installProgress: [...prev.localLLM.installProgress, r.message],
           },
+        }))
+        break
+      }
+
+      case 'living_ui_status': {
+        const status = msg.data as unknown as LivingUIStatusUpdate
+        setState(prev => ({
+          ...prev,
+          livingUICreating: status,
+          // Update project status
+          livingUIProjects: prev.livingUIProjects.map(p =>
+            p.id === status.projectId
+              ? { ...p, status: status.phase === 'launching' ? 'ready' : 'creating' }
+              : p
+          ),
+        }))
+        break
+      }
+
+      case 'living_ui_todos': {
+        const update = msg.data as unknown as LivingUITodosUpdate
+        setState(prev => ({
+          ...prev,
+          livingUITodos: { ...prev.livingUITodos, [update.projectId]: update.todos },
         }))
         break
       }
@@ -687,6 +766,28 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             testResult: undefined,
           },
         }))
+        break
+      }
+
+      case 'living_ui_ready': {
+        const readyData = msg.data as { projectId: string; url: string; port: number }
+        setState(prev => {
+          const exists = prev.livingUIProjects.some(p => p.id === readyData.projectId)
+          if (exists) {
+            return {
+              ...prev,
+              livingUICreating: null,
+              livingUIProjects: prev.livingUIProjects.map(p =>
+                p.id === readyData.projectId
+                  ? { ...p, status: 'running' as const, url: readyData.url, port: readyData.port }
+                  : p
+              ),
+            }
+          }
+          // Project not in list yet — refresh the full list from server
+          wsRef.current?.send(JSON.stringify({ type: 'living_ui_list' }))
+          return { ...prev, livingUICreating: null }
+        })
         break
       }
 
@@ -734,6 +835,79 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             localLLM: { ...prev.localLLM, phase: 'error', error: r.error ?? 'Model download failed' },
           }))
         }
+        break
+      }
+
+      case 'living_ui_launch': {
+        const response = msg.data as unknown as LivingUILaunchResponse
+        if (response.success) {
+          setState(prev => ({
+            ...prev,
+            livingUIProjects: prev.livingUIProjects.map(p =>
+              p.id === response.projectId
+                ? { ...p, status: 'running', url: response.url, port: response.port }
+                : p
+            ),
+          }))
+        }
+        break
+      }
+
+      case 'living_ui_stop': {
+        const response = msg.data as unknown as LivingUIStopResponse
+        if (response.success) {
+          setState(prev => ({
+            ...prev,
+            livingUIProjects: prev.livingUIProjects.map(p =>
+              p.id === response.projectId
+                ? { ...p, status: 'stopped', url: undefined, port: undefined }
+                : p
+            ),
+          }))
+        }
+        break
+      }
+
+      case 'living_ui_delete': {
+        const response = msg.data as unknown as LivingUIDeleteResponse
+        if (response.success) {
+          setState(prev => {
+            const { [response.projectId]: _removed, ...remainingTodos } = prev.livingUITodos
+            return {
+              ...prev,
+              livingUIProjects: prev.livingUIProjects.filter(p => p.id !== response.projectId),
+              livingUITodos: remainingTodos,
+              // Clear active if it was the deleted one
+              activeLivingUIId: prev.activeLivingUIId === response.projectId ? null : prev.activeLivingUIId,
+            }
+          })
+        }
+        break
+      }
+
+      case 'living_ui_state_update': {
+        const update = msg.data as unknown as LivingUIStateUpdate
+        setState(prev => ({
+          ...prev,
+          livingUIStates: {
+            ...prev.livingUIStates,
+            [update.projectId]: update.state,
+          },
+        }))
+        break
+      }
+
+      case 'living_ui_error': {
+        const { projectId, error } = msg.data as { projectId: string; error: string }
+        setState(prev => ({
+          ...prev,
+          livingUICreating: null,
+          livingUIProjects: prev.livingUIProjects.map(p =>
+            p.id === projectId
+              ? { ...p, status: 'error', error }
+              : p
+          ),
+        }))
         break
       }
     }
@@ -787,7 +961,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }))
   }, [state.hasMoreActions, state.loadingOlderActions, state.actions])
 
-  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
+  // const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
+  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext, livingUIId?: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       try {
         const payload = {
@@ -795,6 +970,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           content,
           attachments: attachments || [],
           replyContext: replyContext || null,
+          livingUIId: livingUIId || null,
         }
         const payloadStr = JSON.stringify(payload)
         console.log('[WebSocket] Sending message, payload size:', payloadStr.length, 'bytes, attachments:', attachments?.length || 0)
@@ -1012,6 +1188,60 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Living UI methods
+  const createLivingUI = useCallback((data: LivingUICreateRequest) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'living_ui_create',
+        ...data,
+      }))
+    }
+  }, [])
+
+  const requestLivingUIList = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'living_ui_list' }))
+    }
+  }, [])
+
+  const launchLivingUI = useCallback((projectId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Immediately show loading state
+      setState(prev => ({
+        ...prev,
+        livingUIProjects: prev.livingUIProjects.map(p =>
+          p.id === projectId ? { ...p, status: 'launching' as const } : p
+        ),
+      }))
+      wsRef.current.send(JSON.stringify({
+        type: 'living_ui_launch',
+        projectId,
+      }))
+    }
+  }, [])
+
+  const stopLivingUI = useCallback((projectId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'living_ui_stop',
+        projectId,
+      }))
+    }
+  }, [])
+
+  const deleteLivingUI = useCallback((projectId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'living_ui_delete',
+        projectId,
+      }))
+    }
+  }, [])
+
+  const setActiveLivingUI = useCallback((projectId: string | null) => {
+    setState(prev => ({ ...prev, activeLivingUIId: projectId }))
+  }, [])
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -1043,12 +1273,20 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         sendOptionClick,
         uploadAgentProfilePicture,
         removeAgentProfilePicture,
+        // Living UI methods
+        createLivingUI,
+        requestLivingUIList,
+        launchLivingUI,
+        stopLivingUI,
+        deleteLivingUI,
+        setActiveLivingUI,
       }}
     >
       {children}
     </WebSocketContext.Provider>
   )
 }
+
 
 export function useWebSocket() {
   const context = useContext(WebSocketContext)
@@ -1057,3 +1295,4 @@ export function useWebSocket() {
   }
   return context
 }
+  

@@ -160,7 +160,11 @@ jobs:
             --add-data ".env.example${{ matrix.data_sep }}." \
             --add-data "requirements.txt${{ matrix.data_sep }}." \
             --add-data "environment.yml${{ matrix.data_sep }}." \
-            --add-data "app/config${{ matrix.data_sep }}app/config" \
+            --add-data "app/config/mcp_config.json${{ matrix.data_sep }}app/config" \
+            --add-data "app/config/connection_test_models.json${{ matrix.data_sep }}app/config" \
+            --add-data "app/config/scheduler_config.json${{ matrix.data_sep }}app/config" \
+            --add-data "app/config/skills_config.json${{ matrix.data_sep }}app/config" \
+            --add-data "app/config/external_comms_config.json${{ matrix.data_sep }}app/config" \
             --add-data "app/data${{ matrix.data_sep }}app/data" \
             --add-data "app/ui_layer/browser/frontend/dist${{ matrix.data_sep }}app/ui_layer/browser/frontend/dist" \
             --add-data "app/gui/docker-compose.yaml${{ matrix.data_sep }}app/gui" \

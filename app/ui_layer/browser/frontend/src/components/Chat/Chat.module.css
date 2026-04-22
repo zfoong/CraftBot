@@ -1,0 +1,541 @@
+/* Self-contained Chat Component Styles */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.messagesContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.emptyState h3 {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+}
+
+.emptyState p {
+  font-size: var(--text-sm);
+}
+
+.emptyIcon {
+  margin-bottom: var(--space-2);
+}
+
+/* Status Bar */
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Input Area */
+.inputArea {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  min-height: 36px;
+  max-height: 116px;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  line-height: var(--leading-normal);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Hidden file input */
+.hiddenFileInput {
+  display: none;
+}
+
+/* Input wrapper for textarea and pending attachments */
+.inputWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  border-radius: var(--radius-md);
+  transition: outline var(--transition-fast), background var(--transition-fast);
+}
+
+.inputWrapperDragOver {
+  outline: 2px dashed var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+/* Pending attachments container */
+.pendingAttachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.pendingAttachment {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--color-primary-subtle);
+  border: 1px solid var(--color-primary-light);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.pendingImageThumb {
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.pendingFileName {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pendingFileSize {
+  color: var(--text-muted);
+}
+
+.pendingAttachmentBody {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font-size: inherit;
+  min-width: 0;
+}
+
+.pendingAttachmentBody:hover .pendingFileName {
+  text-decoration: underline;
+}
+
+.removeAttachment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+}
+
+.removeAttachment:hover {
+  color: var(--color-error);
+}
+
+/* Attachment error message */
+.attachmentError {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-error-light);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--color-error);
+}
+
+.attachmentError span {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.attachmentError svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.dismissError {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--color-error);
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.dismissError:hover {
+  opacity: 1;
+}
+
+/* Reply bar above input */
+.replyBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.replyText {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyCancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.replyCancel:hover {
+  color: var(--color-error);
+}
+
+.inputListening {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-subtle);
+}
+
+/* Mic button + language selector grouped together */
+.micGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: relative;
+}
+
+.langBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  outline: none;
+  white-space: nowrap;
+}
+
+.langBtn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+.langBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.langDropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  z-index: 999;
+  min-width: 130px;
+}
+
+.langOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  padding: 7px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.langOption:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.langOptionActive {
+  color: var(--color-primary);
+}
+
+.langCode {
+  font-weight: 600;
+  font-size: 11px;
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.langFull {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* 3 bouncing dots shown while listening */
+.listeningDots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px var(--space-3) 0;
+}
+
+.listeningDots span {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: dotBounce 1.2s ease-in-out infinite;
+}
+
+.listeningDots span:nth-child(1) { animation-delay: 0s; }
+.listeningDots span:nth-child(2) { animation-delay: 0.2s; }
+.listeningDots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* Mic button pulse animation when recording */
+.micListening {
+  animation: micPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes micPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Attachment preview modal */
+.previewOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 32px;
+  animation: previewFadeIn 0.12s ease-out;
+}
+
+@keyframes previewFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.previewModal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-xl);
+  width: fit-content;
+  min-width: 320px;
+  max-width: min(92vw, 1100px);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  animation: previewSlideUp 0.12s ease-out;
+}
+
+@keyframes previewSlideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.previewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-primary);
+  min-width: 0;
+}
+
+.previewHeaderLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.previewFileName {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewMeta {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.previewClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.previewClose:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.previewImage {
+  display: block;
+  max-width: min(88vw, 1060px);
+  max-height: calc(92vh - 80px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.previewPdf {
+  width: min(860px, 88vw);
+  height: calc(92vh - 80px);
+  border: none;
+  background: var(--bg-primary);
+  display: block;
+}
+
+.previewTextContent {
+  width: min(760px, 88vw);
+  max-height: calc(92vh - 80px);
+  overflow: auto;
+  margin: 0;
+  padding: 16px 20px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  white-space: pre;
+  min-height: 120px;
+  box-sizing: border-box;
+}
+
+.previewFileInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 36px 48px;
+  background: var(--bg-primary);
+  width: min(480px, 88vw);
+}
+
+.previewUnavailableText {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: var(--leading-relaxed);
+  margin: 0;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .messagesContainer {
+    padding: var(--space-3);
+  }
+
+  .inputArea {
+    padding: var(--space-2);
+  }
+
+  .statusBar {
+    padding: var(--space-2) var(--space-3);
+  }
+}

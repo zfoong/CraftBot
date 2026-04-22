@@ -4,6 +4,7 @@
   height: var(--navbar-height);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-primary);
   padding: 0 var(--space-2);
@@ -26,6 +27,7 @@
   font-weight: var(--font-medium);
   color: var(--text-secondary);
   background: transparent;
+  border: none;
   transition: all var(--transition-fast);
   cursor: pointer;
 }
@@ -52,6 +54,60 @@
 
 .label {
   display: block;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Add button styles - matches nav item style */
+.addButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 1;
+  transform: scale(0.9);
+  transition: all var(--transition-fast);
+}
+
+.addButton.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.addButton:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* Separator between static nav and Living UI */
+.separator {
+  color: var(--border-primary);
+  font-size: var(--text-sm);
+  padding: 0 var(--space-1);
+  user-select: none;
+}
+
+/* Spinner animation */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Responsive: hide labels on smaller screens */
@@ -62,5 +118,10 @@
 
   .navItem {
     padding: var(--space-2);
+  }
+
+  .addButton {
+    width: 28px;
+    height: 28px;
   }
 }

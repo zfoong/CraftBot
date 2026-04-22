@@ -98,6 +98,13 @@ from app.ui_layer.components.types import ChatMessage, ActionItem, Attachment
 from app.ui_layer.events import UIEvent, UIEventType
 from app.ui_layer.onboarding import OnboardingFlowController
 from app.ui_layer.metrics import MetricsCollector
+from app.living_ui import (
+    LivingUIManager,
+    LivingUIProject,
+    set_living_ui_manager,
+    register_broadcast_callbacks,
+    make_todo_broadcast_hook,
+)
 
 if TYPE_CHECKING:
     from app.ui_layer.controller.ui_controller import UIController
@@ -778,6 +785,37 @@ class BrowserAdapter(InterfaceAdapter):
         # Track active OAuth tasks for cancellation support
         self._oauth_tasks: Dict[str, asyncio.Task] = {}
 
+        # Living UI manager
+        template_path = Path(__file__).parent.parent.parent / "data" / "living_ui_template"
+        self._living_ui_manager = LivingUIManager(
+            workspace_root=AGENT_WORKSPACE_ROOT,
+            template_path=template_path
+        )
+        # Bind task_manager and trigger_queue for task creation
+        agent = self._controller.agent
+        self._living_ui_manager.bind_task_manager(agent.task_manager, agent.triggers)
+
+        # Clean up orphan processes and folders from previous sessions
+        self._living_ui_manager.cleanup_on_startup()
+
+        # Start watchdog to monitor running Living UI processes
+        self._living_ui_manager.start_watchdog()
+
+        # Auto-launch projects that have auto_launch enabled
+        asyncio.create_task(self._living_ui_manager.auto_launch_projects())
+
+        # Register global accessor and callbacks for Living UI actions
+        set_living_ui_manager(self._living_ui_manager)
+        register_broadcast_callbacks(
+            broadcast_ready=self.broadcast_living_ui_ready,
+            broadcast_progress=self.broadcast_living_ui_progress,
+            broadcast_todos=self.broadcast_living_ui_todos,
+        )
+
+        # Subscribe the Living UI module to TaskManager todo updates so that
+        # the agent's task breakdown streams to the browser automatically.
+        agent.task_manager.add_post_update_todos_hook(make_todo_broadcast_hook())
+
     @property
     def theme_adapter(self) -> ThemeAdapter:
         return self._theme_adapter
@@ -806,7 +844,8 @@ class BrowserAdapter(InterfaceAdapter):
     async def submit_message(
         self,
         message: str,
-        reply_context: Optional[Dict[str, Any]] = None
+        reply_context: Optional[Dict[str, Any]] = None,
+        living_ui_id: Optional[str] = None
     ) -> None:
         """
         Submit a message from the user with optional reply context.
@@ -817,6 +856,7 @@ class BrowserAdapter(InterfaceAdapter):
         Args:
             message: The user's input message
             reply_context: Optional dict with {sessionId?: str, originalMessage: str}
+            living_ui_id: Optional Living UI project ID if user is on a Living UI page
         """
         agent_context = message
 
@@ -830,7 +870,8 @@ class BrowserAdapter(InterfaceAdapter):
         await self._controller.submit_message(
             agent_context,
             self._adapter_id,
-            target_session_id=target_session_id
+            target_session_id=target_session_id,
+            living_ui_id=living_ui_id
         )
 
     def _handle_task_start(self, event: UIEvent) -> None:
@@ -910,6 +951,15 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         self._app.router.add_get("/api/workspace/{path:.*}", self._workspace_file_handler)
         self._app.router.add_get("/api/agent-profile-picture", self._agent_profile_picture_handler)
 
+        # Living UI export/import routes
+        self._app.router.add_get("/api/living-ui/{project_id}/export", self._living_ui_export_handler)
+        self._app.router.add_post("/api/living-ui/import", self._living_ui_import_handler)
+
+        # Integration bridge routes (Living UI → external APIs)
+        from app.living_ui.integration_bridge import IntegrationBridge
+        self._integration_bridge = IntegrationBridge(self._living_ui_manager)
+        self._integration_bridge.register_routes(self._app)
+
         # Serve Vite-built frontend (production)
         frontend_dist = Path(__file__).parent.parent / "browser" / "frontend" / "dist"
         if frontend_dist.exists():
@@ -975,6 +1025,14 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
 
     async def _on_stop(self) -> None:
         """Stop the browser interface."""
+        # Stop all running Living UI projects
+        if self._living_ui_manager:
+            await self._living_ui_manager.stop_all_projects()
+
+        # Close integration bridge HTTP client
+        if hasattr(self, '_integration_bridge'):
+            await self._integration_bridge.cleanup()
+
         # Cancel metrics broadcasting task
         if self._metrics_task:
             self._metrics_task.cancel()
@@ -1082,13 +1140,16 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             content = data.get("content", "")
             attachments = data.get("attachments", [])
             reply_context = data.get("replyContext")  # {sessionId?: str, originalMessage: str}
+            living_ui_id = data.get("livingUIId")  # Set when user is on a Living UI page
+            if living_ui_id:
+                logger.info(f"[BROWSER ADAPTER] Message from Living UI page: {living_ui_id}")
 
             if attachments:
                 # Message with attachments - use custom handler
-                await self._handle_chat_message_with_attachments(content, attachments, reply_context)
+                await self._handle_chat_message_with_attachments(content, attachments, reply_context, living_ui_id)
             elif content:
                 # Regular message without attachments - use normal flow
-                await self.submit_message(content, reply_context)
+                await self.submit_message(content, reply_context, living_ui_id)
 
         elif msg_type == "chat_attachment_upload":
             # Upload attachment for chat message
@@ -1440,6 +1501,36 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             watch_repos = data.get("watch_repos")
             await self._handle_github_update_settings(watch_tag=watch_tag, watch_repos=watch_repos)
 
+        # Living UI settings handlers
+        elif msg_type == "living_ui_settings_get":
+            await self._handle_living_ui_settings_get()
+
+        elif msg_type == "living_ui_project_action":
+            project_id = data.get("projectId", "")
+            action = data.get("action", "")
+            await self._handle_living_ui_project_action(project_id, action)
+
+        elif msg_type == "living_ui_project_setting_update":
+            project_id = data.get("projectId", "")
+            setting = data.get("setting", "")
+            value = data.get("value")
+            await self._handle_living_ui_project_setting_update(project_id, setting, value)
+
+        elif msg_type == "living_ui_marketplace_list":
+            await self._handle_marketplace_list()
+
+        elif msg_type == "living_ui_marketplace_install":
+            app_id = data.get("appId", "")
+            app_name = data.get("appName", "")
+            app_description = data.get("appDescription", "")
+            custom_fields = data.get("customFields", {})
+            await self._handle_marketplace_install(app_id, app_name, app_description, custom_fields)
+
+        elif msg_type == "living_ui_import":
+            source = data.get("source", "")
+            name = data.get("name", "External App")
+            await self._handle_living_ui_import(source, name)
+
         # WhatsApp QR code flow handlers
         elif msg_type == "whatsapp_start_qr":
             await self._handle_whatsapp_start_qr()
@@ -1494,6 +1585,40 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             model = data.get("model", "")
             base_url = data.get("baseUrl")
             await self._handle_local_llm_pull_model(model, base_url)
+        # Living UI handlers
+        elif msg_type == "living_ui_create":
+            await self._handle_living_ui_create(data)
+
+        elif msg_type == "living_ui_list":
+            await self._handle_living_ui_list()
+
+        elif msg_type == "living_ui_launch":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_launch(project_id)
+
+        elif msg_type == "living_ui_stop":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_stop(project_id)
+
+        elif msg_type == "living_ui_delete":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_delete(project_id)
+
+        elif msg_type == "living_ui_state_update":
+            await self._handle_living_ui_state_update(data)
+
+        elif msg_type == "living_ui_tunnel_start":
+            project_id = data.get("projectId", "")
+            provider = data.get("provider", "cloudflared")
+            await self._handle_living_ui_tunnel_start(project_id, provider)
+
+        elif msg_type == "living_ui_tunnel_stop":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_tunnel_stop(project_id)
+
+        elif msg_type == "living_ui_sharing_info":
+            project_id = data.get("projectId", "")
+            await self._handle_living_ui_sharing_info(project_id)
 
         # Update operations
         elif msg_type == "check_update":
@@ -2037,6 +2162,417 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                 "type": "local_llm_pull_model",
                 "data": {"success": False, "error": str(e)},
             })
+    # -------------------------------------------------------------------------
+    # Living UI Handlers
+    # -------------------------------------------------------------------------
+
+    async def _handle_living_ui_create(self, data: Dict[str, Any]) -> None:
+        """Create a new Living UI project."""
+        try:
+            name = data.get("name", "")
+            description = data.get("description", "")
+            features = data.get("features", [])
+            data_source = data.get("dataSource")
+            theme = data.get("theme", "system")
+
+            if not name or not description:
+                await self._broadcast({
+                    "type": "living_ui_error",
+                    "data": {
+                        "projectId": "",
+                        "error": "Name and description are required",
+                    },
+                })
+                return
+
+            # Create the project (directory/template)
+            project = await self._living_ui_manager.create_project(
+                name=name,
+                description=description,
+                features=features,
+                data_source=data_source,
+                theme=theme,
+            )
+
+            # Broadcast project created
+            await self._broadcast({
+                "type": "living_ui_create",
+                "data": {
+                    "success": True,
+                    "projectId": project.id,
+                    "project": project.to_dict(),
+                },
+            })
+
+            # Broadcast initial status update
+            await self._broadcast({
+                "type": "living_ui_status",
+                "data": {
+                    "projectId": project.id,
+                    "phase": "initializing",
+                    "progress": 10,
+                    "message": "Project created, starting development...",
+                },
+            })
+
+            # Create task and fire trigger via manager
+            # The manager handles: task creation, status update, trigger firing
+            task_id = await self._living_ui_manager.create_development_task(project.id)
+
+            if task_id:
+                logger.info(f"[LIVING_UI] Created and triggered task {task_id} for project {project.id}")
+            else:
+                logger.error(f"[LIVING_UI] Failed to create task for project {project.id}")
+                await self._broadcast({
+                    "type": "living_ui_error",
+                    "data": {
+                        "projectId": project.id,
+                        "error": "Failed to create development task",
+                    },
+                })
+
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error creating project: {e}")
+            await self._broadcast({
+                "type": "living_ui_error",
+                "data": {
+                    "projectId": "",
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_list(self) -> None:
+        """Get list of all Living UI projects."""
+        try:
+            projects = self._living_ui_manager.list_projects()
+            await self._broadcast({
+                "type": "living_ui_list",
+                "data": {
+                    "success": True,
+                    "projects": [p.to_dict() for p in projects],
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error listing projects: {e}")
+            await self._broadcast({
+                "type": "living_ui_list",
+                "data": {
+                    "success": False,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_launch(self, project_id: str) -> None:
+        """Launch a Living UI project."""
+        try:
+            success = await self._living_ui_manager.launch_project(project_id)
+            project = self._living_ui_manager.get_project(project_id)
+
+            if success and project:
+                await self._broadcast({
+                    "type": "living_ui_launch",
+                    "data": {
+                        "success": True,
+                        "projectId": project_id,
+                        "url": project.url,
+                        "port": project.port,
+                    },
+                })
+            else:
+                await self._broadcast({
+                    "type": "living_ui_launch",
+                    "data": {
+                        "success": False,
+                        "projectId": project_id,
+                        "error": project.error if project else "Project not found",
+                    },
+                })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error launching project: {e}")
+            await self._broadcast({
+                "type": "living_ui_launch",
+                "data": {
+                    "success": False,
+                    "projectId": project_id,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_stop(self, project_id: str) -> None:
+        """Stop a running Living UI project."""
+        try:
+            success = await self._living_ui_manager.stop_project(project_id)
+            await self._broadcast({
+                "type": "living_ui_stop",
+                "data": {
+                    "success": success,
+                    "projectId": project_id,
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error stopping project: {e}")
+            await self._broadcast({
+                "type": "living_ui_stop",
+                "data": {
+                    "success": False,
+                    "projectId": project_id,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_delete(self, project_id: str) -> None:
+        """Delete a Living UI project."""
+        try:
+            success = await self._living_ui_manager.delete_project(project_id)
+            await self._broadcast({
+                "type": "living_ui_delete",
+                "data": {
+                    "success": success,
+                    "projectId": project_id,
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error deleting project: {e}")
+            await self._broadcast({
+                "type": "living_ui_delete",
+                "data": {
+                    "success": False,
+                    "projectId": project_id,
+                    "error": str(e),
+                },
+            })
+
+    async def _living_ui_export_handler(self, request: 'web.Request') -> 'web.Response':
+        """HTTP handler: download a Living UI project as a ZIP file."""
+        from aiohttp import web
+        project_id = request.match_info['project_id']
+        try:
+            zip_path = self._living_ui_manager.export_project_zip(project_id)
+            project = self._living_ui_manager.get_project(project_id)
+            filename = f"{project.name.replace(' ', '_')}.zip" if project else f"{project_id}.zip"
+
+            response = web.FileResponse(
+                zip_path,
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"',
+                    'Content-Type': 'application/zip',
+                },
+            )
+            # Schedule cleanup after response is sent
+            response._zip_cleanup_path = zip_path
+            return response
+        except (ValueError, FileNotFoundError) as e:
+            return web.json_response({"error": str(e)}, status=404)
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Export error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _living_ui_import_handler(self, request: 'web.Request') -> 'web.Response':
+        """HTTP handler: stage a ZIP file upload and return the temp path.
+
+        The frontend then sends a living_ui_import WebSocket message with
+        the path so the agent handles extraction via the importer skill.
+        """
+        from aiohttp import web
+        try:
+            import tempfile
+            reader = await request.multipart()
+            zip_path = None
+            name = ''
+
+            async for part in reader:
+                if part.name == 'name':
+                    name = (await part.read()).decode('utf-8')
+                elif part.name == 'file':
+                    # Save uploaded file to a staging location
+                    staging_dir = Path(self._living_ui_manager.living_ui_dir) / '_staging'
+                    staging_dir.mkdir(parents=True, exist_ok=True)
+                    tmp = tempfile.NamedTemporaryFile(
+                        suffix='.zip', prefix='import_', dir=str(staging_dir), delete=False
+                    )
+                    while True:
+                        chunk = await part.read_chunk()
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+                    tmp.close()
+                    zip_path = tmp.name
+
+            if not zip_path:
+                return web.json_response({"error": "No ZIP file uploaded"}, status=400)
+
+            return web.json_response({
+                "success": True,
+                "path": zip_path,
+                "name": name,
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Upload staging error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_living_ui_state_update(self, data: Dict[str, Any]) -> None:
+        """Handle state update from a Living UI for agent awareness."""
+        try:
+            project_id = data.get("projectId", "")
+            state = data.get("state", {})
+
+            # Store the state for agent context
+            from app.state import STATE
+            if hasattr(STATE, 'update_living_ui_state'):
+                STATE.update_living_ui_state(project_id, state)
+
+            # Also forward to any listening clients (for debugging/monitoring)
+            await self._broadcast({
+                "type": "living_ui_state_update",
+                "data": {
+                    "projectId": project_id,
+                    "state": state,
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Error handling state update: {e}")
+
+    async def _handle_living_ui_sharing_info(self, project_id: str) -> None:
+        """Return sharing info (LAN URL, tunnel URL)."""
+        lan_url = self._living_ui_manager.get_lan_url(project_id)
+        project = self._living_ui_manager.get_project(project_id)
+        await self._broadcast({
+            "type": "living_ui_sharing_info",
+            "data": {
+                "projectId": project_id,
+                "lanUrl": lan_url,
+                "tunnelUrl": project.tunnel_url if project else None,
+            },
+        })
+
+    async def _handle_living_ui_tunnel_start(self, project_id: str, provider: str) -> None:
+        """Start a tunnel for a Living UI project."""
+        logger.info(f"[LIVING_UI] Tunnel start requested: project={project_id}, provider={provider}")
+        try:
+            url = await self._living_ui_manager.start_tunnel(project_id, provider)
+            await self._broadcast({
+                "type": "living_ui_tunnel_status",
+                "data": {
+                    "projectId": project_id,
+                    "tunnelUrl": url,
+                    "success": url is not None,
+                    "error": None if url else f"Failed to start {provider} tunnel",
+                },
+            })
+        except Exception as e:
+            logger.error(f"[LIVING_UI] Tunnel start error: {e}", exc_info=True)
+            await self._broadcast({
+                "type": "living_ui_tunnel_status",
+                "data": {
+                    "projectId": project_id,
+                    "tunnelUrl": None,
+                    "success": False,
+                    "error": str(e),
+                },
+            })
+
+    async def _handle_living_ui_tunnel_stop(self, project_id: str) -> None:
+        """Stop a tunnel for a Living UI project."""
+        await self._living_ui_manager.stop_tunnel(project_id)
+        await self._broadcast({
+            "type": "living_ui_tunnel_status",
+            "data": {
+                "projectId": project_id,
+                "tunnelUrl": None,
+                "success": True,
+            },
+        })
+
+    async def broadcast_living_ui_ready(self, project_id: str, url: str, port: int) -> bool:
+        """
+        Broadcast that a Living UI is ready (called from agent action).
+
+        This method launches the Living UI server via the manager and notifies
+        the browser. The agent should NOT start the server itself - just build
+        and call this action.
+
+        Returns:
+            True if project was found and launched successfully, False otherwise
+        """
+        project = self._living_ui_manager.get_project(project_id)
+        if not project:
+            logger.error(f"[LIVING_UI] Project not found for ready notification: {project_id}")
+            # Broadcast error to browser so it can display the error state
+            await self._broadcast({
+                "type": "living_ui_error",
+                "data": {
+                    "projectId": project_id,
+                    "error": f"Project '{project_id}' not found. Check that the project_id matches the one from the task instruction.",
+                },
+            })
+            return False
+
+        # Update project status to "ready" (build complete, about to launch)
+        self._living_ui_manager.update_project_status(project_id, "ready")
+
+        # Launch the project server via manager (centralizes process management)
+        success = await self._living_ui_manager.launch_project(project_id)
+
+        if success:
+            # Get updated project info with URL
+            project = self._living_ui_manager.get_project(project_id)
+            await self._broadcast({
+                "type": "living_ui_ready",
+                "data": {
+                    "projectId": project_id,
+                    "url": project.url if project else url,
+                    "port": project.port if project else port,
+                },
+            })
+            logger.info(f"[LIVING_UI] Project {project_id} launched and ready")
+            return True
+        else:
+            # Launch failed
+            await self._broadcast({
+                "type": "living_ui_error",
+                "data": {
+                    "projectId": project_id,
+                    "error": "Failed to launch Living UI server",
+                },
+            })
+            logger.error(f"[LIVING_UI] Failed to launch project {project_id}")
+            return False
+
+    async def broadcast_living_ui_progress(
+        self,
+        project_id: str,
+        phase: str,
+        progress: int,
+        message: str
+    ) -> None:
+        """Broadcast Living UI creation progress (called from agent action)."""
+        await self._broadcast({
+            "type": "living_ui_status",
+            "data": {
+                "projectId": project_id,
+                "phase": phase,
+                "progress": progress,
+                "message": message,
+            },
+        })
+
+    async def broadcast_living_ui_todos(
+        self,
+        project_id: str,
+        todos: list,
+    ) -> None:
+        """Broadcast the agent's current todo list for a Living UI task.
+
+        Fired from the task manager's on_todo_transition hook whenever the
+        agent updates its todos during a Living UI creation task.
+        """
+        await self._broadcast({
+            "type": "living_ui_todos",
+            "data": {
+                "projectId": project_id,
+                "todos": todos,
+            },
+        })
 
     async def _handle_task_cancel(self, task_id: str) -> None:
         """Cancel a running task."""
@@ -3858,6 +4394,147 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         except Exception as e:
             await self._broadcast({"type": "github_settings_result", "data": {"success": False, "error": str(e)}})
 
+    # ==========================
+    # Living UI Settings Handlers
+    # ==========================
+
+    async def _handle_living_ui_settings_get(self) -> None:
+        """Get all Living UI projects with their settings."""
+        from app.ui_layer.settings.living_ui_settings import get_living_ui_projects
+        result = get_living_ui_projects()
+        await self._broadcast({"type": "living_ui_settings_get", "data": result})
+
+    async def _handle_living_ui_project_action(self, project_id: str, action: str) -> None:
+        """Execute a project action (launch/stop/delete)."""
+        from app.ui_layer.settings.living_ui_settings import living_ui_project_action
+        result = await living_ui_project_action(project_id, action)
+        await self._broadcast({"type": "living_ui_project_action", "data": result})
+
+    async def _handle_living_ui_project_setting_update(self, project_id: str, setting: str, value) -> None:
+        """Update a per-project setting."""
+        from app.ui_layer.settings.living_ui_settings import update_project_setting
+        result = update_project_setting(project_id, setting, value)
+        await self._broadcast({"type": "living_ui_project_setting_update", "data": result})
+
+    # =====================
+    # Marketplace Handlers
+    # =====================
+
+    async def _handle_marketplace_list(self) -> None:
+        """Fetch marketplace catalogue from GitHub."""
+        import urllib.request
+        import json as _json
+        import re as _re
+
+        CATALOGUE_URL = "https://raw.githubusercontent.com/CraftOS-dev/living-ui-marketplace/main/catalogue.json"
+
+        try:
+            req = urllib.request.Request(CATALOGUE_URL, headers={'User-Agent': 'CraftBot'})
+            response = urllib.request.urlopen(req, timeout=15)
+            raw = response.read().decode()
+            # Strip trailing commas before ] or } (tolerant of hand-edited JSON)
+            raw = _re.sub(r',\s*([}\]])', r'\1', raw)
+            catalogue = _json.loads(raw)
+            await self._broadcast({
+                "type": "living_ui_marketplace_list",
+                "data": {"success": True, "apps": catalogue.get("apps", [])},
+            })
+        except Exception as e:
+            await self._broadcast({
+                "type": "living_ui_marketplace_list",
+                "data": {"success": False, "error": str(e), "apps": []},
+            })
+
+    async def _handle_marketplace_install(self, app_id: str, app_name: str, app_description: str, custom_fields: dict = None) -> None:
+        """Install a marketplace app."""
+        if not app_id or not app_name:
+            await self._broadcast({
+                "type": "living_ui_marketplace_install",
+                "data": {"success": False, "error": "App ID and name are required"},
+            })
+            return
+
+        result = await self._living_ui_manager.install_from_marketplace(
+            app_id=app_id,
+            app_name=app_name,
+            app_description=app_description,
+            custom_fields=custom_fields,
+        )
+
+        if result.get("status") == "success":
+            # Also broadcast as living_ui_create so the sidebar updates
+            await self._broadcast({
+                "type": "living_ui_create",
+                "data": {
+                    "success": True,
+                    "projectId": result["project"]["id"],
+                    "project": result["project"],
+                },
+            })
+
+        await self._broadcast({
+            "type": "living_ui_marketplace_install",
+            "data": result,
+        })
+
+    async def _handle_living_ui_import(self, source: str, name: str) -> None:
+        """Handle import of an external app or ZIP — creates a task with the importer skill."""
+        if not source:
+            return
+
+        is_zip = source.lower().endswith('.zip')
+
+        if is_zip:
+            task_instruction = (
+                f"Import this Living UI project from a ZIP file:\n"
+                f"ZIP path: {source}\n"
+                f"Name: {name}\n\n"
+                f"Steps:\n"
+                f"1. Call living_ui_import_zip to extract and register the project\n"
+                f"2. Review the project structure and manifest\n"
+                f"3. Install dependencies if needed\n"
+                f"4. Launch the app and verify it works\n"
+                f"5. Clean up the ZIP file after successful import"
+            )
+        else:
+            task_instruction = (
+                f"Import this external app as a Living UI:\n"
+                f"Source: {source}\n"
+                f"Name: {name}\n\n"
+                f"Follow the living-ui-importer skill instructions:\n"
+                f"1. Clone/copy the source code\n"
+                f"2. Detect the app type (Go, Node, Python, etc.) — NEVER use Docker if native build is possible\n"
+                f"3. Determine build/install command, start command, port config, and health check\n"
+                f"4. Call living_ui_import_external with the detected configuration\n"
+                f"5. Launch the app and verify it works\n"
+                f"6. Create LIVING_UI.md documenting the app"
+            )
+
+        task_id = self._controller.agent.task_manager.create_task(
+            task_name=f"Import Living UI: {name}",
+            task_instruction=task_instruction,
+            mode="complex",
+            action_sets=["file_operations", "code_execution", "living_ui", "core"],
+            selected_skills=["living-ui-importer"],
+        )
+
+        if task_id:
+            from app.trigger import Trigger
+            import time
+            trigger = Trigger(
+                fire_at=time.time(),
+                priority=50,
+                next_action_description=f"[Living UI] Import: {name}",
+                session_id=task_id,
+                payload={"type": "living_ui_import", "source": source},
+            )
+            await self._controller.agent.triggers.put(trigger)
+
+        await self._broadcast({
+            "type": "living_ui_import",
+            "data": {"status": "started", "name": name, "source": source},
+        })
+
     # =====================
     # WhatsApp QR Code Flow
     # =====================
@@ -4539,7 +5216,8 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         self,
         content: str,
         attachments: List[Dict[str, Any]],
-        reply_context: Optional[Dict[str, Any]] = None
+        reply_context: Optional[Dict[str, Any]] = None,
+        living_ui_id: Optional[str] = None
     ) -> None:
         """Handle user chat message with attachments and optional reply context."""
         import uuid
@@ -4639,6 +5317,8 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             # Include target session ID if replying to a specific session
             if reply_context and reply_context.get("sessionId"):
                 payload["target_session_id"] = reply_context["sessionId"]
+            if living_ui_id:
+                payload["living_ui_id"] = living_ui_id
 
             await self._controller._agent._handle_chat_message(payload)
 

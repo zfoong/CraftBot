@@ -7,6 +7,7 @@ import {
   Plug,
   Package,
   Globe,
+  Box,
 } from 'lucide-react'
 
 export type SettingsCategory =
@@ -17,6 +18,7 @@ export type SettingsCategory =
   | 'mcps'
   | 'skills'
   | 'integrations'
+  | 'living_ui'
 
 export interface SettingsCategoryItem {
   id: SettingsCategory
@@ -67,5 +69,11 @@ export const categories: SettingsCategoryItem[] = [
     label: 'Integrations',
     icon: React.createElement(Globe, { size: 18 }),
     description: 'Discord, Slack, Google Workspace',
+  },
+  {
+    id: 'living_ui',
+    label: 'Living UI',
+    icon: React.createElement(Box, { size: 18 }),
+    description: 'Manage Living UI projects',
   },
 ]

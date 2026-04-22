@@ -170,3 +170,7 @@ input::placeholder, textarea::placeholder {
   background: var(--color-primary-light);
   color: var(--text-primary);
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

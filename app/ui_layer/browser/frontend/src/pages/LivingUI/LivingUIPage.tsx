@@ -1,0 +1,276 @@
+import React, { useEffect, useState, useRef } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import {
+  Box,
+  RefreshCw,
+  Settings,
+  Trash2,
+  Play,
+  Square,
+  AlertCircle,
+  MessageSquare,
+} from 'lucide-react'
+import { CraftBotPet } from './CraftBotPet'
+import { useWebSocket } from '../../contexts/WebSocketContext'
+import { Button } from '../../components/ui/Button'
+import { IconButton } from '../../components/ui/IconButton'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
+import { Chat } from '../../components/Chat'
+import { getOrCreateIframe, showIframe, hideIframe, refreshIframe, removeIframe } from './iframePool'
+import { CreationProgress } from './CreationProgress'
+import type { LivingUIProject } from '../../types'
+import styles from './LivingUIPage.module.css'
+
+export function LivingUIPage() {
+  const { projectId } = useParams<{ projectId: string }>()
+  const navigate = useNavigate()
+  const {
+    livingUIProjects,
+    livingUITodos,
+    launchLivingUI,
+    stopLivingUI,
+    deleteLivingUI,
+    setActiveLivingUI,
+  } = useWebSocket()
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showChat, setShowChat] = useState(true)
+  const [panelWidth, setPanelWidth] = useState(350)
+  const [isResizing, setIsResizing] = useState(false)
+  const iframePlaceholderRef = useRef<HTMLDivElement>(null)
+
+  // Find the current project
+  const project = livingUIProjects.find(p => p.id === projectId)
+
+  // Set active Living UI when viewing
+  useEffect(() => {
+    if (projectId) {
+      setActiveLivingUI(projectId)
+    }
+    return () => {
+      setActiveLivingUI(null)
+    }
+  }, [projectId, setActiveLivingUI])
+
+  // Persistent iframe — lives in a pool on document.body, positioned over the placeholder
+  useEffect(() => {
+    if (!projectId || project?.status !== 'running' || !project?.url) {
+      if (projectId) hideIframe(projectId)
+      return
+    }
+
+    getOrCreateIframe(projectId, project.url)
+
+    const updatePosition = () => {
+      if (iframePlaceholderRef.current && projectId) {
+        showIframe(projectId, iframePlaceholderRef.current.getBoundingClientRect())
+      }
+    }
+
+    // Track container size/position changes
+    const observer = new ResizeObserver(updatePosition)
+    if (iframePlaceholderRef.current) {
+      observer.observe(iframePlaceholderRef.current)
+    }
+    window.addEventListener('resize', updatePosition)
+
+    // Initial position
+    updatePosition()
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updatePosition)
+      if (projectId) hideIframe(projectId)
+    }
+  }, [projectId, project?.status, project?.url])
+
+  const handleLaunch = () => {
+    if (projectId) {
+      launchLivingUI(projectId)
+    }
+  }
+
+  const handleStop = () => {
+    if (projectId) {
+      stopLivingUI(projectId)
+    }
+  }
+
+  const handleDelete = () => {
+    if (projectId) {
+      removeIframe(projectId)
+      deleteLivingUI(projectId)
+      navigate('/')
+    }
+  }
+
+  const handleRefresh = () => {
+    if (projectId) {
+      refreshIframe(projectId)
+    }
+  }
+
+  // Handle resize
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return
+      const newWidth = window.innerWidth - e.clientX
+      setPanelWidth(Math.max(280, Math.min(600, newWidth)))
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing])
+
+  // Project not found
+  if (!project) {
+    return (
+      <div className={styles.notFound}>
+        <AlertCircle size={48} />
+        <h2>Living UI Not Found</h2>
+        <p>The Living UI project you're looking for doesn't exist or has been deleted.</p>
+        <Button variant="primary" onClick={() => navigate('/')}>
+          Go to Chat
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`${styles.container} ${isResizing ? styles.resizing : ''}`}>
+      {/* Menu Bar */}
+      <div className={styles.menuBar}>
+        <div className={styles.menuLeft}>
+          <Box size={18} className={styles.projectIcon} />
+          <h1 className={styles.projectName}>{project.name}</h1>
+          <span className={`${styles.status} ${styles[project.status]}`}>
+            {project.status}
+          </span>
+        </div>
+
+        <div className={styles.menuActions}>
+          {project.status === 'running' ? (
+            <>
+              <IconButton
+                icon={<RefreshCw size={16} />}
+                tooltip="Refresh"
+                onClick={handleRefresh}
+              />
+              <IconButton
+                icon={<Square size={16} />}
+                tooltip="Stop"
+                onClick={handleStop}
+              />
+            </>
+          ) : project.status === 'ready' || project.status === 'stopped' ? (
+            <IconButton
+              icon={<Play size={16} />}
+              tooltip="Launch"
+              onClick={handleLaunch}
+            />
+          ) : null}
+          <IconButton
+            icon={<MessageSquare size={16} />}
+            tooltip={showChat ? 'Hide Chat' : 'Show Chat'}
+            onClick={() => setShowChat(prev => !prev)}
+          />
+          <IconButton
+            icon={<Settings size={16} />}
+            tooltip="Settings"
+            onClick={() => {}}
+          />
+          <IconButton
+            icon={<Trash2 size={16} />}
+            tooltip="Delete"
+            variant="ghost"
+            onClick={() => setShowDeleteModal(true)}
+          />
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className={styles.content}>
+        {/* Living UI Iframe */}
+        <div className={styles.iframeContainer}>
+          {project.status === 'running' && project.url ? (
+            <div ref={iframePlaceholderRef} className={styles.iframe} />
+          ) : project.status === 'creating' ? (
+            <CreationProgress
+              projectName={project.name}
+              todos={livingUITodos[project.id]}
+            />
+          ) : project.status === 'launching' ? (
+            <div className={styles.loading}>
+              <CraftBotPet state="launching" />
+              <p>Launching Living UI...</p>
+              <p className={styles.hint}>Installing dependencies, running tests, starting servers</p>
+            </div>
+          ) : project.status === 'error' ? (
+            <div className={styles.error}>
+              <AlertCircle size={32} />
+              <p>Error creating Living UI</p>
+              <p className={styles.errorMessage}>{project.error || 'Unknown error'}</p>
+              <Button variant="secondary" onClick={() => setShowDeleteModal(true)}>
+                Delete Project
+              </Button>
+            </div>
+          ) : (
+            <div className={styles.stopped}>
+              <CraftBotPet state="stopped" size={96} />
+              <p>Living UI is not running</p>
+              <Button variant="primary" onClick={handleLaunch}>
+                <Play size={16} /> Launch
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Resize Handle */}
+        {showChat && (
+          <div
+            className={`${styles.resizeHandle} ${isResizing ? styles.resizing : ''}`}
+            onMouseDown={handleMouseDown}
+          />
+        )}
+
+        {/* Chat Panel */}
+        {showChat && (
+          <div className={styles.chatPanel} style={{ width: panelWidth }}>
+            <Chat
+              livingUIId={projectId}
+              placeholder="Ask about this Living UI..."
+              emptyMessage="Chat with the agent"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        title="Delete Living UI"
+        message={`Are you sure you want to delete "${project.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteModal(false)}
+      />
+    </div>
+  )
+}

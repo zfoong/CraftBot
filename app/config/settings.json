@@ -1,5 +1,5 @@
 {
-  "version": "1.2.2",
+  "version": "1.2.3",
   "general": {
     "agent_name": "CraftBot",
     "os_language": "en"
@@ -25,8 +25,7 @@
     "openai": "",
     "anthropic": "",
     "google": "",
-    "byteplus": "",
-    "deepseek": ""
+    "byteplus": ""
   },
   "endpoints": {
     "remote_model_url": "",
