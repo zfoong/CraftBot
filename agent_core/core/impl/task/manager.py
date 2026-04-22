@@ -38,6 +38,7 @@ from agent_core.core.impl.llm import LLMCallType
 
 if TYPE_CHECKING:
     from agent_core.core.state.base import StateManagerBase
+    from agent_core.core.impl.workflow_lock import WorkflowLockManager
 
 # Set up logger - use shared agent_core logger for consistency
 from agent_core.utils.logger import logger
@@ -107,6 +108,8 @@ class TaskManager:
         on_todo_transition: Optional[OnTodoTransitionHook] = None,
         on_task_ended_chatserver: Optional[OnTaskEndedChatserverHook] = None,
         finalize_todos_chatserver: Optional[FinalizeTodosChatserverHook] = None,
+        # Workflow-lock registry for auto-release on task end
+        workflow_lock_manager: Optional["WorkflowLockManager"] = None,
     ):
         """
         Initialize the task manager.
@@ -178,6 +181,9 @@ class TaskManager:
         self._on_task_ended_chatserver = on_task_ended_chatserver
         self._finalize_todos_chatserver = finalize_todos_chatserver
 
+        # Workflow-lock registry (optional)
+        self.workflow_lock_manager = workflow_lock_manager
+
     @property
     def active(self) -> Optional[Task]:
         """Current session's task.
@@ -229,6 +235,7 @@ class TaskManager:
         session_id: Optional[str] = None,
         original_query: Optional[str] = None,
         original_platform: Optional[str] = None,
+        workflow_id: Optional[str] = None,
     ) -> str:
         """
         Create a new task without LLM planning.
@@ -284,6 +291,7 @@ class TaskManager:
             selected_skills=selected_skills or [],
             conversation_id=conversation_id,
             source_platform=original_platform,
+            workflow_id=workflow_id,
         )
 
         self.tasks[task_id] = task
@@ -627,6 +635,18 @@ class TaskManager:
         # Notify state manager BEFORE removing task
         if self.state_manager:
             self.state_manager.on_task_ended(task, status, summary)
+
+        # Release any workflow lock this task was holding. Runs regardless of
+        # terminal status (completed / error / cancelled) so a crashed task
+        # never leaves its workflow wedged.
+        if self.workflow_lock_manager and task.workflow_id:
+            try:
+                await self.workflow_lock_manager.release(task.workflow_id)
+            except Exception as e:
+                logger.warning(
+                    f"[TaskManager] Failed to release workflow lock "
+                    f"'{task.workflow_id}' for task {task.id}: {e}"
+                )
 
         # Remove task from dict and clean up event stream
         self.tasks.pop(task.id, None)

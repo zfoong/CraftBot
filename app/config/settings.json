@@ -8,7 +8,10 @@
     "enabled": true
   },
   "memory": {
-    "enabled": true
+    "enabled": true,
+    "max_items": 200,
+    "prune_target": 135,
+    "item_word_limit": 150
   },
   "model": {
     "llm_provider": "byteplus",

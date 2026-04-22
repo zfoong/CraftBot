@@ -21,6 +21,7 @@ from app.logger import logger
 if TYPE_CHECKING:
     from app.llm import LLMInterface
     from app.context_engine import ContextEngine
+    from agent_core.core.impl.workflow_lock import WorkflowLockManager
 
 
 def _get_gui_mode() -> bool:
@@ -91,6 +92,7 @@ class TaskManager(_TaskManager):
         llm_interface: Optional["LLMInterface"] = None,
         context_engine: Optional["ContextEngine"] = None,
         on_task_end_callback: Optional[Callable[[str], Awaitable[None]]] = None,
+        workflow_lock_manager: Optional["WorkflowLockManager"] = None,
     ):
         super().__init__(
             db_interface=db_interface,
@@ -118,6 +120,8 @@ class TaskManager(_TaskManager):
             on_todo_transition=None,
             on_task_ended_chatserver=None,
             finalize_todos_chatserver=None,
+            # Workflow lock registry for auto-release on task end
+            workflow_lock_manager=workflow_lock_manager,
         )
 
 

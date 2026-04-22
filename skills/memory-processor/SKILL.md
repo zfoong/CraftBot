@@ -83,6 +83,16 @@ Note: Get actual names from existing MEMORY.md. Never use "user", "conversation 
 - Check MEMORY.md before saving. Skip if similar memory exists. 
 - Actively remove memories you found duplicated in MEMORY.md, keeping only the latest one.
 
+### Length Limit (Strict)
+
+Each memory item MUST be <= 150 words, counted on the text AFTER the `[category]` tag.
+If a distillation would exceed 150 words, compress further:
+- Drop filler, restatements, and incidental detail
+- Keep only the lasting-value core: subject, predicate, object, key qualifier
+- If still too long, split into two atomic memories OR drop the less-important half
+
+Never truncate mid-sentence; never end an item with `...`.
+
 ### CRITICAL DISTILLATION RULES
 
 **Core principle:** Memory is for LASTING PERSONAL INSIGHTS that improve future interactions, not event logging.
@@ -143,3 +153,58 @@ Only save the memory if it contains lasting value:
 ```
 
 **Result:** 50 events → 1 memory, progress tracked via todos
+
+### Example: compressing a verbose event to <= 150 words
+
+**Input (raw, rambling):**
+```
+[2026-03-12 10:04:22] [user message]: so i was thinking about the trip next month, we're still planning to fly to tokyo on april 18th, staying at the shinjuku hilton for six nights, my wife emma is coming, and we also want to try the sushi place called sukiyabashi jiro that my friend kenji recommended, oh and the flight is on ANA from LAX, departing 10:55am, i need to remember to pack the camera and charger, and i'm a bit anxious because last time i forgot my passport
+```
+
+**Output (<= 150 words, two atomic memories):**
+```
+[2026-03-12 10:04:22] [event] John and Emma fly Tokyo on 2026-04-18 via ANA from LAX 10:55am, staying Shinjuku Hilton 6 nights
+[2026-03-12 10:04:22] [preference] John wants to try Sukiyabashi Jiro sushi in Tokyo (recommended by Kenji)
+```
+
+Anxiety, packing reminder, and narrative framing are dropped — no lasting utility.
+
+## Pruning Mode
+
+Triggered when the task instruction contains a "Pruning phase" directive (MEMORY.md has reached the item-count cap).
+
+### Workflow
+
+Add these todos alongside the event-processing todos:
+
+```
+N+1. [pending] Read MEMORY.md header + oldest block
+N+2. [pending] Consolidate/merge/drop oldest items
+N+3. [pending] Replace oldest block in MEMORY.md
+```
+
+Execute AFTER event processing completes:
+
+1. `stream_read` MEMORY.md from line 11 (skip the header block) up to the oldest-N range indicated in the task instruction.
+2. Decide, item by item, what to merge / drop / keep. See ranking heuristics below. The 150-word limit still applies to every merged item.
+3. `stream_edit` MEMORY.md to replace the oldest block with the consolidated set. The `# Memory Log` / `## Overview` / `## Memory` header (lines 1-10) must remain intact.
+
+### Ranking heuristics (drop priority, highest first)
+
+1. Stale `[event]` items whose date has passed and have no lasting consequence.
+2. Duplicate or near-duplicate facts about the same subject — keep the most recent/complete one; merge timestamps into a single canonical entry.
+3. Weak-signal preferences or one-off observations that fail the Future Utility Test.
+4. Superseded items (older preference that a newer item contradicts) — keep the newer one.
+
+### Never drop
+
+- Personal identity facts (name, role, relationships)
+- Contact information
+- Stated hard preferences (allergies, strict dislikes, required workflows)
+- Active commitments and goals with a future date
+
+### Critical
+
+- No hard-coded "drop oldest N" rule — judge utility first, use age only as a tiebreaker.
+- Target a final item count at least `prune_target` below the pre-prune count (the task instruction states the exact number).
+- When in doubt, merge rather than drop.
