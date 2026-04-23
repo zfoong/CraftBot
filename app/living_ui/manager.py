@@ -1887,8 +1887,10 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
             logger.info(f"[LIVING_UI:MARKETPLACE] Downloading {app_id} from {zip_url}")
 
+            import ssl, certifi
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
             req = urllib.request.Request(zip_url, headers={'User-Agent': 'CraftBot'})
-            response = urllib.request.urlopen(req, timeout=60)
+            response = urllib.request.urlopen(req, timeout=60, context=ssl_ctx)
             zip_data = response.read()
 
             # Extract just the app folder from the zip
