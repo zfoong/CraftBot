@@ -78,7 +78,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   const [apps, setApps] = useState<MarketplaceApp[]>([])
   const [marketplaceLoading, setMarketplaceLoading] = useState(false)
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null)
-  const [installingId, setInstallingId] = useState<string | null>(null)
+  const [installingIds, setInstallingIds] = useState<Set<string>>(new Set())
   const [configuringApp, setConfiguringApp] = useState<MarketplaceApp | null>(null)
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
 
@@ -96,7 +96,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
       setName('')
       setDescription('')
       setErrors({})
-      setInstallingId(null)
+      setInstallingIds(new Set())
       setConfiguringApp(null)
       setCustomValues({})
       // Fetch marketplace if on that tab
@@ -137,7 +137,11 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
       }),
       onMessage('living_ui_marketplace_install', (data: any) => {
         console.log('[CreateLivingUIModal] received living_ui_marketplace_install:', data)
-        setInstallingId(null)
+        if (data.appId) {
+          setInstallingIds(prev => { const n = new Set(prev); n.delete(data.appId); return n })
+        } else {
+          setInstallingIds(new Set())
+        }
         if (data.status === 'success') {
           onCloseRef.current()
           const projectId = data.project?.id
@@ -173,7 +177,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
 
   const doInstall = (app: MarketplaceApp, fields: Record<string, string>) => {
     setConfiguringApp(null)
-    setInstallingId(app.id)
+    setInstallingIds(prev => new Set([...prev, app.id]))
     setMarketplaceError(null)
     send('living_ui_marketplace_install', {
       appId: app.folder || app.id,
@@ -304,11 +308,11 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
                     <Button
                       size="sm"
                       variant="primary"
-                      icon={installingId === app.id ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
+                      icon={installingIds.has(app.id) ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
                       onClick={() => handleAddClick(app)}
-                      disabled={installingId !== null}
+                      disabled={installingIds.has(app.id)}
                     >
-                      {installingId === app.id ? 'Installing...' : 'Add'}
+                      {installingIds.has(app.id) ? 'Installing...' : 'Add'}
                     </Button>
                   </div>
                 ))}

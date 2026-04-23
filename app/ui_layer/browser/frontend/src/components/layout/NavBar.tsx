@@ -37,15 +37,7 @@ export function NavBar() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
 
-  // Create dynamic nav items for Living UIs
-  const livingUINavItems: NavItem[] = livingUIProjects.map(project => ({
-    id: `living-ui-${project.id}`,
-    label: project.name,
-    icon: project.status === 'creating' ? <Loader2 size={16} className={styles.spinner} /> : <Box size={16} />,
-    path: `/living-ui/${project.id}`,
-  }))
-
-  const hasLivingUI = livingUINavItems.length > 0
+  const hasLivingUI = livingUIProjects.length > 0
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -54,6 +46,8 @@ export function NavBar() {
     return location.pathname.startsWith(path)
   }
 
+  const isOnLivingUI = location.pathname.startsWith('/living-ui')
+
   const handleCreateSubmit = (data: LivingUICreateRequest) => {
     createLivingUI(data)
     setShowCreateModal(false)
@@ -61,52 +55,67 @@ export function NavBar() {
 
   return (
     <>
-      <nav
-        className={styles.navBar}
+      <div
+        className={styles.navWrapper}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <div className={styles.navItems}>
-          {/* Static nav items */}
-          {staticNavItems.map(item => (
+        {/* Primary nav row */}
+        <nav className={styles.navBar}>
+          <div className={styles.navItems}>
+            {staticNavItems.map(item => (
+              <button
+                key={item.id}
+                className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}
+                onClick={() => navigate(item.path)}
+                title={item.label}
+              >
+                <span className={styles.icon}>{item.icon}</span>
+                <span className={styles.label}>{item.label}</span>
+              </button>
+            ))}
+
+            {/* Add Living UI button */}
             <button
-              key={item.id}
-              className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}
-              onClick={() => navigate(item.path)}
-              title={item.label}
+              className={`${styles.addButton} ${isHovered ? styles.visible : ''}`}
+              onClick={() => setShowCreateModal(true)}
+              title="Add Living UI"
             >
-              <span className={styles.icon}>{item.icon}</span>
-              <span className={styles.label}>{item.label}</span>
+              <Plus size={16} />
             </button>
-          ))}
+          </div>
+        </nav>
 
-          {/* Separator between static items and Living UI */}
-          {hasLivingUI && <span className={styles.separator}>|</span>}
-
-          {/* Living UI nav items */}
-          {livingUINavItems.map(item => (
-            <button
-              key={item.id}
-              className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}
-              onClick={() => navigate(item.path)}
-              title={item.label}
-            >
-              <span className={styles.icon}>{item.icon}</span>
-              <span className={styles.label}>{item.label}</span>
-            </button>
-          ))}
-
-          {/* Add Living UI button */}
-          <button
-            className={`${styles.addButton} ${isHovered ? styles.visible : ''}`}
-            onClick={() => setShowCreateModal(true)}
-            title="Create Living UI"
-          >
-            <Plus size={16} />
-          </button>
-        </div>
-
-      </nav>
+        {/* Secondary Living UI tab strip */}
+        {hasLivingUI && (
+          <div className={`${styles.livingUIStrip} ${isOnLivingUI ? styles.stripActive : ''}`}>
+            <div className={styles.stripTabs}>
+              {livingUIProjects.map(project => {
+                const path = `/living-ui/${project.id}`
+                const active = isActive(path)
+                return (
+                  <button
+                    key={project.id}
+                    className={`${styles.stripTab} ${active ? styles.stripTabActive : ''}`}
+                    onClick={() => navigate(path)}
+                    title={project.name}
+                  >
+                    <span className={styles.stripTabIcon}>
+                      {project.status === 'creating'
+                        ? <Loader2 size={13} className={styles.spinner} />
+                        : <Box size={13} />}
+                    </span>
+                    <span className={styles.stripTabLabel}>{project.name}</span>
+                    {project.status === 'creating' && (
+                      <span className={styles.stripTabBadge}>installing</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
 
       <CreateLivingUIModal
         isOpen={showCreateModal}

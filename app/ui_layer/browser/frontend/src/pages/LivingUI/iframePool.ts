@@ -92,3 +92,20 @@ export function refreshIframe(id: string) {
 export function hasIframe(id: string): boolean {
   return pool.has(id)
 }
+
+export function broadcastThemeToIframes(theme: string, cssVars: Record<string, string>) {
+  const message = { type: 'craftbot-theme', theme, cssVars }
+  pool.forEach(iframe => {
+    try {
+      iframe.contentWindow?.postMessage(message, '*')
+    } catch (e) {}
+  })
+}
+
+export function sendThemeToIframe(id: string, theme: string, cssVars: Record<string, string>) {
+  const iframe = pool.get(id)
+  if (!iframe) return
+  try {
+    iframe.contentWindow?.postMessage({ type: 'craftbot-theme', theme, cssVars }, '*')
+  } catch (e) {}
+}

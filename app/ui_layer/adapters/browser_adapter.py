@@ -4450,7 +4450,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         if not app_id or not app_name:
             await self._broadcast({
                 "type": "living_ui_marketplace_install",
-                "data": {"success": False, "error": "App ID and name are required"},
+                "data": {"success": False, "error": "App ID and name are required", "appId": app_id},
             })
             return
 
@@ -4474,7 +4474,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
 
         await self._broadcast({
             "type": "living_ui_marketplace_install",
-            "data": result,
+            "data": {**result, "appId": app_id},
         })
 
     async def _handle_living_ui_import(self, source: str, name: str) -> None:

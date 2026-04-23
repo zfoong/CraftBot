@@ -1,12 +1,19 @@
 /* NavBar Component Styles */
 
+.navWrapper {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
 .navBar {
   height: var(--navbar-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-primary);
   padding: 0 var(--space-2);
   flex-shrink: 0;
 }
@@ -124,4 +131,86 @@
     width: 28px;
     height: 28px;
   }
+}
+
+/* Living UI secondary tab strip */
+.livingUIStrip {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+  height: 32px;
+  overflow: hidden;
+}
+
+.stripTabs {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+}
+
+.stripTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.stripTab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-right: 1px solid var(--border-primary);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.stripTab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.stripTabActive {
+  color: var(--color-primary);
+  background: var(--bg-primary);
+}
+
+.stripTabActive::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-primary);
+}
+
+.stripTabIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.stripTabLabel {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stripTabBadge {
+  font-size: 10px;
+  padding: 1px 5px;
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  border-radius: 10px;
+  flex-shrink: 0;
 }

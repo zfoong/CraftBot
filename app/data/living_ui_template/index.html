@@ -100,6 +100,38 @@
     })();
     </script>
 
+    <!-- CraftBot theme sync — applies theme + CSS vars from parent frame -->
+    <script>
+    (function() {
+      function applyTheme(theme, cssVars) {
+        document.documentElement.setAttribute('data-theme', theme || 'dark');
+        if (cssVars && typeof cssVars === 'object') {
+          var styleId = 'craftbot-theme-vars';
+          var el = document.getElementById(styleId) || document.createElement('style');
+          el.id = styleId;
+          el.textContent = ':root{' + Object.keys(cssVars).map(function(k){ return k+':'+cssVars[k]; }).join(';') + '}';
+          if (!document.getElementById(styleId)) document.head.appendChild(el);
+        }
+      }
+      // Request theme from parent on load
+      window.addEventListener('load', function() {
+        try { window.parent.postMessage({ type: 'craftbot-theme-request' }, '*'); } catch(e) {}
+      });
+      // Apply incoming theme messages
+      window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'craftbot-theme') {
+          applyTheme(e.data.theme, e.data.cssVars);
+        }
+      });
+      // Apply stored theme immediately to avoid flash
+      var stored = null;
+      try { stored = window.parent && window.parent.localStorage && window.parent.localStorage.getItem('craftbot-theme'); } catch(e) {}
+      if (stored === 'light' || stored === 'dark') {
+        document.documentElement.setAttribute('data-theme', stored);
+      }
+    })();
+    </script>
+
     <script type="module" src="/frontend/main.tsx"></script>
   </body>
 </html>
