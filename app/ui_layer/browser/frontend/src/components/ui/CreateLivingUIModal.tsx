@@ -91,14 +91,13 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
   useEffect(() => { onInstalledRef.current = onInstalled }, [onInstalled])
 
-  // Reset on open
+  // Reset form fields on open — intentionally NOT resetting installingIds/completedIds
+  // so ongoing installs remain visible when user closes and reopens the modal
   useEffect(() => {
     if (isOpen) {
       setName('')
       setDescription('')
       setErrors({})
-      setInstallingIds(new Set())
-      setCompletedIds(new Set())
       setConfiguringApp(null)
       setCustomValues({})
       // Fetch marketplace if on that tab
@@ -192,7 +191,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
 
   const doInstall = (app: MarketplaceApp, fields: Record<string, string>) => {
     setConfiguringApp(null)
-    setInstallingIds(prev => new Set([...prev, app.id]))
+    setInstallingIds(prev => new Set([...prev, app.folder || app.id]))
     setMarketplaceError(null)
     send('living_ui_marketplace_install', {
       appId: app.folder || app.id,
@@ -292,7 +291,9 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {apps.map(app => (
+                {apps.map(app => {
+                  const appKey = app.folder || app.id
+                  return (
                   <div key={app.id} style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -324,19 +325,20 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
                     </div>
                     <Button
                       size="sm"
-                      variant={completedIds.has(app.id) ? 'secondary' : 'primary'}
+                      variant={completedIds.has(appKey) ? 'secondary' : 'primary'}
                       icon={
-                        installingIds.has(app.id) ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                        : completedIds.has(app.id) ? <Check size={14} />
+                        installingIds.has(appKey) ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                        : completedIds.has(appKey) ? <Check size={14} />
                         : <Download size={14} />
                       }
-                      onClick={() => !completedIds.has(app.id) && handleAddClick(app)}
-                      disabled={installingIds.has(app.id) || completedIds.has(app.id)}
+                      onClick={() => !completedIds.has(appKey) && handleAddClick(app)}
+                      disabled={installingIds.has(appKey) || completedIds.has(appKey)}
                     >
-                      {installingIds.has(app.id) ? 'Installing...' : completedIds.has(app.id) ? 'Installed' : 'Add'}
+                      {installingIds.has(appKey) ? 'Installing...' : completedIds.has(appKey) ? 'Installed' : 'Add'}
                     </Button>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
