@@ -1264,6 +1264,20 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             return False
         return True
 
+    def _resolve_python_command(self, command: str) -> str:
+        """
+        Normalize 'python' or 'python3' in a shell command to sys.executable.
+
+        On macOS with the official python.org installer, /bin/sh has no 'python'
+        symlink. sys.executable always points to the interpreter running CraftBot,
+        regardless of PATH or platform.
+        """
+        if command.startswith("python3 ") or command == "python3":
+            return sys.executable + command[7:]
+        if command.startswith("python ") or command == "python":
+            return sys.executable + command[6:]
+        return command
+
     def _start_process(
         self, cwd: Path, command: str, log_file: Path, port: int = 0,
         project: "LivingUIProject" = None, extra_env: dict = None,
@@ -1285,6 +1299,8 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             logger.info(f"[LIVING_UI] Bridge env injected: URL=http://localhost:{bridge_port}, token={project.bridge_token[:8]}...")
         else:
             logger.warning(f"[LIVING_UI] No bridge token for process: project={'yes' if project else 'no'}, token={'yes' if project and project.bridge_token else 'no'}")
+
+        command = self._resolve_python_command(command)
 
         if os.name == 'nt':
             process = subprocess.Popen(
