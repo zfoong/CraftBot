@@ -22,6 +22,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  width: 100%;
+}
+
+.settingsRight {
+  margin-left: auto;
 }
 
 .navItem {
@@ -67,32 +72,43 @@
   white-space: nowrap;
 }
 
-/* Add button styles - matches nav item style */
-.addButton {
+/* Add Living UI button */
+.addLivingUIButton {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
+  gap: 6px;
+  padding: 5px 12px;
   border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-secondary);
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   cursor: pointer;
-  opacity: 1;
-  transform: scale(0.9);
-  transition: all var(--transition-fast);
+  white-space: nowrap;
+  box-shadow: 0 0 10px rgba(255, 79, 24, 0.35);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  letter-spacing: 0.01em;
 }
 
-.addButton.visible {
-  opacity: 1;
-  transform: scale(1);
+.addLivingUIButton:hover {
+  background: var(--color-primary-hover);
+  box-shadow: 0 0 16px rgba(255, 79, 24, 0.5);
+  transform: translateY(-1px);
 }
 
-.addButton:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
+.addLivingUIButton:active {
+  transform: translateY(0);
+  box-shadow: 0 0 8px rgba(255, 79, 24, 0.3);
+}
+
+.addLivingUIIcon {
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+.addLivingUIButton:hover .addLivingUIIcon {
+  transform: rotate(20deg) scale(1.15);
 }
 
 /* Separator between static nav and Living UI */
@@ -127,9 +143,8 @@
     padding: var(--space-2);
   }
 
-  .addButton {
-    width: 28px;
-    height: 28px;
+  .addLivingUIButton span {
+    display: none;
   }
 }
 

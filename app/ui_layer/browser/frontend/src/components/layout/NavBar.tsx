@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   FolderOpen,
   Settings,
-  Plus,
+  Sparkles,
   Box,
   Loader2
 } from 'lucide-react'
@@ -22,20 +22,20 @@ interface NavItem {
   path: string
 }
 
-const staticNavItems: NavItem[] = [
+const leftNavItems: NavItem[] = [
   { id: 'chat', label: 'Chat', icon: <MessageSquare size={16} />, path: '/' },
   { id: 'tasks', label: 'Tasks', icon: <ListTodo size={16} />, path: '/tasks' },
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} />, path: '/dashboard' },
   { id: 'workspace', label: 'Workspace', icon: <FolderOpen size={16} />, path: '/workspace' },
-  { id: 'settings', label: 'Settings', icon: <Settings size={16} />, path: '/settings' },
 ]
+
+const settingsItem: NavItem = { id: 'settings', label: 'Settings', icon: <Settings size={16} />, path: '/settings' }
 
 export function NavBar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { livingUIProjects, createLivingUI } = useWebSocket()
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [isHovered, setIsHovered] = useState(false)
 
   const hasLivingUI = livingUIProjects.length > 0
 
@@ -55,15 +55,12 @@ export function NavBar() {
 
   return (
     <>
-      <div
-        className={styles.navWrapper}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      >
+      <div className={styles.navWrapper}>
         {/* Primary nav row */}
         <nav className={styles.navBar}>
           <div className={styles.navItems}>
-            {staticNavItems.map(item => (
+            {/* Left nav items */}
+            {leftNavItems.map(item => (
               <button
                 key={item.id}
                 className={`${styles.navItem} ${isActive(item.path) ? styles.active : ''}`}
@@ -77,11 +74,22 @@ export function NavBar() {
 
             {/* Add Living UI button */}
             <button
-              className={`${styles.addButton} ${isHovered ? styles.visible : ''}`}
+              className={styles.addLivingUIButton}
               onClick={() => setShowCreateModal(true)}
               title="Add Living UI"
             >
-              <Plus size={16} />
+              <Sparkles size={14} className={styles.addLivingUIIcon} />
+              <span>Add Living UI</span>
+            </button>
+
+            {/* Settings pushed to far right */}
+            <button
+              className={`${styles.navItem} ${styles.settingsRight} ${isActive(settingsItem.path) ? styles.active : ''}`}
+              onClick={() => navigate(settingsItem.path)}
+              title={settingsItem.label}
+            >
+              <span className={styles.icon}>{settingsItem.icon}</span>
+              <span className={styles.label}>{settingsItem.label}</span>
             </button>
           </div>
         </nav>

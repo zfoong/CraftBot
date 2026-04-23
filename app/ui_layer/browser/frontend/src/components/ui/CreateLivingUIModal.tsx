@@ -79,8 +79,9 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   const [marketplaceLoading, setMarketplaceLoading] = useState(false)
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null)
   const [installingIds, setInstallingIds] = useState<Set<string>>(new Set())
-  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set())
+  const [installCounts, setInstallCounts] = useState<Map<string, number>>(new Map())
   const [configuringApp, setConfiguringApp] = useState<MarketplaceApp | null>(null)
+  const installTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
 
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -90,6 +91,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   const onInstalledRef = useRef(onInstalled)
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
   useEffect(() => { onInstalledRef.current = onInstalled }, [onInstalled])
+  useEffect(() => () => { installTimeoutsRef.current.forEach(t => clearTimeout(t)) }, [])
   // Accumulate projectIds from completed installs — navigate only when all installs finish
   const pendingNavigationsRef = useRef<string[]>([])
 
@@ -147,7 +149,13 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
           if (projectId) pendingNavigationsRef.current.push(projectId)
 
           if (finishedId) {
-            setCompletedIds(prev => new Set([...prev, finishedId]))
+            const t = installTimeoutsRef.current.get(finishedId)
+            if (t) { clearTimeout(t); installTimeoutsRef.current.delete(finishedId) }
+            setInstallCounts(prev => {
+              const next = new Map(prev)
+              next.set(finishedId, (next.get(finishedId) || 0) + 1)
+              return next
+            })
           }
 
           setInstallingIds(prev => {
@@ -167,8 +175,12 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
           })
         } else {
           if (finishedId) {
+            const t = installTimeoutsRef.current.get(finishedId)
+            if (t) { clearTimeout(t); installTimeoutsRef.current.delete(finishedId) }
             setInstallingIds(prev => { const n = new Set(prev); n.delete(finishedId); return n })
           } else {
+            installTimeoutsRef.current.forEach(t => clearTimeout(t))
+            installTimeoutsRef.current.clear()
             setInstallingIds(new Set())
           }
           setMarketplaceError(data.error || 'Installation failed')
@@ -198,11 +210,21 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   }
 
   const doInstall = (app: MarketplaceApp, fields: Record<string, string>) => {
+    const appKey = app.folder || app.id
     setConfiguringApp(null)
-    setInstallingIds(prev => new Set([...prev, app.folder || app.id]))
+    setInstallingIds(prev => new Set([...prev, appKey]))
     setMarketplaceError(null)
+
+    // Stuck-install timeout: clear installing state after 3 minutes
+    const timeout = setTimeout(() => {
+      setInstallingIds(prev => { const n = new Set(prev); n.delete(appKey); return n })
+      setMarketplaceError(`Installation of "${app.name}" timed out. Please try again.`)
+      installTimeoutsRef.current.delete(appKey)
+    }, 3 * 60 * 1000)
+    installTimeoutsRef.current.set(appKey, timeout)
+
     send('living_ui_marketplace_install', {
-      appId: app.folder || app.id,
+      appId: appKey,
       appName: fields.APP_TITLE || app.name,
       appDescription: app.description,
       customFields: fields,
@@ -323,19 +345,23 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
                         </div>
                       )}
                     </div>
-                    <Button
-                      size="sm"
-                      variant={completedIds.has(appKey) ? 'secondary' : 'primary'}
-                      icon={
-                        installingIds.has(appKey) ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                        : completedIds.has(appKey) ? <Check size={14} />
-                        : <Download size={14} />
-                      }
-                      onClick={() => !completedIds.has(appKey) && handleAddClick(app)}
-                      disabled={installingIds.has(appKey) || completedIds.has(appKey)}
-                    >
-                      {installingIds.has(appKey) ? 'Installing...' : completedIds.has(appKey) ? 'Installed' : 'Add'}
-                    </Button>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+                      {(installCounts.get(appKey) || 0) > 0 && !installingIds.has(appKey) && (
+                        <span style={{ fontSize: '10px', color: 'var(--color-success, #22c55e)', display: 'flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
+                          <Check size={10} />
+                          {(installCounts.get(appKey) || 0) === 1 ? 'Installed' : `Installed ×${installCounts.get(appKey)}`}
+                        </span>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={installingIds.has(appKey) ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
+                        onClick={() => !installingIds.has(appKey) && handleAddClick(app)}
+                        disabled={installingIds.has(appKey)}
+                      >
+                        {installingIds.has(appKey) ? 'Installing...' : 'Add'}
+                      </Button>
+                    </div>
                   </div>
                   )
                 })}
