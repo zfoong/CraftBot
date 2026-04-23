@@ -18,7 +18,7 @@
   "pipeline": {
     "backend": {
       "cwd": "backend",
-      "install": "pip install -r requirements.txt",
+      "install": "python -m pip install -r requirements.txt",
       "tests": [
         {"name": "internal", "command": "python test_runner.py --internal", "required": true},
         {"name": "unit", "command": "python test_runner.py --unit", "required": true},

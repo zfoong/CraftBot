@@ -46,6 +46,8 @@ interface WebSocketState {
   dashboardMetrics: DashboardMetrics | null
   filteredMetricsCache: Record<MetricsTimePeriod, FilteredDashboardMetrics | null>
   cancellingTaskId: string | null
+  // Whether the initial 'init' message has been received from the backend
+  initReceived: boolean
   // Onboarding state
   needsHardOnboarding: boolean
   agentName: string
@@ -151,6 +153,7 @@ const defaultState: WebSocketState = {
   },
   cancellingTaskId: null,
   // Onboarding state
+  initReceived: false,
   needsHardOnboarding: false,
   agentName: 'Agent',
   agentProfilePictureUrl: '/api/agent-profile-picture',
@@ -304,6 +307,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           guiMode: data.guiMode || false,
           currentTask: data.currentTask || null,
           dashboardMetrics: data.dashboardMetrics || null,
+          initReceived: true,
           needsHardOnboarding: data.needsHardOnboarding || false,
           agentName: data.agentName || 'Agent',
           agentProfilePictureUrl:

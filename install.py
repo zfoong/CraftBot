@@ -45,6 +45,37 @@ OMNIPARSER_ENV_NAME = "omni"
 OMNIPARSER_MARKER_FILE = ".omniparser_setup_complete_v1"
 
 # ==========================================
+# TERMINAL COLORS  (orange/white brand palette)
+# ==========================================
+def _enable_windows_vtp() -> None:
+    """Enable ANSI/VT100 virtual terminal processing on Windows 10+."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.GetStdHandle(-11)           # STD_OUTPUT_HANDLE
+        m = ctypes.c_ulong()
+        k32.GetConsoleMode(h, ctypes.byref(m))
+        k32.SetConsoleMode(h, m.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    except Exception:
+        pass
+
+_enable_windows_vtp()
+_USE_COLOR = sys.stdout.isatty()
+
+def _c(code: str) -> str:
+    return code if _USE_COLOR else ""
+
+ORANGE = _c("\033[38;2;255;79;24m")   # #FF4F18
+WHITE  = _c("\033[38;2;255;255;255m") # #FFFFFF
+BOLD   = _c("\033[1m")
+DIM    = _c("\033[38;2;80;80;80m")    # dark gray for empty bar
+GREEN  = _c("\033[38;2;80;220;100m")
+RED    = _c("\033[91m")
+RESET  = _c("\033[0m")
+
+# ==========================================
 # PROGRESS BAR
 # ==========================================
 class ProgressBar:
@@ -87,25 +118,23 @@ class ProgressBar:
 # ANIMATED PROGRESS INDICATOR
 # ==========================================
 class AnimatedProgress:
-    """Animated progress bar with percentage."""
+    """Retro-style animated progress bar."""
     def __init__(self, message: str = "Installing"):
-        self.message = message
+        self.message = message.upper()
         self.percent = 0
-        self.bar_length = 30
-    
+        self.bar_length = 40
+
     def update(self, percent: int):
-        """Update progress with percentage."""
         self.percent = min(percent, 100)
         filled = int(self.bar_length * self.percent / 100)
-        bar = "█" * filled + "░" * (self.bar_length - filled)
-        sys.stdout.write(f"\r{self.message} [{bar}] {self.percent}%")
+        bar = f"{ORANGE}{'▓' * filled}{DIM}{'░' * (self.bar_length - filled)}{RESET}"
+        pct = f"{self.percent}%".rjust(4)
+        sys.stdout.write(f"\r  {WHITE}{self.message}{RESET}  {bar}  {ORANGE}[ {pct} ]{RESET}")
         sys.stdout.flush()
-    
+
     def finish(self):
-        """Complete the progress bar."""
-        filled = self.bar_length
-        bar = "█" * filled
-        sys.stdout.write(f"\r{self.message} [{bar}] 100%\n")
+        bar = f"{ORANGE}{'▓' * self.bar_length}{RESET}"
+        sys.stdout.write(f"\r  {WHITE}{self.message}{RESET}  {bar}  {GREEN}[ 100% ]{RESET}\n")
         sys.stdout.flush()
 
 def run_command_with_progress(cmd_list: list[str], message: str = "Processing", cwd: Optional[str] = None, check: bool = True, capture: bool = False, env_extras: Dict[str, str] = None) -> subprocess.CompletedProcess:
@@ -759,21 +788,30 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
         if not os.path.exists(requirements_file):
             print(f"Error: {requirements_file} not found.")
             sys.exit(1)
-        
+
         print("🔧 Installing core dependencies...")
-        
+
         # Setup environment with TMPDIR for pip cache management
         # This helps on systems with limited space or PEP 668 issues
         my_env = os.environ.copy()
         tmp_dir = os.path.expanduser("~/pip-tmp")
         my_env["TMPDIR"] = tmp_dir
-        
+        # Disable pip's rich/colored output so it falls back to plain text.
+        # This prevents pip's vendored rich library from crashing on Windows
+        # terminals with encoding issues (common on Python 3.14+).
+        my_env["NO_COLOR"] = "1"
+        my_env["FORCE_COLOR"] = "0"
+        my_env["PYTHONIOENCODING"] = "utf-8"
+
         # Create temp directory if it doesn't exist
         os.makedirs(tmp_dir, exist_ok=True)
-        
+
         # First attempt with standard pip install
-        cmd = [sys.executable, "-m", "pip", "install", "-r", requirements_file]
-        result = run_command_with_progress(cmd, message="Installing core dependencies", check=False, env_extras={"TMPDIR": tmp_dir})
+        # --no-color keeps output plain and avoids rich console crashes
+        cmd = [sys.executable, "-m", "pip", "install", "--no-color", "-r", requirements_file]
+        result = run_command_with_progress(cmd, message="Installing core dependencies", check=False, env_extras={
+            "TMPDIR": tmp_dir, "NO_COLOR": "1", "FORCE_COLOR": "0", "PYTHONIOENCODING": "utf-8"
+        })
         
         if result and hasattr(result, 'returncode') and result.returncode != 0:
             # Check error output
@@ -820,8 +858,10 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
                 print("  Retrying with --break-system-packages flag...\n")
                 
                 # Retry with --break-system-packages
-                cmd_with_flag = [sys.executable, "-m", "pip", "install", "--break-system-packages", "-r", requirements_file]
-                result = run_command_with_progress(cmd_with_flag, message="Retrying installation", check=False, env_extras={"TMPDIR": tmp_dir})
+                cmd_with_flag = [sys.executable, "-m", "pip", "install", "--no-color", "--break-system-packages", "-r", requirements_file]
+                result = run_command_with_progress(cmd_with_flag, message="Retrying installation", check=False, env_extras={
+                    "TMPDIR": tmp_dir, "NO_COLOR": "1", "FORCE_COLOR": "0", "PYTHONIOENCODING": "utf-8"
+                })
                 
                 if result and hasattr(result, 'returncode') and result.returncode == 0:
                     print("✓ Core dependencies installed (with --break-system-packages)")
@@ -832,10 +872,45 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
                     print("\nPlease use Option 1 or Option 2 above.")
                     sys.exit(1)
             else:
-                # Different error
+                _pip_env = {"TMPDIR": tmp_dir, "NO_COLOR": "1", "FORCE_COLOR": "0", "PYTHONIOENCODING": "utf-8"}
+                _ver = sys.version_info
+
+                # On pre-release Python (3.14+), many packages only have wheels
+                # under --pre.  Try that automatically before giving up.
+                if _ver >= (3, 14):
+                    print(f"\n⚠  Python {_ver.major}.{_ver.minor} detected (pre-release).")
+                    print("   Retrying with --pre to pick up pre-release wheels...")
+                    cmd_pre = [sys.executable, "-m", "pip", "install", "--no-color", "--pre", "-r", requirements_file]
+                    result = run_command_with_progress(cmd_pre, message="Retrying (--pre)", check=False, env_extras=_pip_env)
+                    if result and hasattr(result, 'returncode') and result.returncode == 0:
+                        print("✓ Core dependencies installed (--pre)")
+                        return
+
+                    # Second retry: binary-only (skip source builds that need a compiler)
+                    print("   Retrying with --only-binary=:all: to skip source builds...")
+                    cmd_bin = [sys.executable, "-m", "pip", "install", "--no-color", "--pre",
+                               "--only-binary=:all:", "-r", requirements_file]
+                    result = run_command_with_progress(cmd_bin, message="Retrying (binary only)", check=False, env_extras=_pip_env)
+                    if result and hasattr(result, 'returncode') and result.returncode == 0:
+                        print("✓ Core dependencies installed (binary-only)")
+                        return
+
+                # Show as much context as possible then give up
                 print("\n✗ Error installing core dependencies:")
+                err_text = ""
                 if hasattr(result, 'stderr') and result.stderr:
-                    print(result.stderr[:1000])
+                    err_text = result.stderr.strip()
+                if hasattr(result, 'stdout') and result.stdout and not err_text:
+                    err_text = result.stdout.strip()
+                if err_text:
+                    print(err_text[:2000])
+
+                if _ver >= (3, 14):
+                    print(f"\n   Python {_ver.major}.{_ver.minor} is pre-release; some packages")
+                    print("   may not yet ship wheels for it. The safest fix is to install")
+                    print("   Python 3.11 or 3.12 from https://www.python.org/downloads/")
+                    print("   and re-run: python install.py")
+
                 print("\nTroubleshooting:")
                 print("  1. Check for disk space: " + ("df -h" if sys.platform != "win32" else "dir C:\\"))
                 print("  2. Clear pip cache: pip cache purge")
@@ -1287,6 +1362,23 @@ if __name__ == "__main__":
             print("\n   Please install Python 3.9+ from https://www.python.org/downloads/")
         sys.exit(1)
 
+    # ── Pre-release Python warning ─────────────────────────────────────────
+    if _ver >= (3, 14):
+        print(f"\n" + "=" * 62)
+        print(f" ⚠  Python {_ver.major}.{_ver.minor} is a pre-release version")
+        print("=" * 62)
+        print(f"\n  You are running Python {_ver.major}.{_ver.minor}.{_ver.micro}.")
+        print("  Pre-release Python versions are not yet supported by all")
+        print("  packages CraftBot depends on and may cause install failures.")
+        print("\n  Recommended: use Python 3.11 or 3.12")
+        print("  Download from: https://www.python.org/downloads/")
+        print("=" * 62)
+        _choice = input("\n  Continue with Python 3.14 anyway? (y/n): ").strip().lower()
+        if _choice != "y":
+            print("\n  Installation cancelled. Please use Python 3.11 or 3.12.\n")
+            sys.exit(1)
+        print()
+
     # ── platform-specific interpreter checks ──────────────────────────────
     if sys.platform == "darwin":
         _check_mac_python()
@@ -1311,17 +1403,31 @@ if __name__ == "__main__":
     save_config_value("gui_mode_enabled", install_gui)
     os.environ["USE_CONDA"] = str(use_conda)
 
-    # Print installation header
-    print("\n" + "="*60)
-    print(" 🚀 CraftBot Installation")
-    print("="*60)
-    if use_conda:
-        print(" Mode: Conda environment")
-    else:
-        print(" Mode: Global pip")
-    if install_gui:
-        print(" GUI:  Enabled (OmniParser)")
-    print("="*60 + "\n")
+    # Print retro installation header
+    _ART = [
+        " ██████╗ ██████╗  █████╗  ███████╗ ████████╗██████╗   ██████╗ ████████╗",
+        "██╔════╝ ██╔══██╗ ██╔══██╗ ██╔════╝ ╚══██╔══╝██╔══██╗ ██╔═══██╗╚══██╔══╝",
+        "██║      ██████╔╝ ███████║ █████╗      ██║   ██████╔╝ ██║   ██║   ██║   ",
+        "██║      ██╔══██╗ ██╔══██║ ██╔══╝      ██║   ██╔══██╗ ██║   ██║   ██║   ",
+        "╚██████╗ ██║  ██║ ██║  ██║ ██║         ██║   ██████╔╝ ╚██████╔╝   ██║   ",
+        " ╚═════╝ ╚═╝  ╚═╝ ╚═╝  ╚═╝ ╚═╝         ╚═╝   ╚═════╝   ╚═════╝    ╚═╝   ",
+    ]
+    _BW = 76
+    _BT = f"{ORANGE}╔{'═' * _BW}╗{RESET}"
+    _BB = f"{ORANGE}╚{'═' * _BW}╝{RESET}"
+    _BE = f"{ORANGE}║{' ' * _BW}║{RESET}"
+
+    print(f"\n{_BT}")
+    print(_BE)
+    for _row in _ART:
+        print(f"{ORANGE}║{RESET}  {WHITE}{_row}{RESET}  {ORANGE}║{RESET}")
+    print(_BE)
+    _sub = "░░░  INSTALLATION SYSTEM  ░░░"
+    print(f"{ORANGE}║{RESET}{DIM}{_sub.center(_BW)}{RESET}{ORANGE}║{RESET}")
+    _mode = "MODE: " + ("CONDA ENVIRONMENT" if use_conda else "GLOBAL PIP")
+    print(f"{ORANGE}║{RESET}{ORANGE}{_mode.center(_BW)}{RESET}{ORANGE}║{RESET}")
+    print(_BE)
+    print(f"{_BB}\n")
 
     # Pre-flight check: Disk space (especially important for Kali)
     min_space_needed = 8.0 if install_gui else 5.0  # GUI mode needs more space for torch
@@ -1380,15 +1486,21 @@ if __name__ == "__main__":
         print("="*60 + "\n")
         setup_omniparser(force_cpu=force_cpu, use_conda=use_conda)
 
-    # Done
-    print("="*60)
-    print(" ✅ Installation Complete!")
-    print("="*60)
+    # Done — retro completion box
+    _CW = 60
+    _CT = f"{ORANGE}╔{'═' * _CW}╗{RESET}"
+    _CB = f"{ORANGE}╚{'═' * _CW}╝{RESET}"
+    _CE = f"{ORANGE}║{' ' * _CW}║{RESET}"
+    _ok_vis  = "  ██  INSTALLATION COMPLETE  ██  "
+    print(f"\n{_CT}")
+    print(_CE)
+    print(f"{ORANGE}║{RESET}{GREEN}{_ok_vis.center(_CW)}{RESET}{ORANGE}║{RESET}")
+    print(_CE)
+    print(f"{_CB}\n")
 
     if "--no-launch" in args:
-        # Called from service.py install — skip auto-launch, service.py will start it
-        print("\n✓ Dependencies installed. Service will be started by the caller.\n")
+        print(f"  {GREEN}▸{RESET} {WHITE}DEPENDENCIES READY — SERVICE WILL START AUTOMATICALLY{RESET}\n")
     else:
-        print("\n🚀 Starting CraftBot Browser Interface...\n")
+        print(f"  {ORANGE}▸{RESET} {WHITE}LOADING CRAFTBOT...{RESET}\n")
         launch_agent_after_install(install_gui, use_conda)
 

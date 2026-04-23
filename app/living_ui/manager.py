@@ -16,6 +16,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -1205,6 +1206,11 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         self, cwd: Path, command: str, step_name: str, timeout: int = 1200
     ) -> dict:
         """Run a single pipeline command. Returns {"status": "success"} or {"status": "error", ...}."""
+        # Replace bare `pip` with the current interpreter's pip so it works on
+        # Windows where `pip` is often absent from PATH.
+        if command.startswith("pip "):
+            command = f"{sys.executable} -m pip {command[4:]}"
+
         logger.info(f"[LIVING_UI:PIPELINE] [{step_name}] Running: {command}")
 
         try:
