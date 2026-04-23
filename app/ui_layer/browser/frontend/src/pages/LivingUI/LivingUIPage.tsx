@@ -3,15 +3,17 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Box,
   RefreshCw,
-  Settings,
   Trash2,
   Play,
   Square,
   AlertCircle,
   MessageSquare,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { CraftBotPet } from './CraftBotPet'
 import { useWebSocket } from '../../contexts/WebSocketContext'
+import { useFullscreen } from '../../contexts/FullscreenContext'
 import { Button } from '../../components/ui/Button'
 import { IconButton } from '../../components/ui/IconButton'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
@@ -32,12 +34,28 @@ export function LivingUIPage() {
     deleteLivingUI,
     setActiveLivingUI,
   } = useWebSocket()
+  const { isFullscreen, setFullscreen, toggleFullscreen } = useFullscreen()
 
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showChat, setShowChat] = useState(true)
   const [panelWidth, setPanelWidth] = useState(350)
   const [isResizing, setIsResizing] = useState(false)
   const iframePlaceholderRef = useRef<HTMLDivElement>(null)
+
+  // Reset fullscreen when leaving the page so other pages aren't stuck without nav
+  useEffect(() => {
+    return () => setFullscreen(false)
+  }, [setFullscreen])
+
+  // ESC exits fullscreen
+  useEffect(() => {
+    if (!isFullscreen) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [isFullscreen, setFullscreen])
 
   // Find the current project
   const project = livingUIProjects.find(p => p.id === projectId)
@@ -157,50 +175,62 @@ export function LivingUIPage() {
       {/* Menu Bar */}
       <div className={styles.menuBar}>
         <div className={styles.menuLeft}>
-          <Box size={18} className={styles.projectIcon} />
+          <Box size={14} className={styles.projectIcon} />
           <h1 className={styles.projectName}>{project.name}</h1>
           <span className={`${styles.status} ${styles[project.status]}`}>
             {project.status}
           </span>
+          {isFullscreen && (
+            <span className={styles.fullscreenBadge}>Fullscreen</span>
+          )}
         </div>
 
         <div className={styles.menuActions}>
           {project.status === 'running' ? (
             <>
               <IconButton
-                icon={<RefreshCw size={16} />}
+                size="sm"
+                icon={<RefreshCw size={14} />}
                 tooltip="Refresh"
                 onClick={handleRefresh}
               />
               <IconButton
-                icon={<Square size={16} />}
+                size="sm"
+                icon={<Square size={14} />}
                 tooltip="Stop"
                 onClick={handleStop}
               />
             </>
           ) : project.status === 'ready' || project.status === 'stopped' ? (
             <IconButton
-              icon={<Play size={16} />}
+              size="sm"
+              icon={<Play size={14} />}
               tooltip="Launch"
               onClick={handleLaunch}
             />
           ) : null}
           <IconButton
-            icon={<MessageSquare size={16} />}
+            size="sm"
+            icon={<MessageSquare size={14} />}
             tooltip={showChat ? 'Hide Chat' : 'Show Chat'}
             onClick={() => setShowChat(prev => !prev)}
           />
           <IconButton
-            icon={<Settings size={16} />}
-            tooltip="Settings"
-            onClick={() => {}}
+            size="sm"
+            active={isFullscreen}
+            icon={isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            tooltip={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Fullscreen'}
+            onClick={toggleFullscreen}
           />
-          <IconButton
-            icon={<Trash2 size={16} />}
-            tooltip="Delete"
-            variant="ghost"
-            onClick={() => setShowDeleteModal(true)}
-          />
+          {project.status !== 'running' && (
+            <IconButton
+              size="sm"
+              icon={<Trash2 size={14} />}
+              tooltip="Delete"
+              variant="ghost"
+              onClick={() => setShowDeleteModal(true)}
+            />
+          )}
         </div>
       </div>
 
