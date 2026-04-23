@@ -227,7 +227,8 @@ class UIController:
         message: str,
         adapter_id: str = "",
         target_session_id: Optional[str] = None,
-        living_ui_id: Optional[str] = None
+        living_ui_id: Optional[str] = None,
+        client_id: Optional[str] = None,
     ) -> None:
         """
         Handle user input from any interface.
@@ -268,7 +269,11 @@ class UIController:
         self._event_bus.emit(
             UIEvent(
                 type=UIEventType.USER_MESSAGE,
-                data={"message": message, "adapter_id": adapter_id},
+                data={
+                    "message": message,
+                    "adapter_id": adapter_id,
+                    "client_id": client_id,
+                },
                 source_adapter=adapter_id,
             )
         )

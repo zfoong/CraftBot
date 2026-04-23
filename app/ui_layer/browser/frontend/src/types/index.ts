@@ -28,6 +28,8 @@ export interface ChatMessage {
   taskSessionId?: string  // Links message to a task session for reply feature
   options?: ChatMessageOption[]
   optionSelected?: string  // Value of the option that was selected
+  clientId?: string  // Client-generated UUID for reconciling optimistic pending messages with server echo
+  pending?: boolean  // True while an optimistic message is awaiting server acknowledgment
 }
 
 // ─────────────────────────────────────────────────────────────────────

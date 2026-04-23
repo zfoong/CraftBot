@@ -282,6 +282,10 @@ class BrowserChatComponent(ChatComponentProtocol):
             "messageId": message.message_id,
         }
 
+        # Include client_id so the browser can reconcile its optimistic pending bubble
+        if message.client_id:
+            message_data["clientId"] = message.client_id
+
         # Include attachments if present
         if message.attachments:
             message_data["attachments"] = [
@@ -777,6 +781,8 @@ class BrowserAdapter(InterfaceAdapter):
         self._ws_clients: Set = set()
         self._metrics_subscribers: Set = set()
         self._runner: Optional["web.AppRunner"] = None
+        self._started_at: float = 0.0
+        self._ws_prepare_failures: int = 0
 
         # Dashboard metrics collector
         self._metrics_collector = MetricsCollector(controller.agent)
@@ -845,7 +851,8 @@ class BrowserAdapter(InterfaceAdapter):
         self,
         message: str,
         reply_context: Optional[Dict[str, Any]] = None,
-        living_ui_id: Optional[str] = None
+        living_ui_id: Optional[str] = None,
+        client_id: Optional[str] = None,
     ) -> None:
         """
         Submit a message from the user with optional reply context.
@@ -857,6 +864,7 @@ class BrowserAdapter(InterfaceAdapter):
             message: The user's input message
             reply_context: Optional dict with {sessionId?: str, originalMessage: str}
             living_ui_id: Optional Living UI project ID if user is on a Living UI page
+            client_id: Optional client-generated UUID for reconciling optimistic UI
         """
         agent_context = message
 
@@ -871,6 +879,7 @@ class BrowserAdapter(InterfaceAdapter):
             agent_context,
             self._adapter_id,
             target_session_id=target_session_id,
+            client_id=client_id,
             living_ui_id=living_ui_id
         )
 
@@ -997,6 +1006,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         await self._runner.setup()
         site = web.TCPSite(self._runner, self._host, self._port)
         await site.start()
+        self._started_at = time.monotonic()
 
         # Only print URL info if not using browser startup UI (run.py handles it)
         import os
@@ -1063,8 +1073,29 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         
         try:
             await ws.prepare(request)
+        except ClientConnectionResetError:
+            # Benign: the client (browser) aborted the TCP connection before the WebSocket
+            # handshake could complete. Happens routinely in dev with React.StrictMode /
+            # Vite HMR double-mounting WS providers, and on page navigations. Nothing to do.
+            self._ws_prepare_failures += 1
+            return ws
         except Exception as e:
-            print(f"[BROWSER ADAPTER] Failed to prepare WebSocket: {e}")
+            import traceback as _tb
+            self._ws_prepare_failures += 1
+            try:
+                peer = request.transport.get_extra_info("peername") if request.transport else None
+            except Exception:
+                peer = None
+            user_agent = request.headers.get("User-Agent", "")
+            attempt_id = request.query.get("attempt", "")
+            uptime_s = (time.monotonic() - self._started_at) if self._started_at else -1.0
+            print(
+                "[BROWSER ADAPTER] Failed to prepare WebSocket: "
+                f"err={type(e).__name__}: {e} | peer={peer} | attempt_id={attempt_id} "
+                f"| clients={len(self._ws_clients)} | uptime_s={uptime_s:.1f} "
+                f"| failures={self._ws_prepare_failures} | ua={user_agent!r}\n"
+                f"{_tb.format_exc()}"
+            )
             return ws
         
         is_first_client = len(self._ws_clients) == 0
@@ -1141,15 +1172,24 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             attachments = data.get("attachments", [])
             reply_context = data.get("replyContext")  # {sessionId?: str, originalMessage: str}
             living_ui_id = data.get("livingUIId")  # Set when user is on a Living UI page
+            client_id = data.get("clientId")
             if living_ui_id:
                 logger.info(f"[BROWSER ADAPTER] Message from Living UI page: {living_ui_id}")
 
+            # Dispatch chat submission as a background task so the WS message loop
+            # can immediately read the next frame. Otherwise rapid-fire sends are
+            # serialised behind each message's routing-LLM call (~1s each), which
+            # makes optimistic bubbles un-gray one-by-one instead of all at once.
             if attachments:
-                # Message with attachments - use custom handler
-                await self._handle_chat_message_with_attachments(content, attachments, reply_context, living_ui_id)
+                asyncio.create_task(
+                    self._handle_chat_message_with_attachments(
+                        content, attachments, reply_context, living_ui_id, client_id
+                    )
+                )
             elif content:
-                # Regular message without attachments - use normal flow
-                await self.submit_message(content, reply_context, living_ui_id)
+                asyncio.create_task(
+                    self.submit_message(content, reply_context, living_ui_id, client_id)
+                )
 
         elif msg_type == "chat_attachment_upload":
             # Upload attachment for chat message
@@ -5220,7 +5260,8 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         content: str,
         attachments: List[Dict[str, Any]],
         reply_context: Optional[Dict[str, Any]] = None,
-        living_ui_id: Optional[str] = None
+        living_ui_id: Optional[str] = None,
+        client_id: Optional[str] = None,
     ) -> None:
         """Handle user chat message with attachments and optional reply context."""
         import uuid
@@ -5280,6 +5321,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                 style="user",
                 timestamp=time.time(),
                 attachments=processed_attachments if processed_attachments else None,
+                client_id=client_id,
             )
             await self._chat.append_message(user_message)
 

@@ -75,7 +75,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
 
   const bubbleContainer = (
     <div className={styles.messageBubbleContainer}>
-      <div className={`${styles.message} ${styles[message.style]}`}>
+      <div className={`${styles.message} ${styles[message.style]} ${message.pending ? styles.pending : ''}`}>
         <div className={styles.messageHeader}>
           <span className={styles.sender}>{message.sender}</span>
           <span className={styles.timestamp}>

@@ -143,6 +143,14 @@
   border-radius: var(--radius-lg);
   background: var(--bg-tertiary);
   width: 100%;
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+
+/* Optimistic bubble: shown immediately on send, before the server has
+   acknowledged the message. Flipped off when the server echo arrives. */
+.message.pending {
+  opacity: 0.55;
 }
 
 .message.user {

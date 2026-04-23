@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom'
 import { Send, Paperclip, X, Loader2, File, AlertCircle, Reply, Mic, MicOff } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useWebSocket } from '../../contexts/WebSocketContext'
+import { useToast } from '../../contexts/ToastContext'
 import { Button, IconButton, StatusIndicator } from '../ui'
 import { useDerivedAgentStatus } from '../../hooks'
 import { ChatMessageItem } from '../../pages/Chat/ChatMessage'
@@ -72,6 +73,18 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
   } = useWebSocket()
 
   const status = useDerivedAgentStatus({ actions, messages, connected })
+  const { showToast } = useToast()
+
+  // Render messages in server-canonical timestamp order so that the order
+  // users see live matches the order they see after a refresh (where history
+  // is loaded sorted by timestamp). Pending bubbles use client time, so they
+  // land at the end; when the server echo arrives with its real timestamp,
+  // the item may shift a position or two — a CSS transform transition on the
+  // virtualized row animates that shift as a smooth slide.
+  const orderedMessages = useMemo(() => {
+    return messages.slice().sort((a, b) => a.timestamp - b.timestamp)
+  }, [messages])
+
   const [input, setInput] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
@@ -112,7 +125,7 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
   }, [pendingAttachments])
 
   const virtualizer = useVirtualizer({
-    count: messages.length,
+    count: orderedMessages.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 100,
     overscan: 5,
@@ -120,11 +133,11 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
 
   const getFirstUnreadIndex = useCallback(() => {
     if (!lastSeenMessageId) return -1
-    const lastSeenIdx = messages.findIndex(m => m.messageId === lastSeenMessageId)
+    const lastSeenIdx = orderedMessages.findIndex(m => m.messageId === lastSeenMessageId)
     if (lastSeenIdx === -1) return 0
-    if (lastSeenIdx === messages.length - 1) return -1
+    if (lastSeenIdx === orderedMessages.length - 1) return -1
     return lastSeenIdx + 1
-  }, [messages, lastSeenMessageId])
+  }, [orderedMessages, lastSeenMessageId])
 
   const isNearBottom = useCallback(() => {
     const container = parentRef.current
@@ -168,10 +181,10 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
 
   // Scroll to unread on mount, auto-scroll on new messages if near bottom
   useEffect(() => {
-    if (messages.length === 0) return
+    if (orderedMessages.length === 0) return
 
-    const isNewMessage = messages.length > prevMessageCountRef.current
-    prevMessageCountRef.current = messages.length
+    const isNewMessage = orderedMessages.length > prevMessageCountRef.current
+    prevMessageCountRef.current = orderedMessages.length
 
     if (!hasInitialScrolled.current) {
       hasInitialScrolled.current = true
@@ -180,15 +193,15 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
         if (firstUnreadIdx !== -1) {
           virtualizer.scrollToIndex(firstUnreadIdx, { align: 'start', behavior: 'auto' })
         } else {
-          virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'auto' })
+          virtualizer.scrollToIndex(orderedMessages.length - 1, { align: 'end', behavior: 'auto' })
         }
         markMessagesAsSeen()
       }, 50)
     } else if (isNewMessage && wasNearBottomRef.current) {
-      virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
+      virtualizer.scrollToIndex(orderedMessages.length - 1, { align: 'end', behavior: 'smooth' })
       markMessagesAsSeen()
     }
-  }, [messages.length, virtualizer, getFirstUnreadIndex, markMessagesAsSeen])
+  }, [orderedMessages.length, virtualizer, getFirstUnreadIndex, markMessagesAsSeen])
 
   const adjustTextareaHeight = useCallback(() => {
     const textarea = inputRef.current
@@ -298,6 +311,9 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
         replyContext,
         livingUIId
       )
+      if (!connected) {
+        showToast('info', 'Reconnecting — your message will send when the connection is restored.')
+      }
       setInput('')
       setPendingAttachments([])
       setAttachmentError(null)
@@ -450,7 +466,7 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
   return (
     <div className={styles.chat}>
       <div className={styles.messagesContainer} ref={parentRef}>
-        {messages.length === 0 ? (
+        {orderedMessages.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
               <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
@@ -475,10 +491,16 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
               </div>
             )}
             {virtualizer.getVirtualItems().map((virtualItem) => {
-              const message = messages[virtualItem.index]
+              const message = orderedMessages[virtualItem.index]
+              // Prefer clientId as the React key so that when a pending optimistic
+              // message is reconciled with the server echo (messageId changes from
+              // `pending:<cid>` to the real id), React reuses the same DOM node —
+              // letting the CSS transform transition animate the slide into
+              // its server-canonical sorted position.
+              const rowKey = message.clientId || message.messageId || virtualItem.index
               return (
                 <div
-                  key={message.messageId || virtualItem.index}
+                  key={rowKey}
                   data-index={virtualItem.index}
                   ref={virtualizer.measureElement}
                   style={{
@@ -487,6 +509,7 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
                     left: 0,
                     width: '100%',
                     transform: `translateY(${virtualItem.start}px)`,
+                    transition: 'transform 250ms ease',
                   }}
                 >
                   <ChatMessageItem
