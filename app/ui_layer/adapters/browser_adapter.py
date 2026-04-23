@@ -1524,12 +1524,13 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
             app_name = data.get("appName", "")
             app_description = data.get("appDescription", "")
             custom_fields = data.get("customFields", {})
-            await self._handle_marketplace_install(app_id, app_name, app_description, custom_fields)
+            # Run as background task so the WS loop stays unblocked for concurrent installs
+            asyncio.create_task(self._handle_marketplace_install(app_id, app_name, app_description, custom_fields))
 
         elif msg_type == "living_ui_import":
             source = data.get("source", "")
             name = data.get("name", "External App")
-            await self._handle_living_ui_import(source, name)
+            asyncio.create_task(self._handle_living_ui_import(source, name))
 
         # WhatsApp QR code flow handlers
         elif msg_type == "whatsapp_start_qr":
