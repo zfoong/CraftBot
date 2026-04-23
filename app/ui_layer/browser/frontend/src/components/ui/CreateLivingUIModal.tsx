@@ -90,6 +90,8 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   const onInstalledRef = useRef(onInstalled)
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
   useEffect(() => { onInstalledRef.current = onInstalled }, [onInstalled])
+  // Accumulate projectIds from completed installs — navigate only when all installs finish
+  const pendingNavigationsRef = useRef<string[]>([])
 
   // Reset form fields on open — intentionally NOT resetting installingIds/completedIds
   // so ongoing installs remain visible when user closes and reopens the modal
@@ -140,23 +142,29 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
         console.log('[CreateLivingUIModal] received living_ui_marketplace_install:', data)
         const finishedId = data.appId as string | undefined
         if (data.status === 'success') {
+          // Queue navigation — don't interrupt the user until all installs are done
+          const projectId = data.project?.id
+          if (projectId) pendingNavigationsRef.current.push(projectId)
+
+          if (finishedId) {
+            setCompletedIds(prev => new Set([...prev, finishedId]))
+          }
+
           setInstallingIds(prev => {
             const next = new Set(prev)
             if (finishedId) next.delete(finishedId)
             else next.clear()
-            // Auto-close only when all pending installs are done
             if (next.size === 0) {
+              // All done — navigate to the last completed project then close
+              const lastProjectId = pendingNavigationsRef.current.at(-1)
+              pendingNavigationsRef.current = []
+              if (lastProjectId && onInstalledRef.current) {
+                onInstalledRef.current(lastProjectId)
+              }
               setTimeout(() => onCloseRef.current(), 800)
             }
             return next
           })
-          if (finishedId) {
-            setCompletedIds(prev => new Set([...prev, finishedId]))
-          }
-          const projectId = data.project?.id
-          if (projectId && onInstalledRef.current) {
-            onInstalledRef.current(projectId)
-          }
         } else {
           if (finishedId) {
             setInstallingIds(prev => { const n = new Set(prev); n.delete(finishedId); return n })
@@ -201,15 +209,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
     })
   }
 
-  // Escape to close
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isOpen) return
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  // Escape key intentionally does NOT close this modal — user must use the X button
 
   const validate = (): boolean => {
     const newErrors: { name?: string; description?: string } = {}
@@ -233,8 +233,8 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   if (!isOpen) return <></> // mounted but invisible — keeps onMessage listeners alive
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modalContent} onClick={e => e.stopPropagation()} style={{ maxWidth: '640px' }}>
+    <div className={styles.modalOverlay}>
+      <div className={styles.modalContent} style={{ maxWidth: '640px' }}>
         <div className={styles.modalHeader}>
           <div className={styles.headerTitle}>
             <Sparkles size={20} className={styles.headerIcon} />
