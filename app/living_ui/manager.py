@@ -709,7 +709,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
         logger.info(f"[LIVING_UI] Running {mode} tests for {project.name} ({project_id})...")
 
-        cmd = ['python', str(test_runner), f'--{mode}']
+        cmd = [sys.executable, str(test_runner), f'--{mode}']
         if mode == 'external' and port:
             cmd.extend(['--port', str(port)])
 
@@ -1209,10 +1209,14 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         self, cwd: Path, command: str, step_name: str, timeout: int = 1200
     ) -> dict:
         """Run a single pipeline command. Returns {"status": "success"} or {"status": "error", ...}."""
-        # Replace bare `pip` with the current interpreter's pip so it works on
-        # Windows where `pip` is often absent from PATH.
+        # Replace bare `pip`/`python`/`python3` with the current interpreter so
+        # they work on Windows where these names may be absent from PATH.
         if command.startswith("pip "):
             command = f"{sys.executable} -m pip {command[4:]}"
+        elif command.startswith("python3 "):
+            command = f"{sys.executable} {command[8:]}"
+        elif command.startswith("python "):
+            command = f"{sys.executable} {command[7:]}"
 
         logger.info(f"[LIVING_UI:PIPELINE] [{step_name}] Running: {command}")
 
@@ -1520,7 +1524,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             if os.name == 'nt':
                 # Windows
                 backend_process = subprocess.Popen(
-                    ['python', '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
+                    [sys.executable, '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
                     cwd=str(backend_path),
                     env=backend_env,
                     stdout=subprocess_log_handle,
@@ -1531,7 +1535,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             else:
                 # Linux/Mac
                 backend_process = subprocess.Popen(
-                    ['python', '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
+                    [sys.executable, '-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', str(backend_port)],
                     cwd=str(backend_path),
                     env=backend_env,
                     stdout=subprocess_log_handle,
