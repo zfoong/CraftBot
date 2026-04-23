@@ -266,7 +266,12 @@ class InterfaceAdapter(ABC):
     def _handle_user_message(self, event: UIEvent) -> None:
         """Handle user message event."""
         asyncio.create_task(
-            self._display_chat_message("You", event.data.get("message", ""), "user")
+            self._display_chat_message(
+                "You",
+                event.data.get("message", ""),
+                "user",
+                client_id=event.data.get("client_id"),
+            )
         )
 
     def _handle_agent_message(self, event: UIEvent) -> None:
@@ -477,6 +482,7 @@ class InterfaceAdapter(ABC):
         style: str,
         task_session_id: Optional[str] = None,
         options: Optional[List[ChatMessageOption]] = None,
+        client_id: Optional[str] = None,
     ) -> None:
         """
         Display a chat message.
@@ -487,6 +493,7 @@ class InterfaceAdapter(ABC):
             style: Style identifier
             task_session_id: Optional task session ID for reply feature
             options: Optional list of interactive options/buttons
+            client_id: Optional client-generated UUID for reconciling with optimistic UI
         """
         import time
 
@@ -498,6 +505,7 @@ class InterfaceAdapter(ABC):
                 timestamp=time.time(),
                 task_session_id=task_session_id,
                 options=options,
+                client_id=client_id,
             )
         )
 

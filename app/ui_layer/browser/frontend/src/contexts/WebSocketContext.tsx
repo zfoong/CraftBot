@@ -34,6 +34,15 @@ interface ReplyContext {
   originalMessage: string
 }
 
+// Unique-ish id for client-originating artifacts (WS connection attempts,
+// optimistic chat messages awaiting server echo). Uses crypto.randomUUID
+// when available, falls back to a cheap timestamp+random id on older
+// runtimes without the secure-context requirement.
+const newClientId = (): string =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `cid-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
 interface WebSocketState {
   connected: boolean
   version: string
@@ -197,6 +206,25 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const isConnectingRef = useRef<boolean>(false)
   const reconnectCountRef = useRef<number>(0)
   const maxReconnectAttemptsRef = useRef<number>(10)
+  // Outbox: payloads queued while the socket is not OPEN. Flushed on reconnect.
+  const outboxRef = useRef<string[]>([])
+
+  // Small helper so `sendMessage` and the on-open flush share one policy:
+  // try to send via the current socket; on failure or non-OPEN, queue for
+  // the next successful `onopen`. Keeping this as a closure over the refs
+  // (not a class) is enough — there's no state beyond the outbox itself.
+  const sendOrQueue = useCallback((payloadStr: string) => {
+    const ws = wsRef.current
+    if (ws?.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(payloadStr)
+        return
+      } catch (err) {
+        console.warn('[WS] send threw, queuing payload:', err)
+      }
+    }
+    outboxRef.current.push(payloadStr)
+  }, [])
 
   const connect = useCallback(() => {
     // Prevent duplicate connections (React StrictMode calls useEffect twice)
@@ -209,26 +237,38 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     if (wsRef.current) {
       try {
         wsRef.current.close()
-      } catch (e) {
-        // Connection already closed
+      } catch {
+        // Already closed — ignore.
       }
       wsRef.current = null
     }
 
-    const wsUrl = getWsUrl()
+    // attemptId is sent as a URL query param so the server can correlate a
+    // failed `ws.prepare()` attempt with a specific client-side attempt. The
+    // UUID itself is not logged here — the server logs it on failure.
+    const attemptId = newClientId()
+    const baseUrl = getWsUrl()
+    const wsUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}attempt=${attemptId}`
 
     try {
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
-        console.log('[WS] Connected')
+        console.log('[WS] connected')
         isConnectingRef.current = false
-        reconnectCountRef.current = 0  // Reset reconnect counter on successful connection
+        reconnectCountRef.current = 0
         setState(prev => ({ ...prev, connected: true }))
 
-        // Request initial data after connection
         ws.send(JSON.stringify({ type: 'living_ui_list' }))
+
+        // Drain the outbox (messages sent while the socket was down).
+        // Any send that fails re-enqueues via sendOrQueue for the next open.
+        if (outboxRef.current.length > 0) {
+          const pending = outboxRef.current
+          outboxRef.current = []
+          for (const payloadStr of pending) sendOrQueue(payloadStr)
+        }
       }
 
       ws.onmessage = (event) => {
@@ -236,12 +276,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           const msg: WSMessage = JSON.parse(event.data)
           handleMessage(msg)
         } catch (err) {
-          console.error('[WS] Failed to parse message:', err, 'Raw:', event.data)
+          console.error('[WS] parse failed:', err, 'raw:', event.data)
         }
       }
 
       ws.onclose = (event) => {
-        console.log('[WS] Disconnected, code:', event.code, 'reason:', event.reason, 'wasClean:', event.wasClean, 'reconnectCount:', reconnectCountRef.current)
+        console.log('[WS] disconnected code=' + event.code, 'clean=' + event.wasClean)
         isConnectingRef.current = false
         setState(prev => ({
           ...prev,
@@ -249,21 +289,17 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           status: { ...prev.status, message: 'Disconnected. Reconnecting...' },
         }))
 
-        // Immediate first retry, then exponential backoff
-        let reconnectDelay = 500
-        if (reconnectCountRef.current > 0) {
-          // Exponential backoff after first disconnect
-          reconnectDelay = Math.min(1000 * Math.pow(1.5, reconnectCountRef.current - 1), 30000)
-        }
-        reconnectCountRef.current += 1
+        // Immediate first retry, then exponential backoff.
+        const attempt = reconnectCountRef.current
+        const reconnectDelay = attempt === 0
+          ? 500
+          : Math.min(1000 * Math.pow(1.5, attempt - 1), 30000)
+        reconnectCountRef.current = attempt + 1
 
         if (reconnectCountRef.current <= maxReconnectAttemptsRef.current) {
-          console.log(`[WS] Reconnection attempt ${reconnectCountRef.current}/${maxReconnectAttemptsRef.current} in ${reconnectDelay}ms`)
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            connect()
-          }, reconnectDelay)
+          reconnectTimeoutRef.current = window.setTimeout(connect, reconnectDelay)
         } else {
-          console.error(`[WS] Failed to reconnect after ${maxReconnectAttemptsRef.current} attempts`)
+          console.error(`[WS] giving up after ${maxReconnectAttemptsRef.current} reconnect attempts`)
           setState(prev => ({
             ...prev,
             status: { ...prev.status, message: 'Connection failed - please refresh the page' },
@@ -272,21 +308,18 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
 
       ws.onerror = (err) => {
-        console.error('[WS] Error:', err, '(Error object might be limited on some browsers)')
-        // Note: On some browsers, WebSocket error events don't contain detailed info
-        // The onclose handler will be called after onerror
+        // Browser error events are opaque; onclose fires after this with
+        // the real code/reason, so we just log and let onclose handle retry.
+        console.error('[WS] error:', err)
       }
     } catch (err) {
-      console.error('[WS] Failed to create WebSocket:', err)
+      console.error('[WS] failed to construct WebSocket:', err)
       isConnectingRef.current = false
-      // Retry connection
       reconnectCountRef.current += 1
       const reconnectDelay = Math.min(1000 * Math.pow(1.5, reconnectCountRef.current), 30000)
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        connect()
-      }, reconnectDelay)
+      reconnectTimeoutRef.current = window.setTimeout(connect, reconnectDelay)
     }
-  }, [])
+  }, [sendOrQueue])
 
   const handleMessage = useCallback((msg: WSMessage) => {
     switch (msg.type) {
@@ -324,10 +357,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
       case 'chat_message': {
         const message = msg.data as unknown as ChatMessage
-        setState(prev => ({
-          ...prev,
-          messages: [...prev.messages, message],
-        }))
+        setState(prev => {
+          // If this echo has a clientId that matches a pending optimistic message,
+          // replace it in place (preserving position, flipping pending -> false)
+          // so the bubble appears confirmed rather than duplicated.
+          if (message.clientId) {
+            const idx = prev.messages.findIndex(
+              m => m.pending && m.clientId === message.clientId,
+            )
+            if (idx !== -1) {
+              const next = prev.messages.slice()
+              next[idx] = { ...message, pending: false }
+              return { ...prev, messages: next }
+            }
+          }
+          return { ...prev, messages: [...prev.messages, message] }
+        })
         break
       }
 
@@ -921,7 +966,6 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     connect()
 
     return () => {
-      // Reset connecting flag on cleanup
       isConnectingRef.current = false
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
@@ -965,28 +1009,37 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }))
   }, [state.hasMoreActions, state.loadingOlderActions, state.actions])
 
-  // const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
-  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext, livingUIId?: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      try {
-        const payload = {
-          type: 'message',
-          content,
-          attachments: attachments || [],
-          replyContext: replyContext || null,
-          livingUIId: livingUIId || null,
-        }
-        const payloadStr = JSON.stringify(payload)
-        console.log('[WebSocket] Sending message, payload size:', payloadStr.length, 'bytes, attachments:', attachments?.length || 0)
-        wsRef.current.send(payloadStr)
-        console.log('[WebSocket] Message sent successfully')
-      } catch (error) {
-        console.error('[WebSocket] Error sending message:', error)
-      }
-    } else {
-      console.warn('[WebSocket] Cannot send message - WebSocket not open, state:', wsRef.current?.readyState)
+  const sendMessage = useCallback((
+    content: string,
+    attachments?: PendingAttachment[],
+    replyContext?: ReplyContext,
+    livingUIId?: string,
+  ) => {
+    const clientId = newClientId()
+
+    // Optimistic insert: show the user's bubble immediately at reduced opacity.
+    // The server echo (case 'chat_message') will replace this entry in place by
+    // matching on clientId, flipping `pending` -> false.
+    const optimistic: ChatMessage = {
+      sender: 'You',
+      content,
+      style: 'user',
+      timestamp: Date.now() / 1000,
+      messageId: `pending:${clientId}`,
+      clientId,
+      pending: true,
     }
-  }, [])
+    setState(prev => ({ ...prev, messages: [...prev.messages, optimistic] }))
+
+    sendOrQueue(JSON.stringify({
+      type: 'message',
+      content,
+      attachments: attachments || [],
+      replyContext: replyContext || null,
+      livingUIId: livingUIId || null,
+      clientId,
+    }))
+  }, [sendOrQueue])
 
   const sendCommand = useCallback((command: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
