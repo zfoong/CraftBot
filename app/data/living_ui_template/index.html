@@ -123,12 +123,10 @@
           applyTheme(e.data.theme, e.data.cssVars);
         }
       });
-      // Apply stored theme immediately to avoid flash
-      var stored = null;
-      try { stored = window.parent && window.parent.localStorage && window.parent.localStorage.getItem('craftbot-theme'); } catch(e) {}
-      if (stored === 'light' || stored === 'dark') {
-        document.documentElement.setAttribute('data-theme', stored);
-      }
+      // Apply stored theme immediately to avoid flash — default is always dark
+      var stored = 'dark';
+      try { var s = window.parent && window.parent.localStorage && window.parent.localStorage.getItem('craftbot-theme'); if (s === 'light' || s === 'dark') stored = s; } catch(e) {}
+      document.documentElement.setAttribute('data-theme', stored);
     })();
     </script>
 

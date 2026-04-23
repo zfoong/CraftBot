@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { X, Sparkles, Download, Loader2, Package, FolderInput, Upload } from 'lucide-react'
+import { X, Sparkles, Download, Loader2, Package, FolderInput, Upload, Check } from 'lucide-react'
 import { Button } from './Button'
 import { useSettingsWebSocket } from '../../pages/Settings/useSettingsWebSocket'
 import type { LivingUICreateRequest } from '../../types'
@@ -79,6 +79,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
   const [marketplaceLoading, setMarketplaceLoading] = useState(false)
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null)
   const [installingIds, setInstallingIds] = useState<Set<string>>(new Set())
+  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set())
   const [configuringApp, setConfiguringApp] = useState<MarketplaceApp | null>(null)
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
 
@@ -97,6 +98,7 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
       setDescription('')
       setErrors({})
       setInstallingIds(new Set())
+      setCompletedIds(new Set())
       setConfiguringApp(null)
       setCustomValues({})
       // Fetch marketplace if on that tab
@@ -137,18 +139,31 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
       }),
       onMessage('living_ui_marketplace_install', (data: any) => {
         console.log('[CreateLivingUIModal] received living_ui_marketplace_install:', data)
-        if (data.appId) {
-          setInstallingIds(prev => { const n = new Set(prev); n.delete(data.appId); return n })
-        } else {
-          setInstallingIds(new Set())
-        }
+        const finishedId = data.appId as string | undefined
         if (data.status === 'success') {
-          onCloseRef.current()
+          setInstallingIds(prev => {
+            const next = new Set(prev)
+            if (finishedId) next.delete(finishedId)
+            else next.clear()
+            // Auto-close only when all pending installs are done
+            if (next.size === 0) {
+              setTimeout(() => onCloseRef.current(), 800)
+            }
+            return next
+          })
+          if (finishedId) {
+            setCompletedIds(prev => new Set([...prev, finishedId]))
+          }
           const projectId = data.project?.id
           if (projectId && onInstalledRef.current) {
             onInstalledRef.current(projectId)
           }
         } else {
+          if (finishedId) {
+            setInstallingIds(prev => { const n = new Set(prev); n.delete(finishedId); return n })
+          } else {
+            setInstallingIds(new Set())
+          }
           setMarketplaceError(data.error || 'Installation failed')
         }
       }),
@@ -214,7 +229,9 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
     onSubmit({ name: name.trim(), description: description.trim() })
   }
 
-  if (!isOpen) return null
+  // Fully unmount when closed and no installs pending; stay mounted (invisible) while installs run
+  if (!isOpen && installingIds.size === 0) return null
+  if (!isOpen) return <></> // mounted but invisible — keeps onMessage listeners alive
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -307,12 +324,16 @@ export function CreateLivingUIModal({ isOpen, onClose, onSubmit, onInstalled }: 
                     </div>
                     <Button
                       size="sm"
-                      variant="primary"
-                      icon={installingIds.has(app.id) ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
-                      onClick={() => handleAddClick(app)}
-                      disabled={installingIds.has(app.id)}
+                      variant={completedIds.has(app.id) ? 'secondary' : 'primary'}
+                      icon={
+                        installingIds.has(app.id) ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                        : completedIds.has(app.id) ? <Check size={14} />
+                        : <Download size={14} />
+                      }
+                      onClick={() => !completedIds.has(app.id) && handleAddClick(app)}
+                      disabled={installingIds.has(app.id) || completedIds.has(app.id)}
                     >
-                      {installingIds.has(app.id) ? 'Installing...' : 'Add'}
+                      {installingIds.has(app.id) ? 'Installing...' : completedIds.has(app.id) ? 'Installed' : 'Add'}
                     </Button>
                   </div>
                 ))}

@@ -835,6 +835,9 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
 
         logger.info(f"[LIVING_UI:PIPELINE] Starting launch pipeline for {project.name} ({project_id})")
 
+        # Ensure index.html has the CraftBot theme sync listener (self-healing for older installs)
+        self._patch_theme_listener(project_path)
+
         # Check for single-process mode (external apps)
         app_cfg = pipeline.get('app')
         if app_cfg:
@@ -1390,6 +1393,46 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                 if filepath.stat().st_mtime > last_launch_time:
                     return True
         return False
+
+    @staticmethod
+    def _patch_theme_listener(project_path: Path) -> None:
+        """Inject CraftBot theme-sync listener into index.html if not already present."""
+        index_html = project_path / 'index.html'
+        if not index_html.exists():
+            return
+        try:
+            content = index_html.read_text(encoding='utf-8')
+            if 'craftbot-theme-request' in content:
+                return  # Already patched
+            snippet = (
+                '\n    <!-- CraftBot theme sync -->\n'
+                '    <script>\n'
+                '    (function(){\n'
+                '      function applyTheme(t,v){\n'
+                '        document.documentElement.setAttribute("data-theme",t||"dark");\n'
+                '        if(v&&typeof v==="object"){\n'
+                '          var el=document.getElementById("craftbot-theme-vars")||document.createElement("style");\n'
+                '          el.id="craftbot-theme-vars";\n'
+                '          el.textContent=":root{"+Object.keys(v).map(function(k){return k+":"+v[k];}).join(";")+"}";'
+                '\n          if(!document.getElementById("craftbot-theme-vars"))document.head.appendChild(el);\n'
+                '        }\n'
+                '      }\n'
+                '      window.addEventListener("load",function(){\n'
+                '        try{window.parent.postMessage({type:"craftbot-theme-request"},"*");}catch(e){}\n'
+                '      });\n'
+                '      window.addEventListener("message",function(e){\n'
+                '        if(e.data&&e.data.type==="craftbot-theme")applyTheme(e.data.theme,e.data.cssVars);\n'
+                '      });\n'
+                '      var _t="dark";try{var _s=window.parent.localStorage.getItem("craftbot-theme");'
+                'if(_s==="light"||_s==="dark")_t=_s;}catch(e){}document.documentElement.setAttribute("data-theme",_t);\n'
+                '    })();\n'
+                '    </script>\n'
+            )
+            patched = content.replace('</body>', snippet + '</body>', 1)
+            index_html.write_text(patched, encoding='utf-8')
+            logger.info(f"[LIVING_UI] Patched theme listener into {index_html}")
+        except Exception as e:
+            logger.warning(f"[LIVING_UI] Could not patch index.html: {e}")
 
     @staticmethod
     def _save_launch_timestamp(project_path: Path) -> None:
