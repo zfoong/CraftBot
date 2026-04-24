@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+from agent_core.utils.logger import logger
 from app.ui_layer.events.event_bus import EventBus
 from app.ui_layer.events.event_types import UIEvent, UIEventType
 from app.ui_layer.events.transformer import EventTransformer
@@ -501,32 +502,34 @@ class UIController:
 
     async def _consume_triggers(self) -> None:
         """Consume triggers and run agent reactions."""
-        while self._running and self._agent.is_running:
-            try:
-                trigger = await asyncio.wait_for(
-                    self._agent.triggers.get(), timeout=0.5
-                )
-                # Run react in a thread to avoid blocking
-                await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    self._run_react_in_thread,
-                    trigger,
-                )
-            except asyncio.TimeoutError:
-                # No trigger available, continue
-                pass
-            except Exception:
-                # Log but don't crash
-                await asyncio.sleep(0.1)
-
-    def _run_react_in_thread(self, trigger) -> None:
-        """Run agent.react() in an isolated thread with its own event loop."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        logger.info("[CONSUMER] Trigger consumer started")
         try:
-            loop.run_until_complete(self._agent.react(trigger))
+            while self._running and self._agent.is_running:
+                try:
+                    trigger = await self._agent.triggers.get()
+                    await self._agent.react(trigger)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(
+                        f"[CONSUMER] Exception during trigger processing: {e!r}",
+                        exc_info=True,
+                    )
+                    await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            logger.info("[CONSUMER] Trigger consumer cancelled")
+            raise
+        except BaseException as e:
+            logger.error(
+                f"[CONSUMER] Trigger consumer died with unhandled {type(e).__name__}: {e!r}",
+                exc_info=True,
+            )
+            raise
         finally:
-            loop.close()
+            logger.info(
+                f"[CONSUMER] Trigger consumer exiting "
+                f"(running={self._running}, agent_running={self._agent.is_running})"
+            )
 
     # ─────────────────────────────────────────────────────────────────────
     # Command Registration
@@ -584,7 +587,6 @@ class UIController:
 
         try:
             from agent_core.core.impl.skill.manager import skill_manager
-            from agent_core.utils.logger import logger
 
             for skill in skill_manager.get_enabled_skills():
                 cmd_name = f"/{skill.name}"
