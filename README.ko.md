@@ -52,6 +52,7 @@ CraftBot이 당신의 명령을 기다리고 있습니다. 지금 나만의 Craf
 - **Bring Your Own Key (BYOK)** — OpenAI, Google Gemini, Anthropic Claude, BytePlus, 로컬 Ollama 모델을 지원하는 유연한 LLM 제공자 시스템. 제공자 간 손쉬운 전환이 가능합니다.
 - **메모리 시스템** — 하루 동안 발생한 사건들을 자정에 정제하고 통합합니다.
 - **능동형 에이전트(Proactive Agent)** — 사용자의 선호도, 습관, 인생 목표를 학습합니다. 그리고 (물론 승인을 받은 뒤) 계획을 수행하고 작업을 시작하여 삶을 개선하도록 도와줍니다.
+- **Living UI** — CraftBot 안에서 동작하는 커스텀 앱을 만들고, 가져오고, 진화시킵니다. 에이전트는 UI의 상태를 항상 인식하며, 그 데이터를 직접 읽고, 쓰고, 조작할 수 있습니다.
 - **외부 도구 통합** — Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord, Telegram과 연결됩니다(계속 추가 예정!). 내장된 자격 증명 및 OAuth가 지원됩니다.
 - **MCP** — 외부 도구 및 서비스로 에이전트 기능을 확장하기 위한 Model Context Protocol 통합.
 - **스킬(Skills)** — 작업 계획, 리서치, 코드 리뷰, Git 작업 등 내장 스킬을 갖춘 확장형 스킬 프레임워크.
@@ -64,6 +65,55 @@ CraftBot이 당신의 명령을 기다리고 있습니다. 지금 나만의 Craf
     <img src="assets/craftbot_readme_features.png" alt="CraftBot Banner" width="1280"/>
 	<img src="assets/craftbot_features_custom.png" alt="CraftBot Banner" width="1280"/>
 </div>
+
+---
+
+## 🧬 Living UI
+
+**Living UI는 당신의 필요에 따라 진화하는 시스템/앱/대시보드입니다.**
+
+AI 코파일럿이 내장된 칸반 보드가 필요한가요? 당신의 워크플로에 딱 맞게 만든 맞춤형 CRM은요?
+CraftBot이 읽고 조작할 수 있는 회사 대시보드는요?
+Living UI로 실행하세요 — CraftBot과 함께 작동하며, 당신의 필요가 변할수록 함께 성장합니다.
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### Living UI를 만드는 세 가지 방법
+
+1. **처음부터 만들기.** 원하는 것을 일상 언어로 설명하세요. CraftBot이
+   데이터 모델, 백엔드 API, React UI를 구성하고, 구조화된 설계 과정을
+   통해 당신과 함께 반복 개선합니다.
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="1280"/>
+</div>
+
+2. **마켓플레이스에서 설치하기.** [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace)에서 커뮤니티가 만든 Living UI를 둘러보세요.
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="1280"/>
+</div>
+
+3. **기존 프로젝트 가져오기.** CraftBot에게 Go, Node.js, Python, Rust 또는 정적 소스 코드나
+   GitHub 저장소를 지정하세요. 런타임을 감지하고, 헬스 체크를 구성한 후,
+   Living UI로 감쌉니다.
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="1280"/>
+</div>
+
+### 계속 진화합니다
+
+Living UI는 결코 "완성"되지 않습니다. 필요가 커질수록 에이전트에게 기능 추가,
+뷰 재설계, 새로운 데이터 연결을 요청할 수 있습니다.
+
+### 루프 안에 있는 CraftBot
+
+CraftBot은 모든 Living UI에 내장되어 있으며, **그 상태를 항상 인식합니다**.
+현재 DOM과 폼 값을 읽고, REST API를 통해 앱 데이터를 조회하며,
+당신을 대신해 작업을 실행할 수 있습니다.
 
 ---
 

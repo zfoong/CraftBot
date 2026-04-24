@@ -52,6 +52,7 @@ CraftBot 静候你的指令，现在就部署属于你的 CraftBot 吧。
 - **自带密钥 (BYOK)** — 灵活的 LLM 提供商系统，支持 OpenAI、Google Gemini、Anthropic Claude、BytePlus 和本地 Ollama 模型。可轻松切换提供商。
 - **记忆系统** — 在午夜整理并汇总一天中发生的事件。
 - **主动式代理** — 学习你的偏好、习惯和人生目标，然后进行规划并启动任务（当然需要你的批准）来帮助你改善生活。
+- **Living UI** — 在 CraftBot 中构建、导入或演进自定义应用。代理始终感知 UI 的状态，并可直接读取、写入和操作其数据。
 - **外部工具集成** — 连接 Google Workspace、Slack、Notion、Zoom、LinkedIn、Discord 和 Telegram（更多即将推出！），支持嵌入式凭据和 OAuth。
 - **MCP** — 模型上下文协议（Model Context Protocol）集成，通过外部工具和服务扩展代理能力。
 - **技能系统** — 可扩展的技能框架，内置任务规划、研究、代码审查、Git 操作等技能。
@@ -64,6 +65,54 @@ CraftBot 静候你的指令，现在就部署属于你的 CraftBot 吧。
     <img src="assets/craftbot_readme_features.png" alt="CraftBot Banner" width="1280"/>
 	<img src="assets/craftbot_features_custom.png" alt="CraftBot Banner" width="1280"/>
 </div>
+
+---
+
+## 🧬 Living UI
+
+**Living UI 是随你需求而进化的系统/应用/仪表盘。**
+
+需要一个内置 AI 副驾的看板？量身定制符合你工作流程的 CRM？
+一个 CraftBot 能读取并驱动的公司仪表盘？
+将它作为 Living UI 启动——它与 CraftBot 并行运行，并随着你的需求变化而成长。
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### 创建 Living UI 的三种方式
+
+1. **从零开始构建。** 用自然语言描述你想要的。CraftBot 会搭建
+   数据模型、后端 API 和 React UI，并通过结构化的设计流程
+   与你一起迭代。
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="1280"/>
+</div>
+
+2. **从市场安装。** 从 [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace) 浏览社区构建的 Living UI。
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="1280"/>
+</div>
+
+3. **导入已有项目。** 将 CraftBot 指向 Go、Node.js、Python、Rust 或静态源代码
+   或 GitHub 仓库。它会检测运行时、配置健康检查，并将其封装为 Living UI。
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="1280"/>
+</div>
+
+### 持续进化
+
+Living UI 永远不会"完成"。随着你的需求增长，你可以让代理添加功能、
+重新设计视图或将其接入新的数据源。
+
+### CraftBot 融入其中
+
+CraftBot 嵌入在每个 Living UI 中，并**感知其状态**：
+它可以读取当前的 DOM 和表单值，通过 REST API 查询应用数据，
+并代表你触发操作。
 
 ---
 

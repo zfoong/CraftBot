@@ -52,6 +52,7 @@ CraftBotはあなたの命令を待っています。今すぐあなた専用の
 - **Bring Your Own Key (BYOK)** — OpenAI、Google Gemini、Anthropic Claude、BytePlus、ローカルOllamaモデルをサポートする柔軟なLLMプロバイダーシステム。プロバイダー間の切り替えが簡単です。
 - **メモリシステム** — 一日を通して起きたイベントを深夜に整理・統合します。
 - **プロアクティブエージェント** — あなたの好み、習慣、人生の目標を学習し、計画を立て、タスクを開始して（もちろん承認付きで）あなたの生活をより良くします。
+- **Living UI** — CraftBotの中で動作するカスタムアプリを構築、インポート、または進化させます。エージェントはUIの状態を常に把握し、そのデータを直接読み取り、書き込み、操作できます。
 - **外部ツール統合** — 埋め込みクレデンシャルとOAuthサポートにより、Google Workspace、Slack、Notion、Zoom、LinkedIn、Discord、Telegramに接続（今後さらに追加予定！）。
 - **MCP** — 外部ツールやサービスでエージェント機能を拡張するためのModel Context Protocol統合。
 - **スキル** — タスク計画、リサーチ、コードレビュー、Git操作などの組み込みスキルを含む拡張可能なスキルフレームワーク。
@@ -64,6 +65,55 @@ CraftBotはあなたの命令を待っています。今すぐあなた専用の
     <img src="assets/craftbot_readme_features.png" alt="CraftBot Banner" width="1280"/>
 	<img src="assets/craftbot_features_custom.png" alt="CraftBot Banner" width="1280"/>
 </div>
+
+---
+
+## 🧬 Living UI
+
+**Living UIは、あなたのニーズに合わせて進化するシステム/アプリ/ダッシュボードです。**
+
+AIコパイロットが組み込まれたカンバンボードが必要ですか？あなたのワークフローに合わせて形作られたカスタムCRMは？
+CraftBotが読み取って操作できる会社のダッシュボードは？
+Living UIとして立ち上げれば、CraftBotと並んで動作し、あなたのニーズの変化に合わせて成長します。
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### Living UIを作成する3つの方法
+
+1. **ゼロから構築する。** 望むものを自然な言葉で説明してください。CraftBotが
+   データモデル、バックエンドAPI、React UIをスキャフォールドし、構造化された
+   設計プロセスを通じてあなたと共に反復します。
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="1280"/>
+</div>
+
+2. **マーケットプレイスからインストールする。** [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace)からコミュニティが作成したLiving UIを閲覧できます。
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="1280"/>
+</div>
+
+3. **既存のプロジェクトをインポートする。** Go、Node.js、Python、Rust、または静的なソースコード
+   やGitHubリポジトリをCraftBotに指定してください。ランタイムを検出し、ヘルスチェックを構成し、
+   Living UIとしてラップします。
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="1280"/>
+</div>
+
+### 進化し続ける
+
+Living UIは決して「完成」することはありません。あなたのニーズが成長するにつれて、
+機能の追加、ビューの再設計、新しいデータへの接続をエージェントに依頼できます。
+
+### CraftBotがループの中に
+
+CraftBotはすべてのLiving UIに埋め込まれ、**その状態を常に認識しています**。
+現在のDOMとフォームの値を読み取り、REST APIを介してアプリデータを照会し、
+あなたの代わりにアクションをトリガーできます。
 
 ---
 

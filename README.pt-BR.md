@@ -52,6 +52,7 @@ O CraftBot aguarda suas ordens. Configure o seu agora mesmo.
 - **Bring Your Own Key (BYOK)** — Sistema flexível de provedores de LLM com suporte a OpenAI, Google Gemini, Anthropic Claude, BytePlus e modelos locais do Ollama. Troque de provedor com facilidade.
 - **Sistema de Memória** — Destila e consolida os eventos ocorridos durante o dia à meia-noite.
 - **Agente Proativo** — Aprende suas preferências, hábitos e metas de vida. Depois, planeja e inicia tarefas (com sua aprovação, claro) para ajudá-lo a evoluir.
+- **Living UI** — Construa, importe ou evolua aplicativos personalizados que vivem dentro do CraftBot. O agente permanece ciente do estado da UI e pode ler, escrever e agir sobre seus dados diretamente.
 - **Integração com ferramentas externas** — Conecte-se a Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord e Telegram (mais a caminho!) com credenciais embutidas e suporte a OAuth.
 - **MCP** — Integração com o Model Context Protocol para ampliar as capacidades do agente com ferramentas e serviços externos.
 - **Skills** — Framework de skills extensível com skills embutidas para planejamento de tarefas, pesquisa, revisão de código, operações de git e muito mais.
@@ -64,6 +65,57 @@ O CraftBot aguarda suas ordens. Configure o seu agora mesmo.
     <img src="assets/craftbot_readme_features.png" alt="CraftBot Banner" width="1280"/>
 	<img src="assets/craftbot_features_custom.png" alt="CraftBot Banner" width="1280"/>
 </div>
+
+---
+
+## 🧬 Living UI
+
+**Living UI é um sistema/app/dashboard que evolui com suas necessidades.**
+
+Precisa de um quadro kanban com um copiloto de IA embutido? Um CRM personalizado
+moldado exatamente para o seu fluxo de trabalho? Um dashboard corporativo que o
+CraftBot possa ler e operar por você? Coloque-o no ar como uma Living UI — ela
+roda junto ao CraftBot e cresce conforme suas necessidades mudam.
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### Três formas de criar uma Living UI
+
+1. **Construir do zero.** Descreva o que você quer em linguagem natural. O CraftBot
+   monta o modelo de dados, a API do backend e a UI em React, e itera com você
+   por meio de um processo de design estruturado.
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="1280"/>
+</div>
+
+2. **Instalar do marketplace.** Explore Living UIs criadas pela comunidade em [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="1280"/>
+</div>
+
+3. **Importar um projeto existente.** Aponte o CraftBot para um código-fonte ou
+   repositório do GitHub em Go, Node.js, Python, Rust ou estático. Ele detecta o
+   runtime, configura os health checks e o empacota como uma Living UI.
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="1280"/>
+</div>
+
+### Continua evoluindo
+
+Uma Living UI nunca está "pronta". Peça ao agente para adicionar funcionalidades,
+redesenhar uma visualização ou conectá-la a novos dados conforme suas necessidades
+crescem.
+
+### CraftBot dentro do loop
+
+O CraftBot está integrado a cada Living UI e é **consciente do seu estado**:
+ele pode ler o DOM atual e os valores de formulário, consultar dados do app
+pela API REST, e disparar ações em seu nome.
 
 ---
 
