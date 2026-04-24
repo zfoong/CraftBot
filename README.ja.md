@@ -139,13 +139,13 @@ Living UIとして立ち上げれば、CraftBotと並んで動作し、あなた
    設計プロセスを通じてあなたと共に反復します。
 
 <div align="center">
-    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="640"/>
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="448"/>
 </div>
 
 2. **マーケットプレイスからインストールする。** [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace)からコミュニティが作成したLiving UIを閲覧できます。
 
 <div align="center">
-    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="640"/>
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="448"/>
 </div>
 
 3. **既存のプロジェクトをインポートする。** Go、Node.js、Python、Rust、または静的なソースコード
@@ -153,15 +153,13 @@ Living UIとして立ち上げれば、CraftBotと並んで動作し、あなた
    Living UIとしてラップします。
 
 <div align="center">
-    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="640"/>
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="448"/>
 </div>
 
-### 進化し続ける
+### CraftBotをループの中に据えて進化し続ける
 
 Living UIは決して「完成」することはありません。あなたのニーズが成長するにつれて、
 機能の追加、ビューの再設計、新しいデータへの接続をエージェントに依頼できます。
-
-### CraftBotがループの中に
 
 CraftBotはすべてのLiving UIに埋め込まれ、**その状態を常に認識しています**。
 現在のDOMとフォームの値を読み取り、REST APIを介してアプリデータを照会し、

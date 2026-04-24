@@ -140,13 +140,13 @@ de CraftBot et grandit au rythme de vos besoins.
    et itère avec vous à travers un processus de conception structuré.
 
 <div align="center">
-    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="640"/>
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="448"/>
 </div>
 
 2. **Installer depuis la marketplace.** Parcourez les Living UIs créées par la communauté sur [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
 
 <div align="center">
-    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="640"/>
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="448"/>
 </div>
 
 3. **Importer un projet existant.** Pointez CraftBot vers un code source ou un dépôt
@@ -154,16 +154,14 @@ de CraftBot et grandit au rythme de vos besoins.
    les vérifications de santé et l'encapsule en Living UI.
 
 <div align="center">
-    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="640"/>
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="448"/>
 </div>
 
-### Continue d'évoluer
+### Continue d'évoluer avec CraftBot dans la boucle
 
 Une Living UI n'est jamais « terminée ». Demandez à l'agent d'ajouter des
 fonctionnalités, de repenser une vue ou de la brancher à de nouvelles données
 à mesure que vos besoins évoluent.
-
-### CraftBot dans la boucle
 
 CraftBot est intégré à chaque Living UI et **conscient de son état** :
 il peut lire le DOM courant et les valeurs des formulaires, interroger les

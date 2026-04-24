@@ -140,13 +140,13 @@ neben CraftBot und wächst mit deinen Anforderungen.
    in einem strukturierten Designprozess.
 
 <div align="center">
-    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="640"/>
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="448"/>
 </div>
 
 2. **Aus dem Marketplace installieren.** Stöbere durch Community-erstellte Living UIs auf [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
 
 <div align="center">
-    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="640"/>
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="448"/>
 </div>
 
 3. **Bestehendes Projekt importieren.** Verweise CraftBot auf Quellcode oder ein
@@ -155,16 +155,14 @@ neben CraftBot und wächst mit deinen Anforderungen.
    Living UI eingebunden.
 
 <div align="center">
-    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="640"/>
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="448"/>
 </div>
 
-### Entwickelt sich ständig weiter
+### Entwickelt sich weiter — mit CraftBot im Loop
 
 Eine Living UI ist nie „fertig". Bitte den Agent, Funktionen hinzuzufügen, eine
 Ansicht neu zu gestalten oder sie an neue Daten anzubinden, sobald deine
 Anforderungen wachsen.
-
-### CraftBot im Loop
 
 CraftBot ist in jeder Living UI eingebettet und **kennt deren Zustand**:
 Er kann das aktuelle DOM und Formularwerte lesen, App-Daten über die
