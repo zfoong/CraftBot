@@ -409,6 +409,17 @@
   background: var(--color-gray-300);
 }
 
+/* Transparent full-screen overlay active only during resize. Sits above the
+   floating Living UI iframe (z-index 10 in iframePool) so the iframe stops
+   receiving pointer events mid-drag. */
+.resizeOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  cursor: col-resize;
+  background: transparent;
+}
+
 /* Chat Panel */
 .chatPanel {
   display: flex;
@@ -652,5 +663,9 @@
 
   .iframeContainer {
     min-height: 0;
+  }
+
+  .resizeOverlay {
+    cursor: row-resize;
   }
 }

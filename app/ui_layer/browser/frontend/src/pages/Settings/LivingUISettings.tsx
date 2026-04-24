@@ -113,6 +113,7 @@ export function LivingUISettings() {
   const [globalSaveStatus, setGlobalSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [newRule, setNewRule] = useState('')
   const [rulesExpanded, setRulesExpanded] = useState(true)
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [lineChanges, setLineChanges] = useState<Map<number, string>>(new Map())
   const globalConfigRef = useRef(globalConfig)
   globalConfigRef.current = globalConfig
@@ -233,6 +234,15 @@ export function LivingUISettings() {
   const handleStop = (projectId: string) => {
     setActionInProgress(projectId)
     send('living_ui_project_action', { projectId, action: 'stop' })
+  }
+
+  const toggleProject = (id: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   const handleDelete = (project: LivingUIProject) => {
@@ -571,6 +581,8 @@ export function LivingUISettings() {
                 key={project.id}
                 project={project}
                 actionInProgress={actionInProgress === project.id}
+                expanded={expandedProjects.has(project.id)}
+                onToggleExpand={() => toggleProject(project.id)}
                 onLaunch={() => handleLaunch(project.id)}
                 onStop={() => handleStop(project.id)}
                 onDelete={() => handleDelete(project)}
@@ -596,6 +608,8 @@ export function LivingUISettings() {
 interface ProjectCardProps {
   project: LivingUIProject
   actionInProgress: boolean
+  expanded: boolean
+  onToggleExpand: () => void
   onLaunch: () => void
   onStop: () => void
   onDelete: () => void
@@ -641,6 +655,8 @@ function isActiveStatus(status: string): boolean {
 function ProjectCard({
   project,
   actionInProgress,
+  expanded,
+  onToggleExpand,
   onLaunch,
   onStop,
   onDelete,
@@ -715,15 +731,36 @@ function ProjectCard({
         overflow: 'hidden',
       }}
     >
-      {/* Zone 1 — Header */}
+      {/* Zone 1 — Header (clickable to expand/collapse) */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 'var(--space-3)',
           padding: 'var(--space-3)',
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={onToggleExpand}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onToggleExpand()
+          }
         }}
       >
+        <ChevronRight
+          size={14}
+          style={{
+            color: 'var(--text-muted)',
+            transition: 'transform 0.15s',
+            transform: expanded ? 'rotate(90deg)' : 'none',
+            flexShrink: 0,
+          }}
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
@@ -767,6 +804,7 @@ function ProjectCard({
             gap: 'var(--space-1)',
             flexShrink: 0,
           }}
+          onClick={e => e.stopPropagation()}
         >
           {isRunning ? (
             <Button
@@ -806,6 +844,8 @@ function ProjectCard({
           />
         </div>
       </div>
+
+      {expanded && <>
 
       {/* Zone 2 — Runtime info (inset, aligned key/value rows) */}
       <div
@@ -912,6 +952,8 @@ function ProjectCard({
           <ShareSection projectId={project.id} port={project.port} send={send} onMessage={onMessage} />
         </div>
       )}
+
+      </>}
     </div>
   )
 }

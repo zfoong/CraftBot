@@ -318,6 +318,10 @@ export function LivingUIPage() {
         )}
       </div>
 
+      {/* Resize overlay — covers the Living UI iframe while dragging so the
+          iframe doesn't swallow pointer events and abort the drag. */}
+      {isResizing && <div className={styles.resizeOverlay} aria-hidden="true" />}
+
       {/* Delete Confirmation Modal */}
       <ConfirmModal
         isOpen={showDeleteModal}
