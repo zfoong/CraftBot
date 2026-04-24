@@ -1269,6 +1269,15 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
         project: "LivingUIProject" = None, extra_env: dict = None,
     ) -> subprocess.Popen:
         """Start a background process with output redirected to a log file."""
+        # Replace bare `pip`/`python`/`python3` with the current interpreter so
+        # they work on Windows where these names may be absent from PATH.
+        if command.startswith("pip "):
+            command = f"{sys.executable} -m pip {command[4:]}"
+        elif command.startswith("python3 "):
+            command = f"{sys.executable} {command[8:]}"
+        elif command.startswith("python "):
+            command = f"{sys.executable} {command[7:]}"
+
         log_file.parent.mkdir(parents=True, exist_ok=True)
         log_handle = open(log_file, 'a', encoding='utf-8')
         log_handle.write(f"\n{'='*60}\n[{datetime.now().isoformat()}] Starting: {command}\n{'='*60}\n")

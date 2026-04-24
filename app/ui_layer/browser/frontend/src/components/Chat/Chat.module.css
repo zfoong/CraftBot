@@ -62,6 +62,12 @@
   background: var(--bg-secondary);
 }
 
+/* Send button (last direct child) — match textarea min-height so the bottom
+   row stays visually aligned with the input. */
+.inputArea > button:last-child {
+  height: 36px;
+}
+
 .input {
   display: block;
   width: 100%;
