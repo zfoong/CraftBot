@@ -68,58 +68,6 @@ CraftBot wartet auf deine Befehle. Richte jetzt deinen eigenen CraftBot ein.
 
 ---
 
-## 🧬 Living UI
-
-**Living UI ist ein System/App/Dashboard, das mit deinen Anforderungen wächst.**
-
-Brauchst du ein Kanban-Board mit eingebautem KI-Copiloten? Ein individuelles CRM,
-das exakt zu deinem Workflow passt? Ein Unternehmens-Dashboard, das CraftBot
-lesen und für dich steuern kann? Bring es als Living UI an den Start — es läuft
-neben CraftBot und wächst mit deinen Anforderungen.
-
-<div align="center">
-    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
-</div>
-
-### Drei Wege, eine Living UI zu erstellen
-
-1. **Von Grund auf bauen.** Beschreibe in natürlicher Sprache, was du möchtest.
-   CraftBot legt Datenmodell, Backend-API und React-UI an und iteriert mit dir
-   in einem strukturierten Designprozess.
-
-<div align="center">
-    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="1280"/>
-</div>
-
-2. **Aus dem Marketplace installieren.** Stöbere durch Community-erstellte Living UIs auf [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
-
-<div align="center">
-    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="1280"/>
-</div>
-
-3. **Bestehendes Projekt importieren.** Verweise CraftBot auf Quellcode oder ein
-   GitHub-Repository in Go, Node.js, Python, Rust oder statischem Web. Die Runtime
-   wird erkannt, Health-Checks werden eingerichtet, und das Projekt wird als
-   Living UI eingebunden.
-
-<div align="center">
-    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="1280"/>
-</div>
-
-### Entwickelt sich ständig weiter
-
-Eine Living UI ist nie „fertig". Bitte den Agent, Funktionen hinzuzufügen, eine
-Ansicht neu zu gestalten oder sie an neue Daten anzubinden, sobald deine
-Anforderungen wachsen.
-
-### CraftBot im Loop
-
-CraftBot ist in jeder Living UI eingebettet und **kennt deren Zustand**:
-Er kann das aktuelle DOM und Formularwerte lesen, App-Daten über die
-REST-API abfragen und in deinem Namen Aktionen auslösen.
-
----
-
 
 ## 🧰 Erste Schritte
 
@@ -169,6 +117,58 @@ CraftBot unterstützt mehrere UI-Modi. Wähle nach deinen Vorlieben:
 | **CLI** | `python run.py --cli` | Keine | Kommandozeile, leichtgewichtig |
 
 Der **Browser-Modus** ist Standard und wird empfohlen. Ohne Node.js gibt dir das Installationsprogramm eine Anleitung – alternativ kannst du den **TUI-Modus** nutzen.
+
+---
+
+## 🧬 Living UI
+
+**Living UI ist ein System/App/Dashboard, das mit deinen Anforderungen wächst.**
+
+Brauchst du ein Kanban-Board mit eingebautem KI-Copiloten? Ein individuelles CRM,
+das exakt zu deinem Workflow passt? Ein Unternehmens-Dashboard, das CraftBot
+lesen und für dich steuern kann? Bring es als Living UI an den Start — es läuft
+neben CraftBot und wächst mit deinen Anforderungen.
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### Drei Wege, eine Living UI zu erstellen
+
+1. **Von Grund auf bauen.** Beschreibe in natürlicher Sprache, was du möchtest.
+   CraftBot legt Datenmodell, Backend-API und React-UI an und iteriert mit dir
+   in einem strukturierten Designprozess.
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="640"/>
+</div>
+
+2. **Aus dem Marketplace installieren.** Stöbere durch Community-erstellte Living UIs auf [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="640"/>
+</div>
+
+3. **Bestehendes Projekt importieren.** Verweise CraftBot auf Quellcode oder ein
+   GitHub-Repository in Go, Node.js, Python, Rust oder statischem Web. Die Runtime
+   wird erkannt, Health-Checks werden eingerichtet, und das Projekt wird als
+   Living UI eingebunden.
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="640"/>
+</div>
+
+### Entwickelt sich ständig weiter
+
+Eine Living UI ist nie „fertig". Bitte den Agent, Funktionen hinzuzufügen, eine
+Ansicht neu zu gestalten oder sie an neue Daten anzubinden, sobald deine
+Anforderungen wachsen.
+
+### CraftBot im Loop
+
+CraftBot ist in jeder Living UI eingebettet und **kennt deren Zustand**:
+Er kann das aktuelle DOM und Formularwerte lesen, App-Daten über die
+REST-API abfragen und in deinem Namen Aktionen auslösen.
 
 ---
 

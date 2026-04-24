@@ -68,54 +68,6 @@ CraftBot awaits your orders. Set up your own CraftBot now.
 
 ---
 
-## 🧬 Living UI
-
-**Living UI is a system/app/dashboard that evolve with your needs.**
-
-Need a kanban board with an AI co-pilot built in? A custom CRM shaped exactly
-like your workflow? A company dashboard that CraftBot can read and drive on
-your behalf? Spin it up as a Living UI that runs alongside CraftBot and grows as your needs change.
-
-<div align="center">
-    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
-</div>
-
-### Three ways to create a Living UI
-
-1. **Build from scratch.** Describe what you want in plain language. CraftBot
-   scaffolds the data model, backend API, and React UI, then iterates with
-   you through a structured design process.
-
-<div align="center">
-    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="1280"/>
-</div>
-
-2. **Install from the marketplace.** Browse community-built Living UIs from [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
-
-<div align="center">
-    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="1280"/>
-</div>
-
-3. **Import an existing project.** Point CraftBot at a Go, Node.js, Python,
-   Rust, or static source code or github repo. It detects the runtime, configures health checks, and wraps it as a Living UI.
-
-<div align="center">
-    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="1280"/>
-</div>
-
-### Keeps evolving
-
-A Living UI is never "finished." Ask the agent to add features, redesign
-a view, or hook it into new data as your needs grow.
-
-### CraftBot inside the loop
-
-CraftBot is embedded in every Living UI and **context-aware of its state**:
-it can read the current DOM and form values, query app data through the
-REST API, and trigger actions on your behalf.
-
----
-
 
 ## 🧰 Getting Started
 
@@ -165,6 +117,54 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 | **CLI** | `python run.py --cli` | None | Command-line, lightweight |
 
 **Browser mode** is the default and recommended. If you don't have Node.js, the installer will provide installation instructions or you can use **TUI mode** instead.
+
+---
+
+## 🧬 Living UI
+
+**Living UI is a system/app/dashboard that evolve with your needs.**
+
+Need a kanban board with an AI co-pilot built in? A custom CRM shaped exactly
+like your workflow? A company dashboard that CraftBot can read and drive on
+your behalf? Spin it up as a Living UI that runs alongside CraftBot and grows as your needs change.
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### Three ways to create a Living UI
+
+1. **Build from scratch.** Describe what you want in plain language. CraftBot
+   scaffolds the data model, backend API, and React UI, then iterates with
+   you through a structured design process.
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="640"/>
+</div>
+
+2. **Install from the marketplace.** Browse community-built Living UIs from [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="640"/>
+</div>
+
+3. **Import an existing project.** Point CraftBot at a Go, Node.js, Python,
+   Rust, or static source code or github repo. It detects the runtime, configures health checks, and wraps it as a Living UI.
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="640"/>
+</div>
+
+### Keeps evolving
+
+A Living UI is never "finished." Ask the agent to add features, redesign
+a view, or hook it into new data as your needs grow.
+
+### CraftBot inside the loop
+
+CraftBot is embedded in every Living UI and **context-aware of its state**:
+it can read the current DOM and form values, query app data through the
+REST API, and trigger actions on your behalf.
 
 ---
 

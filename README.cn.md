@@ -68,54 +68,6 @@ CraftBot 静候你的指令，现在就部署属于你的 CraftBot 吧。
 
 ---
 
-## 🧬 Living UI
-
-**Living UI 是随你需求而进化的系统/应用/仪表盘。**
-
-需要一个内置 AI 副驾的看板？量身定制符合你工作流程的 CRM？
-一个 CraftBot 能读取并驱动的公司仪表盘？
-将它作为 Living UI 启动——它与 CraftBot 并行运行，并随着你的需求变化而成长。
-
-<div align="center">
-    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
-</div>
-
-### 创建 Living UI 的三种方式
-
-1. **从零开始构建。** 用自然语言描述你想要的。CraftBot 会搭建
-   数据模型、后端 API 和 React UI，并通过结构化的设计流程
-   与你一起迭代。
-
-<div align="center">
-    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="1280"/>
-</div>
-
-2. **从市场安装。** 从 [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace) 浏览社区构建的 Living UI。
-
-<div align="center">
-    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="1280"/>
-</div>
-
-3. **导入已有项目。** 将 CraftBot 指向 Go、Node.js、Python、Rust 或静态源代码
-   或 GitHub 仓库。它会检测运行时、配置健康检查，并将其封装为 Living UI。
-
-<div align="center">
-    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="1280"/>
-</div>
-
-### 持续进化
-
-Living UI 永远不会"完成"。随着你的需求增长，你可以让代理添加功能、
-重新设计视图或将其接入新的数据源。
-
-### CraftBot 融入其中
-
-CraftBot 嵌入在每个 Living UI 中，并**感知其状态**：
-它可以读取当前的 DOM 和表单值，通过 REST API 查询应用数据，
-并代表你触发操作。
-
----
-
 
 ## 🧰 环境设置
 
@@ -165,6 +117,54 @@ CraftBot 支持多种 UI 模式。根据你的偏好选择：
 | **CLI** | `python run.py --cli` | 无 | 命令行，轻量级 |
 
 **浏览器模式**是默认的推荐模式。如果你没有 Node.js，安装器会提供安装指引，或者你可以使用 **TUI 模式**。
+
+---
+
+## 🧬 Living UI
+
+**Living UI 是随你需求而进化的系统/应用/仪表盘。**
+
+需要一个内置 AI 副驾的看板？量身定制符合你工作流程的 CRM？
+一个 CraftBot 能读取并驱动的公司仪表盘？
+将它作为 Living UI 启动——它与 CraftBot 并行运行，并随着你的需求变化而成长。
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### 创建 Living UI 的三种方式
+
+1. **从零开始构建。** 用自然语言描述你想要的。CraftBot 会搭建
+   数据模型、后端 API 和 React UI，并通过结构化的设计流程
+   与你一起迭代。
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="640"/>
+</div>
+
+2. **从市场安装。** 从 [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace) 浏览社区构建的 Living UI。
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="640"/>
+</div>
+
+3. **导入已有项目。** 将 CraftBot 指向 Go、Node.js、Python、Rust 或静态源代码
+   或 GitHub 仓库。它会检测运行时、配置健康检查，并将其封装为 Living UI。
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="640"/>
+</div>
+
+### 持续进化
+
+Living UI 永远不会"完成"。随着你的需求增长，你可以让代理添加功能、
+重新设计视图或将其接入新的数据源。
+
+### CraftBot 融入其中
+
+CraftBot 嵌入在每个 Living UI 中，并**感知其状态**：
+它可以读取当前的 DOM 和表单值，通过 REST API 查询应用数据，
+并代表你触发操作。
 
 ---
 
