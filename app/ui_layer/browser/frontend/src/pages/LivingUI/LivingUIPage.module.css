@@ -172,17 +172,14 @@
 .petFloat {
   display: inline-flex;
   transform-origin: 50% 85%;
-  animation: petFloat 3.2s ease-in-out infinite;
 }
 
 .petBreathe {
   transform-origin: 50% 60%;
-  animation: petBreathe 2.4s ease-in-out infinite;
 }
 
 .petSleepBreathe {
   transform-origin: 50% 60%;
-  animation: petBreathe 3.8s ease-in-out infinite;
 }
 
 .petEye {
@@ -208,15 +205,12 @@
 .petAntennaPulse {
   transform-origin: center;
   transform-box: fill-box;
-  animation: petAntennaPulse 1.6s ease-in-out infinite;
 }
 
 .petBlushPulse {
-  animation: petBlushPulse 2s ease-in-out infinite;
 }
 
 .petWiggle {
-  animation: petFloat 3.2s ease-in-out infinite, petWiggle 600ms ease-out;
 }
 
 .petSleepZ {
@@ -269,23 +263,6 @@
   100% { opacity: 0; transform: translateY(-14px); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .petFloat,
-  .petBreathe,
-  .petSleepBreathe,
-  .petEye,
-  .petEyeLeft,
-  .petEyeRight,
-  .petAntennaPulse,
-  .petBlushPulse,
-  .petWiggle,
-  .petSleepZ {
-    animation: none;
-  }
-  .petSleepZ {
-    opacity: 0.7;
-  }
-}
 
 /* Creation Progress */
 .creationProgress {
