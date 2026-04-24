@@ -631,28 +631,60 @@
   }
 
   /* Flip the resize handle to a horizontal bar sitting between the iframe
-     area and the chat panel. Inline style on the chat panel controls its
-     height via flex-basis, so both sections scale with the viewport. */
+     area and the chat panel. The handle gets a visible grip pill so mobile
+     users can see and grab it easily. Inline style on the chat panel
+     controls its height via flex-basis, so both sections scale with the
+     viewport. */
   .resizeHandle {
     width: auto;
-    height: 1px;
+    height: 18px;
     cursor: row-resize;
     align-self: stretch;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
+  /* Visible grip pill */
+  .resizeHandle::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--text-muted);
+    opacity: 0.55;
+    transition: opacity var(--transition-fast), background var(--transition-fast);
+  }
+
+  .resizeHandle:hover::before,
+  .resizeHandle.resizing::before {
+    opacity: 1;
+    background: var(--text-secondary);
+  }
+
+  /* Extended touch hit area straddling the handle */
   .resizeHandle::after {
     left: 0;
     right: 0;
-    top: -2px;
-    bottom: auto;
+    top: -6px;
+    bottom: -6px;
     width: auto;
-    height: 5px;
+    height: auto;
+  }
+
+  /* Visible feedback on mobile is the ::before grip, not the ::after overlay */
+  .resizeHandle:hover::after,
+  .resizeHandle.resizing::after {
+    background: transparent;
   }
 
   .chatPanel {
     width: 100% !important;
     border-left: none;
-    border-top: 1px solid var(--border-primary);
+    border-top: none;
     min-height: 0;
   }
 
