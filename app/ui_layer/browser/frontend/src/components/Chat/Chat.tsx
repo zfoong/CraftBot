@@ -205,10 +205,17 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
 
   const adjustTextareaHeight = useCallback(() => {
     const textarea = inputRef.current
-    if (textarea) {
-      textarea.style.height = 'auto'
-      textarea.style.height = `${textarea.scrollHeight}px`
+    if (!textarea) return
+    // When the textarea is empty, let CSS min-height control the height.
+    // Reading scrollHeight on an empty textarea in a narrow container can
+    // include wrapped placeholder text, which would balloon the input to
+    // multiple visual rows.
+    if (!textarea.value) {
+      textarea.style.height = ''
+      return
     }
+    textarea.style.height = 'auto'
+    textarea.style.height = `${textarea.scrollHeight}px`
   }, [])
 
   useLayoutEffect(() => {

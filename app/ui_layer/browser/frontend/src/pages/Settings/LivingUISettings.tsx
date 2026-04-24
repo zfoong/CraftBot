@@ -4,17 +4,13 @@ import {
   Square,
   Trash2,
   Loader2,
-  FolderOpen,
   RotateCcw,
-  Save,
-  Plus,
   Check,
-  ChevronRight,
+  X,
+  Plus,
   Download,
-  Share2,
   Copy,
-  Globe,
-  Wifi,
+  ChevronRight,
 } from 'lucide-react'
 import { Button, Badge, ConfirmModal } from '../../components/ui'
 import { useConfirmModal } from '../../hooks'
@@ -49,6 +45,19 @@ interface ParsedSection {
   rules: ParsedRule[]
   prefs: ParsedPref[]
 }
+
+const FONT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'System default (Segoe UI, sans-serif)', label: 'System Default' },
+  { value: 'Inter, sans-serif', label: 'Inter' },
+  { value: 'Roboto, sans-serif', label: 'Roboto' },
+  { value: 'Open Sans, sans-serif', label: 'Open Sans' },
+  { value: 'Poppins, sans-serif', label: 'Poppins' },
+  { value: 'Lato, sans-serif', label: 'Lato' },
+  { value: 'Nunito, sans-serif', label: 'Nunito' },
+  { value: 'Source Sans Pro, sans-serif', label: 'Source Sans Pro' },
+  { value: 'JetBrains Mono, monospace', label: 'JetBrains Mono' },
+  { value: 'Fira Code, monospace', label: 'Fira Code' },
+]
 
 function parseGlobalConfig(content: string): { sections: ParsedSection[]; rawLines: string[] } {
   const lines = content.split('\n')
@@ -103,7 +112,8 @@ export function LivingUISettings() {
   const [globalSaving, setGlobalSaving] = useState(false)
   const [globalSaveStatus, setGlobalSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [newRule, setNewRule] = useState('')
-  const [expandedSection, setExpandedSection] = useState<string | null>('design')
+  const [rulesExpanded, setRulesExpanded] = useState(true)
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [lineChanges, setLineChanges] = useState<Map<number, string>>(new Map())
   const globalConfigRef = useRef(globalConfig)
   globalConfigRef.current = globalConfig
@@ -193,6 +203,7 @@ export function LivingUISettings() {
     setNewRule('')
   }
 
+
   const handleDeleteRule = (lineIndex: number) => {
     const lines = globalConfig.split('\n')
     lines.splice(lineIndex, 1)
@@ -225,6 +236,15 @@ export function LivingUISettings() {
     send('living_ui_project_action', { projectId, action: 'stop' })
   }
 
+  const toggleProject = (id: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   const handleDelete = (project: LivingUIProject) => {
     confirm({
       title: 'Delete Living UI',
@@ -237,49 +257,26 @@ export function LivingUISettings() {
     })
   }
 
-  const getStatusVariant = (status: string) => {
-    switch (status) {
-      case 'running': return 'success'
-      case 'stopped': return 'default'
-      case 'error': return 'error'
-      case 'creating': return 'warning'
-      case 'launching': return 'warning'
-      default: return 'default'
-    }
-  }
-
   const { sections } = parseGlobalConfig(globalConfig)
-  const toggleSection = (id: string) => setExpandedSection(prev => prev === id ? null : id)
 
-  const sectionHeader = (id: string, label: string) => (
-    <div
-      onClick={() => toggleSection(id)}
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: 'var(--space-3) var(--space-4)', background: 'var(--bg-tertiary)',
-        borderRadius: 'var(--radius-md)', cursor: 'pointer', border: '1px solid var(--border-primary)',
-      }}
-    >
-      <span style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)' }}>{label}</span>
-      <ChevronRight size={14} style={{ transform: expandedSection === id ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
-    </div>
+  // Collect design prefs (colors/fonts) across all sections
+  const designPrefs: ParsedPref[] = sections.flatMap(s =>
+    s.prefs.filter(p => {
+      const k = p.key.toLowerCase()
+      return k.includes('color') || k.includes('font')
+    })
   )
 
-  const inputStyle = { flex: 1, padding: 'var(--space-1) var(--space-2)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)' }
-
-  if (loading && globalLoading) {
-    return (
-      <div className={styles.settingsSection}>
-        <div className={styles.sectionHeader}>
-          <h3>Living UI</h3>
-          <p>Global design, rules, and project management</p>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
-          <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
-        </div>
-      </div>
-    )
-  }
+  const ruleSections = sections.filter(s => s.rules.length > 0)
+  const totalRules = ruleSections.reduce((acc, s) => acc + s.rules.length, 0)
+  const activeRules = ruleSections.reduce(
+    (acc, s) =>
+      acc +
+      s.rules.filter(r =>
+        lineChanges.has(r.lineIndex) ? lineChanges.get(r.lineIndex) === 'true' : r.enabled
+      ).length,
+    0
+  )
 
   return (
     <div className={styles.settingsSection}>
@@ -288,160 +285,314 @@ export function LivingUISettings() {
         <p>Global design, rules, and project management</p>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      {/* ── Design ────────────────────────────────────────── */}
+      <div className={styles.subsection}>
+        <h4 className={styles.subsectionTitle}>Design</h4>
+        <p className={styles.subsectionDesc}>
+          Colors and typography applied globally to every Living UI
+        </p>
 
-        {/* ── Design ── */}
-        {sectionHeader('design', 'Design')}
-        {expandedSection === 'design' && (
-          <div className={styles.settingsForm}>
-            {sections.filter(s => s.prefs.length > 0).map(section =>
-              section.prefs.filter(p => {
-                const k = p.key.toLowerCase()
-                return k.includes('color') || k.includes('font')
-              }).map(pref => {
-                const val = lineChanges.has(pref.lineIndex) ? lineChanges.get(pref.lineIndex)! : pref.value
-                const isColor = pref.key.toLowerCase().includes('color')
-                const isFont = pref.key.toLowerCase().includes('font')
-                return (
-                  <div key={pref.lineIndex} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
-                    <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', minWidth: '120px', flexShrink: 0 }}>{pref.key}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 1 }}>
-                      {isColor ? (
-                        <>
-                          <input type="color" value={val.startsWith('#') ? val : '#000000'} onChange={e => handlePrefChange(pref.lineIndex, e.target.value)} style={{ width: 32, height: 32, border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', background: 'transparent', padding: 0 }} />
-                          <input type="text" value={val} onChange={e => handlePrefChange(pref.lineIndex, e.target.value)} style={inputStyle} />
-                        </>
-                      ) : isFont ? (
-                        <select value={val} onChange={e => handlePrefChange(pref.lineIndex, e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                          <option value="System default (Segoe UI, sans-serif)">System Default</option>
-                          <option value="Inter, sans-serif">Inter</option>
-                          <option value="Roboto, sans-serif">Roboto</option>
-                          <option value="Open Sans, sans-serif">Open Sans</option>
-                          <option value="Poppins, sans-serif">Poppins</option>
-                          <option value="Lato, sans-serif">Lato</option>
-                          <option value="Nunito, sans-serif">Nunito</option>
-                          <option value="Source Sans Pro, sans-serif">Source Sans Pro</option>
-                          <option value="JetBrains Mono, monospace">JetBrains Mono</option>
-                          <option value="Fira Code, monospace">Fira Code</option>
-                        </select>
-                      ) : (
-                        <input type="text" value={val} onChange={e => handlePrefChange(pref.lineIndex, e.target.value)} style={inputStyle} />
-                      )}
-                    </div>
-                  </div>
-                )
-              })
-            )}
+        {globalLoading ? (
+          <div className={styles.loadingState}>
+            <Loader2 size={20} className={styles.spinning} />
+            <span>Loading design...</span>
           </div>
-        )}
-
-        {/* ── Rules ── */}
-        {sectionHeader('rules', 'Rules')}
-        {expandedSection === 'rules' && (
-          <div className={styles.settingsForm}>
-            {sections.filter(s => s.rules.length > 0).map(section => (
-              <div key={section.title} style={{ marginBottom: 'var(--space-2)' }}>
-                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--font-semibold)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {section.title}
-                </span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
-                  {section.rules.map(rule => (
-                    <div key={rule.lineIndex} className={styles.toggleGroup} style={{ padding: 'var(--space-2) var(--space-3)' }}>
-                      <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', flex: 1 }}>{rule.text}</span>
-                      <input type="checkbox" className={styles.toggle} checked={lineChanges.has(rule.lineIndex) ? lineChanges.get(rule.lineIndex) === 'true' : rule.enabled} onChange={e => handleToggleRule(rule.lineIndex, e.target.checked)} />
-                      {section.title === 'Custom Rules' && (
-                        <button onClick={() => handleDeleteRule(rule.lineIndex)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px', marginLeft: 'var(--space-1)', display: 'flex', alignItems: 'center' }} title="Delete rule">
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-              <input type="text" value={newRule} onChange={e => setNewRule(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddRule()} placeholder="Add a custom rule..." style={{ ...inputStyle, padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-md)' }} />
-              <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={handleAddRule} disabled={!newRule.trim()}>Add</Button>
-            </div>
+        ) : designPrefs.length === 0 ? (
+          <div className={styles.emptyState}>
+            <p>No design preferences found in GLOBAL_LIVING_UI.md</p>
           </div>
-        )}
-
-        {/* Save / Restore */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
-          <Button size="sm" variant="ghost" icon={<RotateCcw size={14} />} onClick={handleRestoreGlobal}>Restore Defaults</Button>
-          <Button size="sm" variant="primary" icon={globalSaving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : globalSaveStatus === 'success' ? <Check size={14} /> : <Save size={14} />} onClick={handleSaveGlobal} disabled={!isGlobalDirty || globalSaving}>
-            {globalSaveStatus === 'success' ? 'Saved' : 'Save'}
-          </Button>
-        </div>
-
-        {/* ── Projects ── */}
-        {sectionHeader('projects', 'Projects')}
-        {expandedSection === 'projects' && (
+        ) : (
           <div className={styles.settingsForm}>
-            {projects.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)', padding: 'var(--space-2)' }}>
-                No Living UI projects yet. Create one from the main chat.
-              </p>
-            ) : (
-              projects.map(project => (
-                <div key={project.id} className={styles.formGroup} style={{ padding: 'var(--space-4)', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-primary)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                      <span style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)' }}>{project.name}</span>
-                      <Badge variant={getStatusVariant(project.status)}>{project.status}</Badge>
-                    </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-                      {project.status === 'running' ? (
-                        <Button size="sm" variant="secondary" icon={actionInProgress === project.id ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Square size={14} />} onClick={() => handleStop(project.id)} disabled={actionInProgress === project.id}>Stop</Button>
-                      ) : (project.status === 'stopped' || project.status === 'error') ? (
-                        <Button size="sm" variant="primary" icon={actionInProgress === project.id ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={14} />} onClick={() => handleLaunch(project.id)} disabled={actionInProgress === project.id}>Launch</Button>
-                      ) : null}
-                      <Button size="sm" variant="ghost" icon={<Download size={14} />} onClick={() => {
-                        const link = document.createElement('a')
-                        link.href = `/api/living-ui/${project.id}/export`
-                        link.download = ''
-                        document.body.appendChild(link)
-                        link.click()
-                        document.body.removeChild(link)
-                      }}>Export</Button>
-                      <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} onClick={() => handleDelete(project)} disabled={actionInProgress === project.id} />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>
-                    <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
-                      {project.port && <span>Frontend: {project.port}</span>}
-                      {project.backendPort && <span>Backend: {project.backendPort}</span>}
-                      <span>ID: {project.id}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-                      <FolderOpen size={12} />
-                      <span style={{ wordBreak: 'break-all' }}>{project.path}</span>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                    <div className={styles.toggleGroup}>
-                      <div className={styles.toggleInfo}>
-                        <span className={styles.toggleLabel}>Auto-launch on startup</span>
-                        <span className={styles.toggleDesc}>Automatically launch when CraftBot starts</span>
-                      </div>
-                      <input type="checkbox" className={styles.toggle} checked={project.autoLaunch} onChange={e => send('living_ui_project_setting_update', { projectId: project.id, setting: 'autoLaunch', value: e.target.checked })} />
-                    </div>
-                    <div className={styles.toggleGroup}>
-                      <div className={styles.toggleInfo}>
-                        <span className={styles.toggleLabel}>Clean logs on restart</span>
-                        <span className={styles.toggleDesc}>Delete old log files when launching</span>
-                      </div>
-                      <input type="checkbox" className={styles.toggle} checked={project.logCleanup} onChange={e => send('living_ui_project_setting_update', { projectId: project.id, setting: 'logCleanup', value: e.target.checked })} />
-                    </div>
-                  </div>
+            {designPrefs.map(pref => {
+              const val = lineChanges.has(pref.lineIndex)
+                ? lineChanges.get(pref.lineIndex)!
+                : pref.value
+              const key = pref.key.toLowerCase()
+              const isColor = key.includes('color')
+              const isFont = key.includes('font')
 
-                  {/* Sharing Section */}
-                  {project.status === 'running' && (
-                    <ShareSection projectId={project.id} port={project.port} send={send} onMessage={onMessage} />
+              return (
+                <div key={pref.lineIndex} className={styles.formGroup}>
+                  <label>{pref.key}</label>
+                  {isColor ? (
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                      <label
+                        className={styles.colorSwatch}
+                        style={{ background: val.startsWith('#') ? val : '#000000' }}
+                      >
+                        <input
+                          type="color"
+                          value={val.startsWith('#') ? val : '#000000'}
+                          onChange={e => handlePrefChange(pref.lineIndex, e.target.value)}
+                        />
+                      </label>
+                      <input
+                        type="text"
+                        value={val}
+                        onChange={e => handlePrefChange(pref.lineIndex, e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                    </div>
+                  ) : isFont ? (
+                    <select value={val} onChange={e => handlePrefChange(pref.lineIndex, e.target.value)}>
+                      {FONT_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={val}
+                      onChange={e => handlePrefChange(pref.lineIndex, e.target.value)}
+                    />
                   )}
                 </div>
-              ))
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Rules ─────────────────────────────────────────── */}
+      <div className={styles.subsection}>
+        <h4 className={styles.subsectionTitle}>Rules</h4>
+        <p className={styles.subsectionDesc}>
+          Toggle global behavior rules or add your own custom rules
+        </p>
+
+        {globalLoading ? (
+          <div className={styles.loadingState}>
+            <Loader2 size={20} className={styles.spinning} />
+            <span>Loading rules...</span>
+          </div>
+        ) : (
+          <div className={styles.fileEditorCard}>
+            <div
+              className={styles.fileEditorHeader}
+              onClick={() => setRulesExpanded(v => !v)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setRulesExpanded(v => !v)
+                }
+              }}
+              aria-expanded={rulesExpanded}
+              style={{
+                cursor: 'pointer',
+                borderBottom: rulesExpanded ? '1px solid var(--border-primary)' : 'none',
+                userSelect: 'none',
+              }}
+            >
+              <div className={styles.fileEditorTitle}>
+                <h4>Rules</h4>
+                <Badge variant="default">
+                  {activeRules}/{totalRules} active
+                </Badge>
+                <ChevronRight
+                  size={14}
+                  className={`${styles.advancedChevron} ${rulesExpanded ? styles.open : ''}`}
+                  style={{ marginLeft: 'auto' }}
+                />
+              </div>
+              <p className={styles.fileEditorDescription}>
+                Toggle behavior rules applied globally to every Living UI, or add your own custom rules.
+              </p>
+            </div>
+
+            {rulesExpanded && (
+              <>
+                <div
+                  style={{
+                    background: 'var(--bg-primary)',
+                    maxHeight: '500px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  {ruleSections.length === 0 ? (
+                    <div
+                      style={{
+                        padding: 'var(--space-4)',
+                        textAlign: 'center',
+                        color: 'var(--text-muted)',
+                        fontSize: 'var(--text-sm)',
+                      }}
+                    >
+                      No rules defined yet. Add one below.
+                    </div>
+                  ) : (
+                    ruleSections.map((section, sIdx) => {
+                      const isCustom = section.title === 'Custom Rules'
+                      return (
+                        <div key={section.title}>
+                          <div
+                            style={{
+                              padding: 'var(--space-2) var(--space-3)',
+                              background: 'var(--bg-secondary)',
+                              borderTop: sIdx > 0 ? '1px solid var(--border-primary)' : 'none',
+                              borderBottom: '1px solid var(--border-primary)',
+                              fontSize: 'var(--text-xs)',
+                              fontWeight: 'var(--font-semibold)',
+                              color: 'var(--text-secondary)',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em',
+                            }}
+                          >
+                            {section.title}
+                          </div>
+                          {section.rules.map((rule, idx) => {
+                            const checked = lineChanges.has(rule.lineIndex)
+                              ? lineChanges.get(rule.lineIndex) === 'true'
+                              : rule.enabled
+                            return (
+                              <div
+                                key={rule.lineIndex}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 'var(--space-3)',
+                                  padding: 'var(--space-3)',
+                                  borderTop: idx > 0 ? '1px solid var(--border-primary)' : 'none',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    flex: 1,
+                                    fontSize: 'var(--text-sm)',
+                                    color: 'var(--text-primary)',
+                                    lineHeight: 1.4,
+                                  }}
+                                >
+                                  {rule.text}
+                                </span>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 'var(--space-1)',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {isCustom ? (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      icon={<Trash2 size={14} />}
+                                      onClick={() => handleDeleteRule(rule.lineIndex)}
+                                    />
+                                  ) : (
+                                    <input
+                                      type="checkbox"
+                                      className={styles.toggle}
+                                      checked={checked}
+                                      onChange={e => handleToggleRule(rule.lineIndex, e.target.checked)}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+
+                <div className={styles.fileEditorActions}>
+                  <input
+                    type="text"
+                    className={styles.searchInput}
+                    value={newRule}
+                    onChange={e => setNewRule(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddRule()}
+                    placeholder="Add a custom rule..."
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={<Plus size={14} />}
+                    onClick={handleAddRule}
+                    disabled={!newRule.trim()}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Save / Restore ────────────────────────────────── */}
+      <div className={styles.sectionFooter} style={{ borderTop: 'none', paddingTop: 0 }}>
+        <Button
+          variant="secondary"
+          icon={<RotateCcw size={14} />}
+          onClick={handleRestoreGlobal}
+          disabled={globalLoading || globalSaving}
+        >
+          Restore Defaults
+        </Button>
+        <Button
+          variant="primary"
+          onClick={handleSaveGlobal}
+          disabled={!isGlobalDirty || globalSaving || globalLoading}
+          icon={globalSaving ? <Loader2 size={14} className={styles.spinning} /> : undefined}
+        >
+          {globalSaving ? 'Saving...' : 'Save Changes'}
+        </Button>
+        {globalSaveStatus === 'success' && (
+          <span className={styles.statusSuccess}>
+            <Check size={14} /> Saved
+          </span>
+        )}
+        {globalSaveStatus === 'error' && (
+          <span className={styles.statusError}>
+            <X size={14} /> Save failed
+          </span>
+        )}
+        {isGlobalDirty && globalSaveStatus === 'idle' && !globalSaving && (
+          <span className={styles.statusWarning}>Unsaved changes</span>
+        )}
+      </div>
+
+      {/* ── Projects ──────────────────────────────────────── */}
+      <div className={styles.subsection}>
+        <h4 className={styles.subsectionTitle}>Projects</h4>
+        <p className={styles.subsectionDesc}>
+          Manage, launch, and share your Living UI projects. Create new ones from the main chat.
+        </p>
+
+        {loading ? (
+          <div className={styles.loadingState}>
+            <Loader2 size={20} className={styles.spinning} />
+            <span>Loading projects...</span>
+          </div>
+        ) : projects.length === 0 ? (
+          <div className={styles.emptyState}>
+            <p>No Living UI projects yet. Create one from the main chat.</p>
+          </div>
+        ) : (
+          <div className={styles.scheduleList}>
+            {projects.map(project => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                actionInProgress={actionInProgress === project.id}
+                expanded={expandedProjects.has(project.id)}
+                onToggleExpand={() => toggleProject(project.id)}
+                onLaunch={() => handleLaunch(project.id)}
+                onStop={() => handleStop(project.id)}
+                onDelete={() => handleDelete(project)}
+                onToggleSetting={(setting, value) =>
+                  send('living_ui_project_setting_update', { projectId: project.id, setting, value })
+                }
+                send={send}
+                onMessage={onMessage}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -452,20 +603,377 @@ export function LivingUISettings() {
 }
 
 
-// ── Share Section (per-project) ──────────────────────────────────
+// ── Project Card ───────────────────────────────────────────────
 
-function ShareSection({ projectId, port, send, onMessage }: {
+interface ProjectCardProps {
+  project: LivingUIProject
+  actionInProgress: boolean
+  expanded: boolean
+  onToggleExpand: () => void
+  onLaunch: () => void
+  onStop: () => void
+  onDelete: () => void
+  onToggleSetting: (setting: string, value: boolean) => void
+  send: (type: string, data?: Record<string, unknown>) => void
+  onMessage: (type: string, handler: (data: unknown) => void) => () => void
+}
+
+function getStatusText(status: string): string {
+  switch (status) {
+    case 'running':
+      return 'Running'
+    case 'creating':
+      return 'Creating…'
+    case 'launching':
+      return 'Launching…'
+    case 'error':
+      return 'Error'
+    default:
+      // created, stopped, ready
+      return 'Not running'
+  }
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case 'running':
+      return 'var(--color-success)'
+    case 'creating':
+    case 'launching':
+      return 'var(--color-warning)'
+    case 'error':
+      return 'var(--color-error)'
+    default:
+      return 'var(--text-muted)'
+  }
+}
+
+function isActiveStatus(status: string): boolean {
+  return status === 'running' || status === 'creating' || status === 'launching'
+}
+
+function ProjectCard({
+  project,
+  actionInProgress,
+  expanded,
+  onToggleExpand,
+  onLaunch,
+  onStop,
+  onDelete,
+  onToggleSetting,
+  send,
+  onMessage,
+}: ProjectCardProps) {
+  const canLaunch = ['created', 'stopped', 'ready', 'error'].includes(project.status)
+  const isRunning = project.status === 'running'
+
+  const handleExport = () => {
+    const link = document.createElement('a')
+    link.href = `/api/living-ui/${project.id}/export`
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const handleCopyPath = () => {
+    navigator.clipboard.writeText(project.path)
+  }
+
+  const settings: Array<{
+    key: 'autoLaunch' | 'logCleanup'
+    label: string
+    desc: string
+    value: boolean
+  }> = [
+    {
+      key: 'autoLaunch',
+      label: 'Auto-launch on startup',
+      desc: 'Launch automatically when CraftBot starts',
+      value: project.autoLaunch,
+    },
+    {
+      key: 'logCleanup',
+      label: 'Clean logs on restart',
+      desc: 'Delete old log files when launching',
+      value: project.logCleanup,
+    },
+  ]
+
+  const sectionLabelStyle: React.CSSProperties = {
+    fontSize: '10px',
+    fontWeight: 'var(--font-semibold)',
+    color: 'var(--text-tertiary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+  }
+
+  const infoLabelStyle: React.CSSProperties = {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-muted)',
+  }
+
+  const infoValueStyle: React.CSSProperties = {
+    fontSize: 'var(--text-sm)',
+    fontFamily: 'var(--font-mono)',
+    color: 'var(--text-primary)',
+    minWidth: 0,
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--bg-tertiary)',
+        border: '1px solid var(--border-primary)',
+        borderRadius: 'var(--radius-md)',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Zone 1 — Header (clickable to expand/collapse) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+          padding: 'var(--space-3)',
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={onToggleExpand}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onToggleExpand()
+          }
+        }}
+      >
+        <ChevronRight
+          size={14}
+          style={{
+            color: 'var(--text-muted)',
+            transition: 'transform 0.15s',
+            transform: expanded ? 'rotate(90deg)' : 'none',
+            flexShrink: 0,
+          }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 'var(--text-base)',
+              fontWeight: 'var(--font-semibold)',
+              color: 'var(--text-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {project.name}
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              marginTop: 4,
+            }}
+          >
+            <span
+              className={`${styles.statusDot} ${isActiveStatus(project.status) ? styles.statusDotPulse : ''}`}
+              style={{ background: getStatusColor(project.status) }}
+            />
+            <span
+              style={{
+                fontSize: 'var(--text-xs)',
+                color: getStatusColor(project.status),
+                fontWeight: 'var(--font-medium)',
+              }}
+            >
+              {getStatusText(project.status)}
+            </span>
+          </div>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-1)',
+            flexShrink: 0,
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {isRunning ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={actionInProgress ? <Loader2 size={14} className={styles.spinning} /> : <Square size={14} />}
+              onClick={onStop}
+              disabled={actionInProgress}
+            >
+              Stop
+            </Button>
+          ) : canLaunch ? (
+            <Button
+              size="sm"
+              variant="primary"
+              icon={actionInProgress ? <Loader2 size={14} className={styles.spinning} /> : <Play size={14} />}
+              onClick={onLaunch}
+              disabled={actionInProgress}
+            >
+              Launch
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<Download size={14} />}
+            onClick={handleExport}
+            title="Export project"
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<Trash2 size={14} />}
+            onClick={onDelete}
+            disabled={actionInProgress}
+            title="Delete project"
+          />
+        </div>
+      </div>
+
+      {expanded && <>
+
+      {/* Zone 2 — Runtime info (inset, aligned key/value rows) */}
+      <div
+        style={{
+          padding: 'var(--space-3)',
+          background: 'var(--bg-primary)',
+          borderTop: '1px solid var(--border-primary)',
+          display: 'grid',
+          gridTemplateColumns: '110px 1fr',
+          rowGap: 'var(--space-2)',
+          columnGap: 'var(--space-3)',
+          alignItems: 'center',
+        }}
+      >
+        <span style={infoLabelStyle}>Frontend port</span>
+        <span style={infoValueStyle}>{project.port != null ? project.port : '—'}</span>
+
+        <span style={infoLabelStyle}>Backend port</span>
+        <span style={infoValueStyle}>{project.backendPort != null ? project.backendPort : '—'}</span>
+
+        <span style={infoLabelStyle}>Project ID</span>
+        <span style={infoValueStyle}>{project.id}</span>
+
+        <span style={infoLabelStyle}>Path</span>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-2)',
+            minWidth: 0,
+          }}
+        >
+          <span
+            style={{
+              ...infoValueStyle,
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={project.path}
+          >
+            {project.path}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<Copy size={12} />}
+            onClick={handleCopyPath}
+            title="Copy path"
+          />
+        </div>
+      </div>
+
+      {/* Zone 3 — Preferences */}
+      <div
+        style={{
+          padding: 'var(--space-3)',
+          borderTop: '1px solid var(--border-primary)',
+        }}
+      >
+        <div style={{ ...sectionLabelStyle, marginBottom: 'var(--space-2)' }}>
+          Preferences
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {settings.map((s, i) => (
+            <div
+              key={s.key}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 'var(--space-3)',
+                padding: 'var(--space-2) 0',
+                borderTop: i > 0 ? '1px solid var(--border-primary)' : 'none',
+              }}
+            >
+              <div className={styles.toggleInfo}>
+                <span className={styles.toggleLabel}>{s.label}</span>
+                <span className={styles.toggleDesc}>{s.desc}</span>
+              </div>
+              <input
+                type="checkbox"
+                className={styles.toggle}
+                checked={s.value}
+                onChange={e => onToggleSetting(s.key, e.target.checked)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Zone 4 — Share */}
+      {isRunning && (
+        <div
+          style={{
+            padding: 'var(--space-3)',
+            borderTop: '1px solid var(--border-primary)',
+          }}
+        >
+          <div style={{ ...sectionLabelStyle, marginBottom: 'var(--space-2)' }}>
+            Share
+          </div>
+          <ShareSection projectId={project.id} port={project.port} send={send} onMessage={onMessage} />
+        </div>
+      )}
+
+      </>}
+    </div>
+  )
+}
+
+
+// ── Share Section ──────────────────────────────────────────────
+
+interface ShareSectionProps {
   projectId: string
   port: number | null
-  send: (type: string, data: any) => void
-  onMessage: (type: string, handler: (data: any) => void) => () => void
-}) {
+  send: (type: string, data?: Record<string, unknown>) => void
+  onMessage: (type: string, handler: (data: unknown) => void) => () => void
+}
+
+function ShareSection({ projectId, send, onMessage }: ShareSectionProps) {
   const [lanUrl, setLanUrl] = useState<string | null>(null)
   const [tunnelUrl, setTunnelUrl] = useState<string | null>(null)
   const [tunnelLoading, setTunnelLoading] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
 
-  // Fetch sharing info on mount
   useEffect(() => {
     send('living_ui_sharing_info', { projectId })
 
@@ -490,10 +998,9 @@ function ShareSection({ projectId, port, send, onMessage }: {
     setTimeout(() => setCopied(null), 2000)
   }
 
-  const handleStartTunnel = (provider: string) => {
-    console.log('[ShareSection] Starting tunnel:', projectId, provider)
+  const handleStartTunnel = () => {
     setTunnelLoading(true)
-    send('living_ui_tunnel_start', { projectId, provider })
+    send('living_ui_tunnel_start', { projectId, provider: 'cloudflared' })
   }
 
   const handleStopTunnel = () => {
@@ -502,53 +1009,70 @@ function ShareSection({ projectId, port, send, onMessage }: {
   }
 
   return (
-    <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border-primary)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-        <Share2 size={14} style={{ color: 'var(--text-muted)' }} />
-        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)' }}>Share</span>
-      </div>
-
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-2)',
+      }}
+    >
       {/* LAN URL */}
       {lanUrl && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-          <Wifi size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>LAN:</span>
-          <code style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{lanUrl}</code>
-          <Button size="sm" variant="ghost" onClick={() => handleCopy(lanUrl, 'lan')} style={{ padding: '2px 6px' }}>
-            {copied === 'lan' ? <Check size={12} /> : <Copy size={12} />}
-          </Button>
+        <div className={styles.modelRow}>
+          <span className={styles.modelLabel}>LAN</span>
+          <code
+            className={styles.modelValue}
+            style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {lanUrl}
+          </code>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={copied === 'lan' ? <Check size={14} /> : <Copy size={14} />}
+            onClick={() => handleCopy(lanUrl, 'lan')}
+          />
         </div>
       )}
 
       {/* Tunnel URL */}
       {tunnelUrl ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-          <Globe size={12} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>Public:</span>
-          <code style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tunnelUrl}</code>
-          <Button size="sm" variant="ghost" onClick={() => handleCopy(tunnelUrl, 'tunnel')} style={{ padding: '2px 6px' }}>
-            {copied === 'tunnel' ? <Check size={12} /> : <Copy size={12} />}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={handleStopTunnel} style={{ padding: '2px 6px', color: 'var(--color-error)' }}>
-            <Square size={12} />
-          </Button>
+        <div className={styles.modelRow}>
+          <span className={styles.modelLabel}>Public</span>
+          <code
+            className={styles.modelValue}
+            style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {tunnelUrl}
+          </code>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={copied === 'tunnel' ? <Check size={14} /> : <Copy size={14} />}
+            onClick={() => handleCopy(tunnelUrl, 'tunnel')}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<Square size={14} />}
+            onClick={handleStopTunnel}
+          />
         </div>
       ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <Globe size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Public:</span>
-          <button
-            onClick={() => handleStartTunnel('cloudflared')}
+        <div className={styles.modelRow}>
+          <span className={styles.modelLabel}>Public</span>
+          <span style={{ flex: 1, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+            Not shared
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleStartTunnel}
             disabled={tunnelLoading}
-            style={{
-              fontSize: 'var(--text-xs)', padding: '4px 12px',
-              background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
-              borderRadius: 'var(--radius-md)', cursor: 'pointer', color: 'var(--text-primary)',
-              fontFamily: 'inherit',
-            }}
+            icon={tunnelLoading ? <Loader2 size={14} className={styles.spinning} /> : undefined}
           >
             {tunnelLoading ? 'Starting...' : 'Create Tunnel'}
-          </button>
+          </Button>
         </div>
       )}
     </div>

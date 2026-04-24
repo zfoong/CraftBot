@@ -18,7 +18,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-4);
+  height: 32px;
+  padding: 0 var(--space-3);
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
@@ -27,50 +28,51 @@
 .menuLeft {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .projectIcon {
   color: var(--color-primary);
+  flex-shrink: 0;
 }
 
 .projectName {
-  font-size: var(--text-lg);
+  font-size: 13px;
   font-weight: var(--font-semibold);
   color: var(--text-primary);
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status {
-  font-size: var(--text-xs);
+  font-size: 11px;
   font-weight: var(--font-medium);
-  padding: var(--space-1) var(--space-2);
+  padding: 1px var(--space-2);
   border-radius: var(--radius-full);
   text-transform: capitalize;
+  line-height: 1.4;
 }
 
 .status.running {
-  background: var(--color-success-subtle);
   color: var(--color-success);
 }
 
 .status.creating {
-  background: var(--color-warning-subtle);
   color: var(--color-warning);
 }
 
 .status.ready {
-  background: var(--color-primary-subtle);
   color: var(--color-primary);
 }
 
 .status.stopped {
-  background: var(--bg-tertiary);
   color: var(--text-muted);
 }
 
 .status.error {
-  background: var(--color-error-subtle);
   color: var(--color-error);
 }
 
@@ -78,6 +80,17 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+/* Fullscreen indicator badge */
+.fullscreenBadge {
+  font-size: 11px;
+  font-weight: var(--font-medium);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  line-height: 1.4;
 }
 
 /* Main Content */
@@ -154,17 +167,14 @@
 .petFloat {
   display: inline-flex;
   transform-origin: 50% 85%;
-  animation: petFloat 3.2s ease-in-out infinite;
 }
 
 .petBreathe {
   transform-origin: 50% 60%;
-  animation: petBreathe 2.4s ease-in-out infinite;
 }
 
 .petSleepBreathe {
   transform-origin: 50% 60%;
-  animation: petBreathe 3.8s ease-in-out infinite;
 }
 
 .petEye {
@@ -190,15 +200,24 @@
 .petAntennaPulse {
   transform-origin: center;
   transform-box: fill-box;
-  animation: petAntennaPulse 1.6s ease-in-out infinite;
 }
 
 .petBlushPulse {
-  animation: petBlushPulse 2s ease-in-out infinite;
 }
 
 .petWiggle {
-  animation: petFloat 3.2s ease-in-out infinite, petWiggle 600ms ease-out;
+}
+
+/* Body silhouette is near-white — in light mode it blends into the bg,
+   so stroke a thin outline. Dark mode needs no outline. */
+.petBody {
+  stroke: none;
+}
+
+[data-theme="light"] .petBody {
+  stroke: var(--text-muted, var(--border-secondary));
+  stroke-width: 3;
+  paint-order: stroke fill;
 }
 
 .petSleepZ {
@@ -251,23 +270,6 @@
   100% { opacity: 0; transform: translateY(-14px); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .petFloat,
-  .petBreathe,
-  .petSleepBreathe,
-  .petEye,
-  .petEyeLeft,
-  .petEyeRight,
-  .petAntennaPulse,
-  .petBlushPulse,
-  .petWiggle,
-  .petSleepZ {
-    animation: none;
-  }
-  .petSleepZ {
-    opacity: 0.7;
-  }
-}
 
 /* Creation Progress */
 .creationProgress {
@@ -383,6 +385,7 @@
   background: var(--border-primary);
   cursor: col-resize;
   flex-shrink: 0;
+  touch-action: none;
 }
 
 .resizeHandle::after {
@@ -399,6 +402,17 @@
 .resizeHandle:hover::after,
 .resizeHandle.resizing::after {
   background: var(--color-gray-300);
+}
+
+/* Transparent full-screen overlay active only during resize. Sits above the
+   floating Living UI iframe (z-index 10 in iframePool) so the iframe stops
+   receiving pointer events mid-drag. */
+.resizeOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  cursor: col-resize;
+  background: transparent;
 }
 
 /* Chat Panel */
@@ -612,14 +626,73 @@
     flex-direction: column;
   }
 
+  .container.resizing {
+    cursor: row-resize;
+  }
+
+  /* Flip the resize handle to a horizontal bar sitting between the iframe
+     area and the chat panel. The handle gets a visible grip pill so mobile
+     users can see and grab it easily. Inline style on the chat panel
+     controls its height via flex-basis, so both sections scale with the
+     viewport. */
   .resizeHandle {
-    display: none;
+    width: auto;
+    height: 18px;
+    cursor: row-resize;
+    align-self: stretch;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Visible grip pill */
+  .resizeHandle::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--text-muted);
+    opacity: 0.55;
+    transition: opacity var(--transition-fast), background var(--transition-fast);
+  }
+
+  .resizeHandle:hover::before,
+  .resizeHandle.resizing::before {
+    opacity: 1;
+    background: var(--text-secondary);
+  }
+
+  /* Extended touch hit area straddling the handle */
+  .resizeHandle::after {
+    left: 0;
+    right: 0;
+    top: -6px;
+    bottom: -6px;
+    width: auto;
+    height: auto;
+  }
+
+  /* Visible feedback on mobile is the ::before grip, not the ::after overlay */
+  .resizeHandle:hover::after,
+  .resizeHandle.resizing::after {
+    background: transparent;
   }
 
   .chatPanel {
     width: 100% !important;
-    height: 300px;
     border-left: none;
-    border-top: 1px solid var(--border-primary);
+    border-top: none;
+    min-height: 0;
+  }
+
+  .iframeContainer {
+    min-height: 0;
+  }
+
+  .resizeOverlay {
+    cursor: row-resize;
   }
 }
