@@ -58,7 +58,7 @@ CraftBot wartet auf deine Befehle. Richte jetzt deinen eigenen CraftBot ein.
 - **Plattformübergreifend** — Vollständige Unterstützung für Windows, macOS und Linux mit plattformspezifischen Code-Varianten und Docker-Containerisierung.
 
 > [!IMPORTANT]
-> **Hinweis zum GUI-Modus:** Der GUI-Modus befindet sich noch in einer experimentellen Phase. Beim Wechsel in den GUI-Modus kann es also zu Problemen kommen. Wir verbessern dieses Feature aktiv.
+> **Der GUI-Modus ist veraltet.** CraftBot unterstützt den GUI-Modus (Desktop-Automatisierung) nicht mehr. Bitte verwende stattdessen den Browser-, TUI- oder CLI-Modus.
 
 <div align="center">
     <img src="assets/craftbot_readme_features.png" alt="CraftBot Banner" width="1280"/>
@@ -114,7 +114,6 @@ CraftBot unterstützt mehrere UI-Modi. Wähle nach deinen Vorlieben:
 | **Browser** | `python run.py` | Node.js 18+ | Moderne Web-Oberfläche, am einfachsten |
 | **TUI** | `python run.py --tui` | Keine | Terminal-UI, ohne Abhängigkeiten |
 | **CLI** | `python run.py --cli` | Keine | Kommandozeile, leichtgewichtig |
-| **GUI** | `python run.py --gui` | `install.py --gui` | Desktop-Automatisierung mit visuellem Feedback |
 
 Der **Browser-Modus** ist Standard und wird empfohlen. Ohne Node.js gibt dir das Installationsprogramm eine Anleitung – alternativ kannst du den **TUI-Modus** nutzen.
 
@@ -136,7 +135,6 @@ Der **Browser-Modus** ist Standard und wird empfohlen. Ohne Node.js gibt dir das
 | **Skill Manager** | Lädt einsteckbare Skills und injiziert sie in den Agent-Kontext. |
 | **MCP Adapter** | Model Context Protocol Integration, die MCP-Tools in native Aktionen umwandelt. |
 | **TUI Interface** | Textual-basierte Terminal-Benutzeroberfläche für interaktive Kommandozeilennutzung. |
-| **GUI Module** | Experimentelle GUI-Automatisierung mit Docker-Containern, OmniParser zur UI-Elementerkennung und Gradio-Client. |
 
 ---
 
@@ -150,35 +148,13 @@ Der **Browser-Modus** ist Standard und wird empfohlen. Ohne Node.js gibt dir das
 
 ---
 
-## 🖥️ GUI-Modus (optional)
-
-Der GUI-Modus ermöglicht Bildschirmautomatisierung – der Agent kann eine Desktop-Umgebung sehen und mit ihr interagieren. Das ist optional und erfordert zusätzliche Einrichtung.
-
-```bash
-# Mit GUI-Unterstützung installieren (via pip, ohne conda)
-python install.py --gui
-
-# Mit GUI-Unterstützung und conda installieren
-python install.py --gui --conda
-
-# Im GUI-Modus starten
-python run.py --gui
-```
-
-> [!NOTE]
-> Der GUI-Modus ist experimentell und benötigt zusätzliche Abhängigkeiten (~4 GB für Modellgewichte). Wenn du keine Desktop-Automatisierung brauchst, überspringe das und verwende den Browser-/TUI-Modus, der keine zusätzlichen Abhängigkeiten hat.
-
----
-
 ## 📋 Befehlsreferenz
 
 ### install.py
 
 | Flag | Beschreibung |
 |------|-------------|
-| `--gui` | GUI-Komponenten installieren (OmniParser) |
 | `--conda` | conda-Umgebung nutzen (optional) |
-| `--cpu-only` | CPU-only PyTorch installieren (mit `--gui`) |
 
 ### run.py
 
@@ -187,7 +163,6 @@ python run.py --gui
 | (keines) | Im **Browser**-Modus ausführen (empfohlen, Node.js erforderlich) |
 | `--tui` | Im **Terminal-UI**-Modus ausführen (keine Abhängigkeiten nötig) |
 | `--cli` | Im **CLI**-Modus ausführen (leichtgewichtig) |
-| `--gui` | GUI-Automatisierungsmodus aktivieren (setzt vorheriges `install.py --gui` voraus) |
 
 ### service.py
 
@@ -206,20 +181,8 @@ python run.py --gui
 # Einfache pip-Installation (ohne conda)
 python install.py
 
-# Mit GUI-Unterstützung (via pip, ohne conda)
-python install.py --gui
-
-# Mit GUI auf CPU-only-Systemen (via pip, ohne conda)
-python install.py --gui --cpu-only
-
 # Mit conda-Umgebung (empfohlen für conda-Nutzer)
 python install.py --conda
-
-# Mit GUI-Unterstützung und conda
-python install.py --gui --conda
-
-# Mit GUI auf CPU-only-Systemen mit conda
-python install.py --gui --conda --cpu-only
 ```
 
 **CraftBot ausführen:**
@@ -233,9 +196,6 @@ python run.py --tui
 
 # CLI-Modus (leichtgewichtig)
 python run.py --cli
-
-# Mit GPU/GUI-Modus
-python run.py --gui
 
 # Mit conda-Umgebung
 conda run -n craftbot python run.py
@@ -254,9 +214,6 @@ python run.py --tui
 
 # CLI-Modus (leichtgewichtig)
 python run.py --cli
-
-# Mit GPU/GUI-Modus
-python run.py --gui
 
 # Mit conda-Umgebung
 conda run -n craftbot python run.py
@@ -330,11 +287,6 @@ Die Playwright-Chromium-Installation ist optional. Bei einem Fehlschlag:
 - Der Agent **funktioniert weiterhin** für andere Aufgaben
 - Du kannst ihn überspringen oder später installieren: `playwright install chromium`
 - Nur für die WhatsApp-Web-Integration erforderlich
-
-### GPU-/CUDA-Probleme
-Das Installationsprogramm erkennt die GPU-Verfügbarkeit automatisch:
-- Schlägt die CUDA-Installation fehl, wird automatisch in den CPU-Modus gewechselt
-- Für manuelle CPU-Einrichtung: `python install.py --gui --cpu-only`
 
 Ausführliche Hinweise zur Fehlerbehebung findest du in [INSTALLATION_FIX.md](INSTALLATION_FIX.md).
 
@@ -444,29 +396,7 @@ Wenn du Umgebungsvariablen bereitstellen musst, übergib eine env-Datei (z. B. b
 docker run --rm -it --env-file .env craftbot
 ```
 
-Mounte alle Verzeichnisse, die außerhalb des Containers persistent sein sollen (etwa Daten- oder Cache-Ordner), mit `-v`, und passe Ports oder weitere Flags nach Bedarf an dein Deployment an. Das Image enthält Systemabhängigkeiten für OCR (`tesseract`), Bildschirmautomatisierung (`pyautogui`, `mss`, X11-Tools und einen virtuellen Framebuffer) sowie gängige HTTP-Clients, damit der Agent im Container mit Dateien, Netzwerk-APIs und GUI-Automatisierung arbeiten kann.
-
-### GUI-/Bildschirmautomatisierung aktivieren
-
-GUI-Aktionen (Maus-/Tastaturereignisse, Screenshots) benötigen einen X11-Server. Du kannst dich an das Host-Display anhängen oder headless mit `xvfb` laufen lassen:
-
-* Host-Display verwenden (erfordert Linux mit X11):
-
-  ```bash
-  docker run --rm -it \
-    -e DISPLAY=$DISPLAY \
-    -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -v $(pwd)/data:/app/app/data \
-    craftbot
-  ```
-
-  Füge weitere `-v`-Mounts für Ordner hinzu, in die der Agent lesen/schreiben soll.
-
-* Headless mit virtuellem Display ausführen:
-
-  ```bash
-	docker run --rm -it --env-file .env craftbot bash -lc "Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99 && exec python -m app.main"
-  ```
+Mounte alle Verzeichnisse, die außerhalb des Containers persistent sein sollen (etwa Daten- oder Cache-Ordner), mit `-v`, und passe Ports oder weitere Flags nach Bedarf an dein Deployment an. Das Image enthält Systemabhängigkeiten für OCR (`tesseract`) sowie gängige HTTP-Clients, damit der Agent im Container mit Dateien und Netzwerk-APIs arbeiten kann.
 
 Standardmäßig nutzt das Image Python 3.10 und bündelt die Python-Abhängigkeiten aus `environment.yml`/`requirements.txt`, sodass `python -m app.main` sofort funktioniert.
 
@@ -486,3 +416,15 @@ Dieses Projekt steht unter der [MIT-Lizenz](LICENSE). Du darfst das Projekt frei
 
 Entwickelt und gepflegt von [CraftOS](https://craftos.net/) sowie den Contributors [@zfoong](https://github.com/zfoong) und [@ahmad-ajmal](https://github.com/ahmad-ajmal).
 Wenn dir **CraftBot** nützlich ist, gib dem Repository bitte einen ⭐ und teile es mit anderen!
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=CraftOS-dev%2FCraftBot&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&legend=top-left" />
+ </picture>
+</a>
