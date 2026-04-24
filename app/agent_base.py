@@ -10,7 +10,6 @@ or extend the protected hooks.
 CraftBot is an open-source, light version of AI agent developed by CraftOS.
 Here are the core features:
 - Todo-based task tracking
-- Can switch between CLI/GUI mode
 
 Main agent cycle:
 - Receive query from user
@@ -2331,7 +2330,7 @@ class AgentBase:
         Note: Call `self._get_interface_capabilities_prompt()` and append it to include
         interface-specific capabilities (e.g., file attachment support in browser mode).
         """
-        base_prompt = "You are a general computer-use AI agent that can switch between CLI/GUI mode."
+        base_prompt = "You are a general computer-use AI agent."
         return base_prompt + self._get_interface_capabilities_prompt()
 
     def _build_db_interface(self, *, data_dir: str, chroma_path: str):

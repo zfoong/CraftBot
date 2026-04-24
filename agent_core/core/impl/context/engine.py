@@ -198,7 +198,6 @@ class ContextEngine:
             vm_operating_system="Linux",
             vm_os_version="6.12.13",
             vm_os_platform="Linux a5e39e32118c 6.12.13 #1 SMP Thu Mar 13 11:34:50 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux",
-            vm_resolution="1064 x 1064"
         )
 
     def create_system_file_system_context(self) -> str:

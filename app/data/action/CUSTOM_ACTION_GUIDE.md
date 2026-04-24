@@ -299,7 +299,6 @@ Action sets group related actions together. During task execution, only actions 
 | `"file_operations"` | File and folder manipulation |
 | `"web_research"` | Internet search and browsing |
 | `"document_processing"` | PDF and document handling |
-| `"gui_interaction"` | Mouse, keyboard, screen operations |
 | `"clipboard"` | Clipboard operations |
 | `"shell"` | Command line and Python execution |
 

@@ -43,7 +43,6 @@ Source Platform: {source_platform}
   - File work → 'file_operations'
   - Web browsing/searching → 'web_research'
   - PDFs/documents → 'document_processing'
-  - GUI automation → 'gui_interaction'
   - Running commands → 'shell'
 - Select ONLY the sets needed (fewer is better for performance)- 
 - If the source platform is an external messaging service, you MUST include that platform's action set, for example:
@@ -122,7 +121,6 @@ Task Description: {task_description}
   - If the task involves files, include 'file_operations'
   - If the task involves web browsing or searching, include 'web_research'
   - If the task involves PDFs or documents, include 'document_processing'
-  - If the task involves GUI automation, include 'gui_interaction'
   - If the task involves running commands or scripts, include 'shell'
 </instructions>
 

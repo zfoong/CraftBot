@@ -22,8 +22,6 @@ DEFAULT_SET_DESCRIPTIONS: Dict[str, str] = {
     "document_processing": "PDF and document handling (read, create, convert)",
     "image": "Image viewing, analysis, and OCR (screenshots, photos, diagrams)",
     "video": "Video analysis and understanding — describe, summarise, or answer questions about video files (MP4, AVI, MOV)",
-    # [V1.2.2] GUI mode temporarily disabled. Uncomment to re-enable.
-    # "gui_interaction": "Mouse, keyboard, and screen operations",
     "clipboard": "Clipboard read/write operations",
     "shell": "Command line and Python execution",
 }
