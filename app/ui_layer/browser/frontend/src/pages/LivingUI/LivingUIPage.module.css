@@ -213,6 +213,18 @@
 .petWiggle {
 }
 
+/* Body silhouette is near-white — in light mode it blends into the bg,
+   so stroke a thin outline. Dark mode needs no outline. */
+.petBody {
+  stroke: none;
+}
+
+[data-theme="light"] .petBody {
+  stroke: var(--text-muted, var(--border-secondary));
+  stroke-width: 3;
+  paint-order: stroke fill;
+}
+
 .petSleepZ {
   transform-origin: center;
   transform-box: fill-box;
