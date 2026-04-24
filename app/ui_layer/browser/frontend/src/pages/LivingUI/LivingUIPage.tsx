@@ -267,7 +267,7 @@ export function LivingUIPage() {
             />
           ) : project.status === 'launching' ? (
             <div className={styles.loading}>
-              <CraftBotPet state="launching" />
+              <CraftBotPet state="launching" size={96} />
               <p>Launching Living UI...</p>
               <p className={styles.hint}>Installing dependencies, running tests, starting servers</p>
             </div>

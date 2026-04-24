@@ -11,24 +11,6 @@ interface Props {
   size?: number
 }
 
-type MouthShape = 'neutral' | 'smile' | 'grin' | 'rest'
-
-function pickMouth(state: PetState, progress: number, indeterminate: boolean): MouthShape {
-  if (state === 'stopped') return 'rest'
-  if (state === 'launching') return 'smile'
-  if (indeterminate || progress < 33) return 'neutral'
-  if (progress < 85) return 'smile'
-  return 'grin'
-}
-
-// Mouth sits below the eyes (eyes are the two orange pills centered around y≈122)
-const MOUTH_PATHS: Record<MouthShape, string> = {
-  neutral: 'M88 162 L116 162',
-  smile: 'M86 158 Q102 172 118 158',
-  grin: 'M82 156 Q102 178 122 156 Q102 172 82 156 Z',
-  rest: 'M90 162 L114 162',
-}
-
 // Eye path d-values lifted from the original logo (paths 3 and 2 in the SVG).
 // Keeping them in their own <g> wrappers lets us apply CSS transforms (blink/close)
 // without fighting the SVG-attribute transforms on the paths themselves.
@@ -58,7 +40,6 @@ export function CraftBotPet({
     prevCompleted.current = completedCount
   }, [completedCount])
 
-  const mouth = pickMouth(state, progress, indeterminate)
   const sleeping = state === 'stopped'
   const showBlush = state === 'creating' && progress > 60
   const antennaActive = state !== 'stopped'
@@ -120,30 +101,20 @@ export function CraftBotPet({
             </g>
           )}
 
-          {/* Mouth — sits below the eyes */}
-          <path
-            d={MOUTH_PATHS[mouth]}
-            fill={mouth === 'grin' ? '#2A2A2A' : 'none'}
-            stroke="#2A2A2A"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-
           {/* Sleep Z's */}
           {sleeping && (
             <g
-              fill="#8A8A8A"
+              fill="#C8C8C8"
               fontFamily="system-ui, sans-serif"
-              fontWeight="700"
-              fontSize="14"
+              fontWeight="800"
+              fontSize="32"
             >
-              <text x="130" y="40" className={styles.petSleepZ}>z</text>
+              <text x="118" y="52" className={styles.petSleepZ}>z</text>
               <text
-                x="140"
-                y="26"
+                x="142"
+                y="30"
                 className={`${styles.petSleepZ} ${styles.petSleepZDelayed}`}
-                fontSize="10"
+                fontSize="22"
               >
                 z
               </text>
