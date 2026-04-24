@@ -401,6 +401,7 @@
   background: var(--border-primary);
   cursor: col-resize;
   flex-shrink: 0;
+  touch-action: none;
 }
 
 .resizeHandle::after {
@@ -630,14 +631,37 @@
     flex-direction: column;
   }
 
+  .container.resizing {
+    cursor: row-resize;
+  }
+
+  /* Flip the resize handle to a horizontal bar sitting between the iframe
+     area and the chat panel. Inline style on the chat panel controls its
+     height via flex-basis, so both sections scale with the viewport. */
   .resizeHandle {
-    display: none;
+    width: auto;
+    height: 1px;
+    cursor: row-resize;
+    align-self: stretch;
+  }
+
+  .resizeHandle::after {
+    left: 0;
+    right: 0;
+    top: -2px;
+    bottom: auto;
+    width: auto;
+    height: 5px;
   }
 
   .chatPanel {
     width: 100% !important;
-    height: 300px;
     border-left: none;
     border-top: 1px solid var(--border-primary);
+    min-height: 0;
+  }
+
+  .iframeContainer {
+    min-height: 0;
   }
 }
