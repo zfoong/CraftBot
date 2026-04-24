@@ -39,8 +39,20 @@ export function LivingUIPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showChat, setShowChat] = useState(true)
   const [panelWidth, setPanelWidth] = useState(350)
+  const [mobileChatRatio, setMobileChatRatio] = useState(0.4)
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= 768
+  )
   const [isResizing, setIsResizing] = useState(false)
   const iframePlaceholderRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Track viewport width for mobile/desktop layout switch
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   // Reset fullscreen when leaving the page so other pages aren't stuck without nav
   useEffect(() => {
@@ -128,33 +140,41 @@ export function LivingUIPage() {
     }
   }
 
-  // Handle resize
-  const handleMouseDown = (e: React.MouseEvent) => {
+  // Handle resize (horizontal on desktop, vertical on mobile). Uses pointer
+  // events so both mouse and touch work on the mobile handle.
+  const handlePointerDown = (e: React.PointerEvent) => {
     e.preventDefault()
     setIsResizing(true)
   }
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return
-      const newWidth = window.innerWidth - e.clientX
-      setPanelWidth(Math.max(280, Math.min(600, newWidth)))
+    if (!isResizing) return
+
+    const handlePointerMove = (e: PointerEvent) => {
+      const rect = contentRef.current?.getBoundingClientRect()
+      if (!rect) return
+      if (isMobile) {
+        const chatHeight = rect.bottom - e.clientY
+        const ratio = chatHeight / rect.height
+        setMobileChatRatio(Math.max(0.15, Math.min(0.85, ratio)))
+      } else {
+        const newWidth = rect.right - e.clientX
+        setPanelWidth(Math.max(280, Math.min(600, newWidth)))
+      }
     }
 
-    const handleMouseUp = () => {
-      setIsResizing(false)
-    }
+    const handlePointerUp = () => setIsResizing(false)
 
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
-    }
+    document.addEventListener('pointermove', handlePointerMove)
+    document.addEventListener('pointerup', handlePointerUp)
+    document.addEventListener('pointercancel', handlePointerUp)
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('pointermove', handlePointerMove)
+      document.removeEventListener('pointerup', handlePointerUp)
+      document.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [isResizing])
+  }, [isResizing, isMobile])
 
   // Project not found
   if (!project) {
@@ -235,7 +255,7 @@ export function LivingUIPage() {
       </div>
 
       {/* Main Content Area */}
-      <div className={styles.content}>
+      <div ref={contentRef} className={styles.content}>
         {/* Living UI Iframe */}
         <div className={styles.iframeContainer}>
           {project.status === 'running' && project.url ? (
@@ -275,13 +295,20 @@ export function LivingUIPage() {
         {showChat && (
           <div
             className={`${styles.resizeHandle} ${isResizing ? styles.resizing : ''}`}
-            onMouseDown={handleMouseDown}
+            onPointerDown={handlePointerDown}
           />
         )}
 
         {/* Chat Panel */}
         {showChat && (
-          <div className={styles.chatPanel} style={{ width: panelWidth }}>
+          <div
+            className={styles.chatPanel}
+            style={
+              isMobile
+                ? { flex: `0 0 ${mobileChatRatio * 100}%` }
+                : { width: panelWidth }
+            }
+          >
             <Chat
               livingUIId={projectId}
               placeholder="Ask about this Living UI..."
