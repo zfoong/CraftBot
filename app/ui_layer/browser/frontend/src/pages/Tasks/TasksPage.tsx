@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { ChevronRight, XCircle, ArrowLeft, Reply } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useWebSocket } from '../../contexts/WebSocketContext'
@@ -272,7 +272,7 @@ const MIN_PANEL_WIDTH = 200
 const MAX_PANEL_WIDTH = 600
 
 export function TasksPage() {
-  const { actions, cancelTask, cancellingTaskId, setReplyTarget, loadOlderActions, hasMoreActions, loadingOlderActions } = useWebSocket()
+  const { actions, messages, cancelTask, cancellingTaskId, setReplyTarget, loadOlderActions, hasMoreActions, loadingOlderActions } = useWebSocket()
   const navigate = useNavigate()
   const [selectedItem, setSelectedItem] = useState<ActionItem | null>(null)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
@@ -283,6 +283,18 @@ export function TasksPage() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const tasks = actions.filter(a => a.itemType === 'task')
+
+  // Tasks whose latest UX gate is an unanswered option prompt — the user
+  // must click an option, so suppress the reply affordance for these.
+  const tasksAwaitingOption = useMemo(() => {
+    const ids = new Set<string>()
+    for (const m of messages) {
+      if (m.taskSessionId && m.options && m.options.length > 0 && !m.optionSelected) {
+        ids.add(m.taskSessionId)
+      }
+    }
+    return ids
+  }, [messages])
 
   // Handle reply to task - set reply target and navigate to chat
   const handleTaskReply = useCallback((task: ActionItem) => {
@@ -400,7 +412,7 @@ export function TasksPage() {
                     />
                     <StatusIndicator status={task.status} size="sm" />
                     <span className={styles.itemName}>{task.name}</span>
-                    {(task.status === 'running' || task.status === 'waiting') && (
+                    {(task.status === 'running' || task.status === 'waiting') && !tasksAwaitingOption.has(task.id) && (
                       <IconButton
                         size="sm"
                         variant="ghost"

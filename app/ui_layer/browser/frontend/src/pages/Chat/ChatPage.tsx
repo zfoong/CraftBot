@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { X, Loader2, Reply } from 'lucide-react'
 import { useWebSocket } from '../../contexts/WebSocketContext'
 import { IconButton, StatusIndicator } from '../../components/ui'
@@ -11,7 +11,19 @@ const MIN_PANEL_WIDTH = 200
 const MAX_PANEL_WIDTH = 800
 
 export function ChatPage() {
-  const { actions, cancelTask, cancellingTaskId, setReplyTarget } = useWebSocket()
+  const { actions, messages, cancelTask, cancellingTaskId, setReplyTarget } = useWebSocket()
+
+  // Tasks whose latest UX gate is an unanswered option prompt — the user
+  // must click an option, so suppress the reply affordance for these.
+  const tasksAwaitingOption = useMemo(() => {
+    const ids = new Set<string>()
+    for (const m of messages) {
+      if (m.taskSessionId && m.options && m.options.length > 0 && !m.optionSelected) {
+        ids.add(m.taskSessionId)
+      }
+    }
+    return ids
+  }, [messages])
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
@@ -101,17 +113,19 @@ export function ChatPage() {
                   <span className={styles.taskName}>{task.name}</span>
                   {(task.status === 'running' || task.status === 'waiting') && (
                     <>
-                      <IconButton
-                        size="sm"
-                        variant="ghost"
-                        className={styles.taskReplyBtn}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleTaskReply(task.id, task.name)
-                        }}
-                        title="Reply to Task"
-                        icon={<Reply size={12} />}
-                      />
+                      {!tasksAwaitingOption.has(task.id) && (
+                        <IconButton
+                          size="sm"
+                          variant="ghost"
+                          className={styles.taskReplyBtn}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleTaskReply(task.id, task.name)
+                          }}
+                          title="Reply to Task"
+                          icon={<Reply size={12} />}
+                        />
+                      )}
                       <IconButton
                         size="sm"
                         variant="ghost"
