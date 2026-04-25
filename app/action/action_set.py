@@ -20,8 +20,8 @@ DEFAULT_SET_DESCRIPTIONS: Dict[str, str] = {
     "file_operations": "File and folder manipulation (read, write, search, edit)",
     "web_research": "Internet search and browsing (web search, fetch URLs)",
     "document_processing": "PDF and document handling (read, create, convert)",
-    # [V1.2.2] GUI mode temporarily disabled. Uncomment to re-enable.
-    # "gui_interaction": "Mouse, keyboard, and screen operations",
+    "image": "Image viewing, analysis, and OCR (screenshots, photos, diagrams)",
+    "video": "Video analysis and understanding — describe, summarise, or answer questions about video files (MP4, AVI, MOV)",
     "clipboard": "Clipboard read/write operations",
     "shell": "Command line and Python execution",
 }

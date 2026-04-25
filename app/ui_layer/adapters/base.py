@@ -206,6 +206,9 @@ class InterfaceAdapter(ABC):
             bus.subscribe(UIEventType.ERROR_MESSAGE, self._handle_error_message)
         )
         self._unsubscribers.append(
+            bus.subscribe(UIEventType.LLM_FATAL_ERROR, self._handle_llm_fatal_error)
+        )
+        self._unsubscribers.append(
             bus.subscribe(UIEventType.INFO_MESSAGE, self._handle_info_message)
         )
 
@@ -263,7 +266,12 @@ class InterfaceAdapter(ABC):
     def _handle_user_message(self, event: UIEvent) -> None:
         """Handle user message event."""
         asyncio.create_task(
-            self._display_chat_message("You", event.data.get("message", ""), "user")
+            self._display_chat_message(
+                "You",
+                event.data.get("message", ""),
+                "user",
+                client_id=event.data.get("client_id"),
+            )
         )
 
     def _handle_agent_message(self, event: UIEvent) -> None:
@@ -305,6 +313,24 @@ class InterfaceAdapter(ABC):
         """Handle error message event."""
         asyncio.create_task(
             self._display_chat_message("Error", event.data.get("message", ""), "error")
+        )
+
+    def _handle_llm_fatal_error(self, event: UIEvent) -> None:
+        """Handle fatal LLM consecutive failure — show retry/change-model options."""
+        from app.ui_layer.components.types import ChatMessageOption
+        session_id = event.data.get("session_id")
+        options = [
+            ChatMessageOption(label="Retry", value="llm_retry", style="primary"),
+            ChatMessageOption(label="Change Model", value="llm_change_model", style="default"),
+        ]
+        asyncio.create_task(
+            self._display_chat_message(
+                "System",
+                "What would you like to do?",
+                "system",
+                task_session_id=session_id,
+                options=options,
+            )
         )
 
     def _handle_info_message(self, event: UIEvent) -> None:
@@ -456,6 +482,7 @@ class InterfaceAdapter(ABC):
         style: str,
         task_session_id: Optional[str] = None,
         options: Optional[List[ChatMessageOption]] = None,
+        client_id: Optional[str] = None,
     ) -> None:
         """
         Display a chat message.
@@ -466,6 +493,7 @@ class InterfaceAdapter(ABC):
             style: Style identifier
             task_session_id: Optional task session ID for reply feature
             options: Optional list of interactive options/buttons
+            client_id: Optional client-generated UUID for reconciling with optimistic UI
         """
         import time
 
@@ -477,6 +505,7 @@ class InterfaceAdapter(ABC):
                 timestamp=time.time(),
                 task_session_id=task_session_id,
                 options=options,
+                client_id=client_id,
             )
         )
 

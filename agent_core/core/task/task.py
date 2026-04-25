@@ -71,6 +71,9 @@ class Task:
     waiting_for_user_reply: bool = False
     # Platform that started (or most recently resumed) this task — outbound messages route here
     source_platform: Optional[str] = None
+    # Named background workflow this task runs on behalf of (e.g. "memory_processing").
+    # When set, the TaskManager auto-releases the corresponding lock on task end.
+    workflow_id: Optional[str] = None
 
     def get_current_todo(self) -> Optional[TodoItem]:
         """
@@ -117,6 +120,7 @@ class Task:
             "chatserver_action_id": self.chatserver_action_id,
             "waiting_for_user_reply": self.waiting_for_user_reply,
             "source_platform": self.source_platform,
+            "workflow_id": self.workflow_id,
         }
 
     @classmethod
@@ -144,4 +148,5 @@ class Task:
             chatserver_action_id=data.get("chatserver_action_id"),
             waiting_for_user_reply=data.get("waiting_for_user_reply", False),
             source_platform=data.get("source_platform"),
+            workflow_id=data.get("workflow_id"),
         )

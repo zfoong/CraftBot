@@ -1,4 +1,4 @@
-import React, { memo, useState, useMemo, useRef } from 'react'
+import React, { memo, useState, useMemo, useRef, useEffect } from 'react'
 import { Reply } from 'lucide-react'
 import { MarkdownContent, AttachmentDisplay, IconButton } from '../../components/ui'
 import type { ChatMessage as ChatMessageType } from '../../types'
@@ -38,10 +38,15 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onOptionClick,
 }: ChatMessageProps) {
   const [isHovered, setIsHovered] = useState(false)
-  const [optionClicked, setOptionClicked] = useState<string | null>(
-    message.optionSelected || null
-  )
-  const optionLockedRef = useRef(!!message.optionSelected)
+  // The selection is owned by the message prop (the single source of truth).
+  // The ref is a one-shot guard to suppress double-dispatch between the click
+  // and the next render cycle, and is re-synced whenever the prop changes so
+  // it can't be out of step after virtualizer remounts or WS state replays.
+  const selected = message.optionSelected ?? null
+  const dispatchLockRef = useRef(!!selected)
+  useEffect(() => {
+    dispatchLockRef.current = !!selected
+  }, [selected])
   const { agentProfilePictureUrl } = useWebSocket()
 
   // Show reply for ALL agent messages
@@ -70,7 +75,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
 
   const bubbleContainer = (
     <div className={styles.messageBubbleContainer}>
-      <div className={`${styles.message} ${styles[message.style]}`}>
+      <div className={`${styles.message} ${styles[message.style]} ${message.pending ? styles.pending : ''}`}>
         <div className={styles.messageHeader}>
           <span className={styles.sender}>{message.sender}</span>
           <span className={styles.timestamp}>
@@ -92,14 +97,13 @@ export const ChatMessageItem = memo(function ChatMessageItem({
             {message.options.map((opt, index) => (
               <button
                 key={opt.value}
-                className={`${styles.optionButton} ${optionClicked === opt.value ? styles['optionButton--selected'] : ''} ${optionClicked && optionClicked !== opt.value ? styles['optionButton--disabled'] : ''}`}
+                className={`${styles.optionButton} ${selected === opt.value ? styles['optionButton--selected'] : ''} ${selected && selected !== opt.value ? styles['optionButton--disabled'] : ''}`}
                 onClick={() => {
-                  if (optionLockedRef.current) return
-                  optionLockedRef.current = true
-                  setOptionClicked(opt.value)
+                  if (dispatchLockRef.current) return
+                  dispatchLockRef.current = true
                   onOptionClick?.(opt.value, message.taskSessionId, message.messageId)
                 }}
-                disabled={!!optionClicked}
+                disabled={!!selected}
               >
                 <span className={styles.optionIndex}>{index + 1}</span>
                 {opt.label}
@@ -108,6 +112,15 @@ export const ChatMessageItem = memo(function ChatMessageItem({
           </div>
         )}
       </div>
+      {message.attachments && message.attachments.length > 0 && (
+        <div className={styles.messageAttachments}>
+          <AttachmentDisplay
+            attachments={message.attachments}
+            onOpenFile={onOpenFile}
+            onOpenFolder={onOpenFolder}
+          />
+        </div>
+      )}
       {/* Reply button - positioned outside the bubble at top-right */}
       {canReply && isHovered && (
         <IconButton
@@ -140,15 +153,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({
       ) : (
         bubbleContainer
       )}
-      {message.attachments && message.attachments.length > 0 && (
-        <div className={styles.messageAttachments}>
-          <AttachmentDisplay
-            attachments={message.attachments}
-            onOpenFile={onOpenFile}
-            onOpenFolder={onOpenFolder}
-          />
-        </div>
-      )}
     </div>
   )
-}, (prev, next) => prev.message.messageId === next.message.messageId)
+}, (prev, next) =>
+  prev.message.messageId === next.message.messageId
+  && prev.message.optionSelected === next.message.optionSelected
+  && prev.message.content === next.message.content
+)

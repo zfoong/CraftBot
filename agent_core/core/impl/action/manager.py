@@ -30,6 +30,49 @@ from agent_core.core.protocols.state import StateManagerProtocol
 from agent_core.core.impl.action.executor import ActionExecutor
 from agent_core.utils.logger import logger
 
+# ============================================================================
+# Python 3.14 + nest_asyncio 1.6.0 compatibility shim for asyncio.wait_for.
+# On 3.11+, asyncio.wait_for uses `async with asyncio.timeout(...)`, which
+# calls asyncio.current_task() in __aenter__. nest_asyncio.apply() (below)
+# patches the event loop's _run_once but does not propagate the task context
+# variable when re-entering the loop, so current_task() returns None and
+# wait_for raises "RuntimeError: Timeout should be used inside a task".
+# Replace wait_for with an asyncio.wait-based equivalent that doesn't depend
+# on current_task(). Installed just before nest_asyncio.apply() so every
+# subsequent asyncio.wait_for caller (MCP stdio, action executor, etc.) picks
+# it up. Safe to remove once nest_asyncio ships a 3.14-compatible release.
+try:
+    import sys as _compat_sys
+    if _compat_sys.version_info >= (3, 11):
+        import asyncio.tasks as _compat_asyncio_tasks
+
+        async def _compat_wait_for(fut, timeout):
+            if timeout is None:
+                return await fut
+            task = asyncio.ensure_future(fut)
+            _done, pending = await asyncio.wait({task}, timeout=timeout)
+            if task in pending:
+                task.cancel()
+                try:
+                    await task
+                except BaseException:
+                    pass
+                raise asyncio.TimeoutError()
+            return task.result()
+
+        asyncio.wait_for = _compat_wait_for
+        _compat_asyncio_tasks.wait_for = _compat_wait_for
+        try:
+            _compat_sys.stderr.write(
+                "[compat-shim] asyncio.wait_for replaced (action/manager)\n"
+            )
+            _compat_sys.stderr.flush()
+        except Exception:
+            pass
+except Exception as _compat_exc:
+    logger.warning(f"[compat-shim] failed to install asyncio.wait_for replacement: {_compat_exc!r}")
+# ============================================================================
+
 nest_asyncio.apply()
 
 

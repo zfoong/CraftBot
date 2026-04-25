@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+from agent_core.utils.logger import logger
 from app.ui_layer.events.event_bus import EventBus
 from app.ui_layer.events.event_types import UIEvent, UIEventType
 from app.ui_layer.events.transformer import EventTransformer
@@ -226,7 +227,9 @@ class UIController:
         self,
         message: str,
         adapter_id: str = "",
-        target_session_id: Optional[str] = None
+        target_session_id: Optional[str] = None,
+        living_ui_id: Optional[str] = None,
+        client_id: Optional[str] = None,
     ) -> None:
         """
         Handle user input from any interface.
@@ -237,6 +240,7 @@ class UIController:
             message: The user's input message
             adapter_id: ID of the adapter that sent the message
             target_session_id: Optional session ID for direct reply (bypasses routing)
+            living_ui_id: Optional Living UI project ID if user is on a Living UI page
         """
         if not message.strip():
             return
@@ -266,7 +270,11 @@ class UIController:
         self._event_bus.emit(
             UIEvent(
                 type=UIEventType.USER_MESSAGE,
-                data={"message": message, "adapter_id": adapter_id},
+                data={
+                    "message": message,
+                    "adapter_id": adapter_id,
+                    "client_id": client_id,
+                },
                 source_adapter=adapter_id,
             )
         )
@@ -280,6 +288,8 @@ class UIController:
         # Include target session ID for direct reply (bypasses routing LLM)
         if target_session_id:
             payload["target_session_id"] = target_session_id
+        if living_ui_id:
+            payload["living_ui_id"] = living_ui_id
 
         await self._agent._handle_chat_message(payload)
 
@@ -297,6 +307,8 @@ class UIController:
             await self._agent.handle_limit_continue(session_id)
         elif value == "abort_limit":
             await self._agent.handle_limit_abort(session_id)
+        elif value == "llm_retry":
+            await self._agent.handle_llm_retry(session_id)
 
     # ─────────────────────────────────────────────────────────────────────
     # Event Processing
@@ -490,32 +502,34 @@ class UIController:
 
     async def _consume_triggers(self) -> None:
         """Consume triggers and run agent reactions."""
-        while self._running and self._agent.is_running:
-            try:
-                trigger = await asyncio.wait_for(
-                    self._agent.triggers.get(), timeout=0.5
-                )
-                # Run react in a thread to avoid blocking
-                await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    self._run_react_in_thread,
-                    trigger,
-                )
-            except asyncio.TimeoutError:
-                # No trigger available, continue
-                pass
-            except Exception:
-                # Log but don't crash
-                await asyncio.sleep(0.1)
-
-    def _run_react_in_thread(self, trigger) -> None:
-        """Run agent.react() in an isolated thread with its own event loop."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        logger.info("[CONSUMER] Trigger consumer started")
         try:
-            loop.run_until_complete(self._agent.react(trigger))
+            while self._running and self._agent.is_running:
+                try:
+                    trigger = await self._agent.triggers.get()
+                    await self._agent.react(trigger)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(
+                        f"[CONSUMER] Exception during trigger processing: {e!r}",
+                        exc_info=True,
+                    )
+                    await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            logger.info("[CONSUMER] Trigger consumer cancelled")
+            raise
+        except BaseException as e:
+            logger.error(
+                f"[CONSUMER] Trigger consumer died with unhandled {type(e).__name__}: {e!r}",
+                exc_info=True,
+            )
+            raise
         finally:
-            loop.close()
+            logger.info(
+                f"[CONSUMER] Trigger consumer exiting "
+                f"(running={self._running}, agent_running={self._agent.is_running})"
+            )
 
     # ─────────────────────────────────────────────────────────────────────
     # Command Registration
@@ -573,7 +587,6 @@ class UIController:
 
         try:
             from agent_core.core.impl.skill.manager import skill_manager
-            from agent_core.utils.logger import logger
 
             for skill in skill_manager.get_enabled_skills():
                 cmd_name = f"/{skill.name}"

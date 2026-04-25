@@ -1,5 +1,5 @@
 {
-  "version": "1.2.3",
+  "version": "1.3.0",
   "general": {
     "agent_name": "CraftBot",
     "os_language": "en"
@@ -8,7 +8,10 @@
     "enabled": true
   },
   "memory": {
-    "enabled": true
+    "enabled": true,
+    "max_items": 200,
+    "prune_target": 135,
+    "item_word_limit": 150
   },
   "model": {
     "llm_provider": "byteplus",
@@ -22,8 +25,7 @@
     "openai": "",
     "anthropic": "",
     "google": "",
-    "byteplus": "",
-    "deepseek": ""
+    "byteplus": ""
   },
   "endpoints": {
     "remote_model_url": "",

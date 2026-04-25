@@ -1,5 +1,15 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
-import type { ChatMessage, ActionItem, AgentStatus, InitialState, WSMessage, DashboardMetrics, TaskCancelResponse, FilteredDashboardMetrics, MetricsTimePeriod, OnboardingStep, OnboardingStepResponse, OnboardingSubmitResponse, OnboardingCompleteResponse, LocalLLMState, LocalLLMCheckResponse, LocalLLMTestResponse, LocalLLMInstallResponse, LocalLLMProgressResponse, LocalLLMPullProgressResponse, SuggestedModel } from '../types'
+import type {
+  ChatMessage, ActionItem, AgentStatus, InitialState, WSMessage, DashboardMetrics,
+  TaskCancelResponse, FilteredDashboardMetrics, MetricsTimePeriod, OnboardingStep,
+  OnboardingStepResponse, OnboardingSubmitResponse, OnboardingCompleteResponse, 
+  LocalLLMState, LocalLLMCheckResponse, LocalLLMTestResponse, LocalLLMInstallResponse, 
+  LocalLLMProgressResponse, LocalLLMPullProgressResponse, SuggestedModel,
+  // Living UI types
+  LivingUIProject, LivingUICreateRequest, LivingUIStatusUpdate, LivingUIStateUpdate,
+  LivingUITodo, LivingUITodosUpdate,
+  LivingUICreateResponse, LivingUIListResponse, LivingUILaunchResponse, LivingUIStopResponse, LivingUIDeleteResponse
+} from '../types'
 import { getWsUrl } from '../utils/connection'
 
 // Pending attachment type for upload
@@ -24,6 +34,15 @@ interface ReplyContext {
   originalMessage: string
 }
 
+// Unique-ish id for client-originating artifacts (WS connection attempts,
+// optimistic chat messages awaiting server echo). Uses crypto.randomUUID
+// when available, falls back to a cheap timestamp+random id on older
+// runtimes without the secure-context requirement.
+const newClientId = (): string =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `cid-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
 interface WebSocketState {
   connected: boolean
   version: string
@@ -36,6 +55,8 @@ interface WebSocketState {
   dashboardMetrics: DashboardMetrics | null
   filteredMetricsCache: Record<MetricsTimePeriod, FilteredDashboardMetrics | null>
   cancellingTaskId: string | null
+  // Whether the initial 'init' message has been received from the backend
+  initReceived: boolean
   // Onboarding state
   needsHardOnboarding: boolean
   agentName: string
@@ -56,10 +77,16 @@ interface WebSocketState {
   loadingOlderActions: boolean
   // Local LLM (Ollama) state
   localLLM: LocalLLMState
+  // Living UI state
+  livingUIProjects: LivingUIProject[]
+  livingUICreating: LivingUIStatusUpdate | null
+  livingUITodos: Record<string, LivingUITodo[]>
+  activeLivingUIId: string | null
+  livingUIStates: Record<string, LivingUIStateUpdate['state']>
 }
 
 interface WebSocketContextType extends WebSocketState {
-  sendMessage: (content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => void
+  sendMessage: (content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext, livingUIId?: string) => void
   sendCommand: (command: string) => void
   clearMessages: () => void
   cancelTask: (taskId: string) => void
@@ -94,6 +121,13 @@ interface WebSocketContextType extends WebSocketState {
   // Agent profile picture
   uploadAgentProfilePicture: (name: string, mimeType: string, contentBase64: string) => void
   removeAgentProfilePicture: () => void
+  // Living UI methods
+  createLivingUI: (data: LivingUICreateRequest) => void
+  requestLivingUIList: () => void
+  launchLivingUI: (projectId: string) => void
+  stopLivingUI: (projectId: string) => void
+  deleteLivingUI: (projectId: string) => void
+  setActiveLivingUI: (projectId: string | null) => void
 }
 
 // Initialize lastSeenMessageId from localStorage
@@ -128,6 +162,7 @@ const defaultState: WebSocketState = {
   },
   cancellingTaskId: null,
   // Onboarding state
+  initReceived: false,
   needsHardOnboarding: false,
   agentName: 'Agent',
   agentProfilePictureUrl: '/api/agent-profile-picture',
@@ -154,6 +189,12 @@ const defaultState: WebSocketState = {
     pullBytes: null,
     suggestedModels: [],
   },
+  // Living UI state
+  livingUIProjects: [],
+  livingUICreating: null,
+  livingUITodos: {},
+  activeLivingUIId: null,
+  livingUIStates: {},
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined)
@@ -165,6 +206,25 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const isConnectingRef = useRef<boolean>(false)
   const reconnectCountRef = useRef<number>(0)
   const maxReconnectAttemptsRef = useRef<number>(10)
+  // Outbox: payloads queued while the socket is not OPEN. Flushed on reconnect.
+  const outboxRef = useRef<string[]>([])
+
+  // Small helper so `sendMessage` and the on-open flush share one policy:
+  // try to send via the current socket; on failure or non-OPEN, queue for
+  // the next successful `onopen`. Keeping this as a closure over the refs
+  // (not a class) is enough — there's no state beyond the outbox itself.
+  const sendOrQueue = useCallback((payloadStr: string) => {
+    const ws = wsRef.current
+    if (ws?.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(payloadStr)
+        return
+      } catch (err) {
+        console.warn('[WS] send threw, queuing payload:', err)
+      }
+    }
+    outboxRef.current.push(payloadStr)
+  }, [])
 
   const connect = useCallback(() => {
     // Prevent duplicate connections (React StrictMode calls useEffect twice)
@@ -177,23 +237,38 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     if (wsRef.current) {
       try {
         wsRef.current.close()
-      } catch (e) {
-        // Connection already closed
+      } catch {
+        // Already closed — ignore.
       }
       wsRef.current = null
     }
 
-    const wsUrl = getWsUrl()
+    // attemptId is sent as a URL query param so the server can correlate a
+    // failed `ws.prepare()` attempt with a specific client-side attempt. The
+    // UUID itself is not logged here — the server logs it on failure.
+    const attemptId = newClientId()
+    const baseUrl = getWsUrl()
+    const wsUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}attempt=${attemptId}`
 
     try {
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
-        console.log('[WS] Connected')
+        console.log('[WS] connected')
         isConnectingRef.current = false
-        reconnectCountRef.current = 0  // Reset reconnect counter on successful connection
+        reconnectCountRef.current = 0
         setState(prev => ({ ...prev, connected: true }))
+
+        ws.send(JSON.stringify({ type: 'living_ui_list' }))
+
+        // Drain the outbox (messages sent while the socket was down).
+        // Any send that fails re-enqueues via sendOrQueue for the next open.
+        if (outboxRef.current.length > 0) {
+          const pending = outboxRef.current
+          outboxRef.current = []
+          for (const payloadStr of pending) sendOrQueue(payloadStr)
+        }
       }
 
       ws.onmessage = (event) => {
@@ -201,12 +276,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           const msg: WSMessage = JSON.parse(event.data)
           handleMessage(msg)
         } catch (err) {
-          console.error('[WS] Failed to parse message:', err, 'Raw:', event.data)
+          console.error('[WS] parse failed:', err, 'raw:', event.data)
         }
       }
 
       ws.onclose = (event) => {
-        console.log('[WS] Disconnected, code:', event.code, 'reason:', event.reason, 'wasClean:', event.wasClean, 'reconnectCount:', reconnectCountRef.current)
+        console.log('[WS] disconnected code=' + event.code, 'clean=' + event.wasClean)
         isConnectingRef.current = false
         setState(prev => ({
           ...prev,
@@ -214,21 +289,17 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           status: { ...prev.status, message: 'Disconnected. Reconnecting...' },
         }))
 
-        // Immediate first retry, then exponential backoff
-        let reconnectDelay = 500
-        if (reconnectCountRef.current > 0) {
-          // Exponential backoff after first disconnect
-          reconnectDelay = Math.min(1000 * Math.pow(1.5, reconnectCountRef.current - 1), 30000)
-        }
-        reconnectCountRef.current += 1
+        // Immediate first retry, then exponential backoff.
+        const attempt = reconnectCountRef.current
+        const reconnectDelay = attempt === 0
+          ? 500
+          : Math.min(1000 * Math.pow(1.5, attempt - 1), 30000)
+        reconnectCountRef.current = attempt + 1
 
         if (reconnectCountRef.current <= maxReconnectAttemptsRef.current) {
-          console.log(`[WS] Reconnection attempt ${reconnectCountRef.current}/${maxReconnectAttemptsRef.current} in ${reconnectDelay}ms`)
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            connect()
-          }, reconnectDelay)
+          reconnectTimeoutRef.current = window.setTimeout(connect, reconnectDelay)
         } else {
-          console.error(`[WS] Failed to reconnect after ${maxReconnectAttemptsRef.current} attempts`)
+          console.error(`[WS] giving up after ${maxReconnectAttemptsRef.current} reconnect attempts`)
           setState(prev => ({
             ...prev,
             status: { ...prev.status, message: 'Connection failed - please refresh the page' },
@@ -237,21 +308,18 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
 
       ws.onerror = (err) => {
-        console.error('[WS] Error:', err, '(Error object might be limited on some browsers)')
-        // Note: On some browsers, WebSocket error events don't contain detailed info
-        // The onclose handler will be called after onerror
+        // Browser error events are opaque; onclose fires after this with
+        // the real code/reason, so we just log and let onclose handle retry.
+        console.error('[WS] error:', err)
       }
     } catch (err) {
-      console.error('[WS] Failed to create WebSocket:', err)
+      console.error('[WS] failed to construct WebSocket:', err)
       isConnectingRef.current = false
-      // Retry connection
       reconnectCountRef.current += 1
       const reconnectDelay = Math.min(1000 * Math.pow(1.5, reconnectCountRef.current), 30000)
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        connect()
-      }, reconnectDelay)
+      reconnectTimeoutRef.current = window.setTimeout(connect, reconnectDelay)
     }
-  }, [])
+  }, [sendOrQueue])
 
   const handleMessage = useCallback((msg: WSMessage) => {
     switch (msg.type) {
@@ -272,6 +340,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           guiMode: data.guiMode || false,
           currentTask: data.currentTask || null,
           dashboardMetrics: data.dashboardMetrics || null,
+          initReceived: true,
           needsHardOnboarding: data.needsHardOnboarding || false,
           agentName: data.agentName || 'Agent',
           agentProfilePictureUrl:
@@ -288,10 +357,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
       case 'chat_message': {
         const message = msg.data as unknown as ChatMessage
-        setState(prev => ({
-          ...prev,
-          messages: [...prev.messages, message],
-        }))
+        setState(prev => {
+          // If this echo has a clientId that matches a pending optimistic message,
+          // replace it in place (preserving position, flipping pending -> false)
+          // so the bubble appears confirmed rather than duplicated.
+          if (message.clientId) {
+            const idx = prev.messages.findIndex(
+              m => m.pending && m.clientId === message.clientId,
+            )
+            if (idx !== -1) {
+              const next = prev.messages.slice()
+              next[idx] = { ...message, pending: false }
+              return { ...prev, messages: next }
+            }
+          }
+          return { ...prev, messages: [...prev.messages, message] }
+        })
         break
       }
 
@@ -648,6 +729,29 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         break
       }
 
+      // Living UI message handlers
+      case 'living_ui_list': {
+        const response = msg.data as unknown as LivingUIListResponse
+        if (response.success && response.projects) {
+          setState(prev => ({
+            ...prev,
+            livingUIProjects: response.projects!,
+          }))
+        }
+        break
+      }
+
+      case 'living_ui_create': {
+        const response = msg.data as unknown as LivingUICreateResponse
+        if (response.success && response.project) {
+          setState(prev => ({
+            ...prev,
+            livingUIProjects: [...prev.livingUIProjects, response.project!],
+          }))
+        }
+        break
+      }
+
       case 'local_llm_install_progress': {
         const r = msg.data as unknown as LocalLLMProgressResponse
         setState(prev => ({
@@ -656,6 +760,30 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             ...prev.localLLM,
             installProgress: [...prev.localLLM.installProgress, r.message],
           },
+        }))
+        break
+      }
+
+      case 'living_ui_status': {
+        const status = msg.data as unknown as LivingUIStatusUpdate
+        setState(prev => ({
+          ...prev,
+          livingUICreating: status,
+          // Update project status
+          livingUIProjects: prev.livingUIProjects.map(p =>
+            p.id === status.projectId
+              ? { ...p, status: status.phase === 'launching' ? 'ready' : 'creating' }
+              : p
+          ),
+        }))
+        break
+      }
+
+      case 'living_ui_todos': {
+        const update = msg.data as unknown as LivingUITodosUpdate
+        setState(prev => ({
+          ...prev,
+          livingUITodos: { ...prev.livingUITodos, [update.projectId]: update.todos },
         }))
         break
       }
@@ -687,6 +815,28 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             testResult: undefined,
           },
         }))
+        break
+      }
+
+      case 'living_ui_ready': {
+        const readyData = msg.data as { projectId: string; url: string; port: number }
+        setState(prev => {
+          const exists = prev.livingUIProjects.some(p => p.id === readyData.projectId)
+          if (exists) {
+            return {
+              ...prev,
+              livingUICreating: null,
+              livingUIProjects: prev.livingUIProjects.map(p =>
+                p.id === readyData.projectId
+                  ? { ...p, status: 'running' as const, url: readyData.url, port: readyData.port }
+                  : p
+              ),
+            }
+          }
+          // Project not in list yet — refresh the full list from server
+          wsRef.current?.send(JSON.stringify({ type: 'living_ui_list' }))
+          return { ...prev, livingUICreating: null }
+        })
         break
       }
 
@@ -736,6 +886,79 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         }
         break
       }
+
+      case 'living_ui_launch': {
+        const response = msg.data as unknown as LivingUILaunchResponse
+        if (response.success) {
+          setState(prev => ({
+            ...prev,
+            livingUIProjects: prev.livingUIProjects.map(p =>
+              p.id === response.projectId
+                ? { ...p, status: 'running', url: response.url, port: response.port }
+                : p
+            ),
+          }))
+        }
+        break
+      }
+
+      case 'living_ui_stop': {
+        const response = msg.data as unknown as LivingUIStopResponse
+        if (response.success) {
+          setState(prev => ({
+            ...prev,
+            livingUIProjects: prev.livingUIProjects.map(p =>
+              p.id === response.projectId
+                ? { ...p, status: 'stopped', url: undefined, port: undefined }
+                : p
+            ),
+          }))
+        }
+        break
+      }
+
+      case 'living_ui_delete': {
+        const response = msg.data as unknown as LivingUIDeleteResponse
+        if (response.success) {
+          setState(prev => {
+            const { [response.projectId]: _removed, ...remainingTodos } = prev.livingUITodos
+            return {
+              ...prev,
+              livingUIProjects: prev.livingUIProjects.filter(p => p.id !== response.projectId),
+              livingUITodos: remainingTodos,
+              // Clear active if it was the deleted one
+              activeLivingUIId: prev.activeLivingUIId === response.projectId ? null : prev.activeLivingUIId,
+            }
+          })
+        }
+        break
+      }
+
+      case 'living_ui_state_update': {
+        const update = msg.data as unknown as LivingUIStateUpdate
+        setState(prev => ({
+          ...prev,
+          livingUIStates: {
+            ...prev.livingUIStates,
+            [update.projectId]: update.state,
+          },
+        }))
+        break
+      }
+
+      case 'living_ui_error': {
+        const { projectId, error } = msg.data as { projectId: string; error: string }
+        setState(prev => ({
+          ...prev,
+          livingUICreating: null,
+          livingUIProjects: prev.livingUIProjects.map(p =>
+            p.id === projectId
+              ? { ...p, status: 'error', error }
+              : p
+          ),
+        }))
+        break
+      }
     }
   }, [])
 
@@ -743,7 +966,6 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     connect()
 
     return () => {
-      // Reset connecting flag on cleanup
       isConnectingRef.current = false
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
@@ -787,26 +1009,37 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }))
   }, [state.hasMoreActions, state.loadingOlderActions, state.actions])
 
-  const sendMessage = useCallback((content: string, attachments?: PendingAttachment[], replyContext?: ReplyContext) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      try {
-        const payload = {
-          type: 'message',
-          content,
-          attachments: attachments || [],
-          replyContext: replyContext || null,
-        }
-        const payloadStr = JSON.stringify(payload)
-        console.log('[WebSocket] Sending message, payload size:', payloadStr.length, 'bytes, attachments:', attachments?.length || 0)
-        wsRef.current.send(payloadStr)
-        console.log('[WebSocket] Message sent successfully')
-      } catch (error) {
-        console.error('[WebSocket] Error sending message:', error)
-      }
-    } else {
-      console.warn('[WebSocket] Cannot send message - WebSocket not open, state:', wsRef.current?.readyState)
+  const sendMessage = useCallback((
+    content: string,
+    attachments?: PendingAttachment[],
+    replyContext?: ReplyContext,
+    livingUIId?: string,
+  ) => {
+    const clientId = newClientId()
+
+    // Optimistic insert: show the user's bubble immediately at reduced opacity.
+    // The server echo (case 'chat_message') will replace this entry in place by
+    // matching on clientId, flipping `pending` -> false.
+    const optimistic: ChatMessage = {
+      sender: 'You',
+      content,
+      style: 'user',
+      timestamp: Date.now() / 1000,
+      messageId: `pending:${clientId}`,
+      clientId,
+      pending: true,
     }
-  }, [])
+    setState(prev => ({ ...prev, messages: [...prev.messages, optimistic] }))
+
+    sendOrQueue(JSON.stringify({
+      type: 'message',
+      content,
+      attachments: attachments || [],
+      replyContext: replyContext || null,
+      livingUIId: livingUIId || null,
+      clientId,
+    }))
+  }, [sendOrQueue])
 
   const sendCommand = useCallback((command: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -826,6 +1059,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const sendOptionClick = useCallback((value: string, sessionId?: string, messageId?: string) => {
+    // Optimistically record the selection in local state so the UI lock
+    // survives virtualizer remounts, WS reconnects, and parent re-renders
+    // without waiting for a backend round-trip or page refresh.
+    if (messageId) {
+      setState(prev => {
+        let changed = false
+        const nextMessages = prev.messages.map(m => {
+          if (m.messageId === messageId && !m.optionSelected) {
+            changed = true
+            return { ...m, optionSelected: value }
+          }
+          return m
+        })
+        return changed ? { ...prev, messages: nextMessages } : prev
+      })
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'option_click', value, sessionId, messageId }))
     }
@@ -996,6 +1245,60 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Living UI methods
+  const createLivingUI = useCallback((data: LivingUICreateRequest) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'living_ui_create',
+        ...data,
+      }))
+    }
+  }, [])
+
+  const requestLivingUIList = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'living_ui_list' }))
+    }
+  }, [])
+
+  const launchLivingUI = useCallback((projectId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Immediately show loading state
+      setState(prev => ({
+        ...prev,
+        livingUIProjects: prev.livingUIProjects.map(p =>
+          p.id === projectId ? { ...p, status: 'launching' as const } : p
+        ),
+      }))
+      wsRef.current.send(JSON.stringify({
+        type: 'living_ui_launch',
+        projectId,
+      }))
+    }
+  }, [])
+
+  const stopLivingUI = useCallback((projectId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'living_ui_stop',
+        projectId,
+      }))
+    }
+  }, [])
+
+  const deleteLivingUI = useCallback((projectId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'living_ui_delete',
+        projectId,
+      }))
+    }
+  }, [])
+
+  const setActiveLivingUI = useCallback((projectId: string | null) => {
+    setState(prev => ({ ...prev, activeLivingUIId: projectId }))
+  }, [])
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -1027,12 +1330,20 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         sendOptionClick,
         uploadAgentProfilePicture,
         removeAgentProfilePicture,
+        // Living UI methods
+        createLivingUI,
+        requestLivingUIList,
+        launchLivingUI,
+        stopLivingUI,
+        deleteLivingUI,
+        setActiveLivingUI,
       }}
     >
       {children}
     </WebSocketContext.Provider>
   )
 }
+
 
 export function useWebSocket() {
   const context = useContext(WebSocketContext)
@@ -1041,3 +1352,4 @@ export function useWebSocket() {
   }
   return context
 }
+  

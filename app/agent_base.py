@@ -10,7 +10,6 @@ or extend the protected hooks.
 CraftBot is an open-source, light version of AI agent developed by CraftOS.
 Here are the core features:
 - Todo-based task tracking
-- Can switch between CLI/GUI mode
 
 Main agent cycle:
 - Receive query from user
@@ -55,7 +54,13 @@ from agent_core.core.impl.llm.errors import classify_llm_error, LLMConsecutiveFa
 from app.vlm_interface import VLMInterface
 from app.database_interface import DatabaseInterface
 from app.logger import logger
-from agent_core import MemoryManager, MemoryPointer, MemoryFileWatcher, create_memory_processing_task
+from agent_core import (
+    MemoryManager,
+    MemoryPointer,
+    MemoryFileWatcher,
+    create_memory_processing_task,
+    WorkflowLockManager,
+)
 from app.context_engine import ContextEngine
 from app.state.state_manager import StateManager
 from app.state.agent_state import STATE
@@ -69,7 +74,12 @@ from app.gui.gui_module import GUIModule
 from app.gui.handler import GUIHandler
 from app.scheduler import SchedulerManager
 from app.proactive import initialize_proactive_manager, get_proactive_manager
-from app.ui_layer.settings.memory_settings import is_memory_enabled
+from app.ui_layer.settings.memory_settings import (
+    is_memory_enabled,
+    _parse_memory_items,
+    get_memory_max_items,
+    get_memory_prune_target,
+)
 from agent_core import profile, profile_loop, OperationCategory
 from agent_core import (
     # Registries for dependency injection
@@ -106,6 +116,7 @@ class TriggerData:
     contact_id: str | None = None  # Sender/chat ID from external platform
     channel_id: str | None = None  # Channel/group ID from external platform
     payload: dict | None = None  # Full trigger payload for passing extra data
+    living_ui_id: str | None = None  # Living UI project ID if user is on a Living UI page
 
 class AgentBase:
     """
@@ -143,7 +154,7 @@ class AgentBase:
             llm_api_key: API key for the LLM provider.
             llm_base_url: Base URL for the LLM provider (optional).
             llm_model: Model name override (None = use registry default).
-            vlm_provider: Provider name for VLM (defaults to llm_provider).
+            vlm_provider: Provider name for VLM (defaults to llm_provider if None).
             vlm_model: VLM model name override (None = use registry default).
             deferred_init: If True, allow LLM/VLM initialization to be deferred
                 until API key is configured (useful for first-time setup).
@@ -154,6 +165,9 @@ class AgentBase:
             data_dir = data_dir, chroma_path=chroma_path
         )
 
+        # Stores original task instructions keyed by session_id for LLM retry after failure
+        self._llm_retry_instructions: dict[str, str] = {}
+
         # LLM + prompt plumbing (may be deferred if API key not yet configured)
         self.llm = LLMInterface(
             provider=llm_provider,
@@ -162,11 +176,11 @@ class AgentBase:
             base_url=llm_base_url,
             deferred=deferred_init,
         )
-
         # VLM uses its own provider/model settings, falling back to LLM values
-        _vlm_provider = vlm_provider or llm_provider
-        _vlm_api_key = get_api_key(_vlm_provider) if vlm_provider else llm_api_key
-        _vlm_base_url = get_base_url(_vlm_provider) if vlm_provider else llm_base_url
+        _vlm_provider  = vlm_provider or llm_provider
+        _vlm_api_key   = get_api_key(_vlm_provider)   if vlm_provider else llm_api_key
+        _vlm_base_url  = get_base_url(_vlm_provider)  if vlm_provider else llm_base_url
+
         self.vlm = VLMInterface(
             provider=_vlm_provider,
             model=vlm_model,
@@ -200,6 +214,11 @@ class AgentBase:
         )
         self.action_router = ActionRouter(self.action_library, self.llm, self.context_engine)
 
+        # Workflow lock registry — prevents overlapping runs of named background
+        # workflows (e.g. memory processing, proactive cycle). Locks are released
+        # automatically when the owning task ends.
+        self.workflow_lock_manager = WorkflowLockManager()
+
         self.task_manager = TaskManager(
             db_interface=self.db_interface,
             event_stream_manager=self.event_stream_manager,
@@ -207,6 +226,7 @@ class AgentBase:
             llm_interface=self.llm,
             context_engine=self.context_engine,
             on_task_end_callback=self._cleanup_session_triggers,
+            workflow_lock_manager=self.workflow_lock_manager,
         )
 
         # Bind task_manager so state_manager can look up tasks by session_id
@@ -441,7 +461,11 @@ class AgentBase:
     # Memory Processing
     # =====================================
 
-    def create_process_memory_task(self) -> Optional[str]:
+    def create_process_memory_task(
+        self,
+        needs_pruning: bool = False,
+        prune_target: int = 0,
+    ) -> Optional[str]:
         """
         Create a task to process unprocessed events and move them to memory.
 
@@ -452,6 +476,7 @@ class AgentBase:
         3. Check for duplicate memories using memory_search
         4. Write important, unique events to MEMORY.md
         5. Clear processed events from EVENT_UNPROCESSED.md
+        6. If needs_pruning, run the pruning phase on MEMORY.md afterwards
 
         Returns:
             The task ID of the created task, or None if memory is disabled.
@@ -461,7 +486,10 @@ class AgentBase:
             logger.info("[MEMORY] Memory is disabled, skipping process memory task")
             return None
 
-        logger.info("[MEMORY] Creating process memory task")
+        logger.info(
+            "[MEMORY] Creating process memory task"
+            + (" with pruning phase" if needs_pruning else "")
+        )
 
         # Enable skip_unprocessed_logging to prevent infinite loops
         # (events generated during memory processing won't be added to EVENT_UNPROCESSED.md)
@@ -469,7 +497,11 @@ class AgentBase:
         self.event_stream_manager.set_skip_unprocessed_logging(True)
 
         # Create task using the memory-processor skill
-        task_id = create_memory_processing_task(self.task_manager)
+        task_id = create_memory_processing_task(
+            self.task_manager,
+            needs_pruning=needs_pruning,
+            prune_target=prune_target,
+        )
         logger.info(f"[MEMORY] Process memory task created: {task_id}")
 
         return task_id
@@ -546,41 +578,85 @@ class AgentBase:
             logger.info("[MEMORY] Memory is disabled, skipping memory processing trigger")
             return False
 
-        task_created = False
+        # Early-exit if there's nothing to process (avoid touching the lock for a no-op).
+        unprocessed_file = AGENT_FILE_SYSTEM_PATH / "EVENT_UNPROCESSED.md"
+        if not unprocessed_file.exists():
+            logger.debug("[MEMORY] EVENT_UNPROCESSED.md not found")
+            return False
 
         try:
-            # Check if there are events to process
-            unprocessed_file = AGENT_FILE_SYSTEM_PATH / "EVENT_UNPROCESSED.md"
-            if unprocessed_file.exists():
-                content = unprocessed_file.read_text(encoding="utf-8")
-                lines = content.strip().split("\n")
-                event_lines = [l for l in lines if l.strip() and l.strip().startswith("[")]
+            content = unprocessed_file.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"[MEMORY] Failed to read EVENT_UNPROCESSED.md: {e}")
+            return False
 
-                if event_lines:
-                    logger.info(f"[MEMORY] Processing {len(event_lines)} unprocessed events")
-                    task_id = self.create_process_memory_task()
+        event_lines = [
+            l for l in content.strip().split("\n")
+            if l.strip() and l.strip().startswith("[")
+        ]
+        if not event_lines:
+            logger.info("[MEMORY] No unprocessed events to process")
+            return False
 
-                    if task_id:
-                        # Queue trigger to start the task
-                        trigger = Trigger(
-                            fire_at=time.time(),
-                            priority=60,
-                            next_action_description="Process unprocessed events into long-term memory",
-                            session_id=task_id,
-                            payload={},
+        # Acquire the exclusive workflow lock. If another memory-processing task
+        # is still running (e.g. a slow prior run when 3am fires), skip this
+        # trigger — the lock is released automatically by TaskManager._end_task.
+        if not await self.workflow_lock_manager.try_acquire("memory_processing"):
+            logger.info(
+                "[MEMORY] memory_processing workflow already active; skipping trigger"
+            )
+            return False
+
+        try:
+            # Count items in MEMORY.md to decide whether the pruning phase
+            # should run alongside event processing.
+            max_items = get_memory_max_items()
+            needs_pruning = False
+            memory_file = AGENT_FILE_SYSTEM_PATH / "MEMORY.md"
+            if memory_file.exists():
+                try:
+                    memory_items = _parse_memory_items(
+                        memory_file.read_text(encoding="utf-8")
+                    )
+                    if len(memory_items) >= max_items:
+                        needs_pruning = True
+                        logger.info(
+                            f"[MEMORY] MEMORY.md has {len(memory_items)} items "
+                            f"(>= {max_items}); pruning phase will run"
                         )
-                        await self.triggers.put(trigger)
-                        logger.info(f"[MEMORY] Queued trigger for memory processing task: {task_id}")
-                        task_created = True
-                else:
-                    logger.info("[MEMORY] No unprocessed events to process")
-            else:
-                logger.debug("[MEMORY] EVENT_UNPROCESSED.md not found")
+                except Exception as e:
+                    logger.warning(f"[MEMORY] Failed to count MEMORY.md items: {e}")
+
+            logger.info(f"[MEMORY] Processing {len(event_lines)} unprocessed events")
+            task_id = self.create_process_memory_task(
+                needs_pruning=needs_pruning,
+                prune_target=get_memory_prune_target(),
+            )
+
+            if not task_id:
+                # Task was not created (e.g. memory disabled mid-trigger). Release
+                # the lock so the next trigger can try again.
+                await self.workflow_lock_manager.release("memory_processing")
+                return False
+
+            # Queue trigger to start the task. Lock is now owned by the task and
+            # will be released by TaskManager when the task ends.
+            trigger = Trigger(
+                fire_at=time.time(),
+                priority=60,
+                next_action_description="Process unprocessed events into long-term memory",
+                session_id=task_id,
+                payload={},
+            )
+            await self.triggers.put(trigger)
+            logger.info(f"[MEMORY] Queued trigger for memory processing task: {task_id}")
+            return True
 
         except Exception as e:
+            # Anything went wrong before the task took ownership — release the lock.
             logger.warning(f"[MEMORY] Failed to process memory: {e}")
-
-        return task_created
+            await self.workflow_lock_manager.release("memory_processing")
+            return False
 
     # =====================================
     # Workflow Routing
@@ -605,6 +681,7 @@ class AgentBase:
             contact_id=payload.get("contact_id", ""),
             channel_id=payload.get("channel_id", ""),
             payload=payload,
+            living_ui_id=payload.get("living_ui_id"),
         )
 
     def _extract_user_message_from_trigger(self, trigger: Trigger) -> Optional[str]:
@@ -1250,9 +1327,22 @@ class AgentBase:
                     f"[REACT ERROR] LLMConsecutiveFailureError detected - cancelling task {session_to_use} "
                     "to prevent infinite retry loop."
                 )
+                # Cache instruction BEFORE cancellation removes task from tasks dict
+                failed_task = self.task_manager.tasks.get(session_to_use) if self.task_manager else None
+                if failed_task:
+                    self._llm_retry_instructions[session_to_use] = failed_task.instruction
                 if self.task_manager:
                     await self.task_manager.mark_task_cancel(
                         reason="LLM calls failed too many consecutive times. Task aborted."
+                    )
+                if self.ui_controller:
+                    from app.ui_layer.events import UIEvent, UIEventType
+                    self.ui_controller.event_bus.emit(
+                        UIEvent(
+                            type=UIEventType.LLM_FATAL_ERROR,
+                            data={"session_id": session_to_use},
+                            task_id=session_to_use,
+                        )
                     )
             else:
                 await self._create_new_trigger(session_to_use, action_output, STATE)
@@ -1508,6 +1598,21 @@ class AgentBase:
                 task_id=session_id,
             )
 
+    async def handle_llm_retry(self, session_id: str) -> None:
+        """Retry the original task after a fatal LLM failure. Resets the failure counter and re-submits."""
+        instruction = self._llm_retry_instructions.pop(session_id, None)
+        if not instruction:
+            logger.warning(f"[LLM_RETRY] Cannot retry: no cached instruction for session {session_id}")
+            return
+
+        try:
+            self.llm.reset_failure_counter()
+        except Exception as e:
+            logger.debug(f"[LLM_RETRY] Could not reset failure counter: {e}")
+
+        if self.ui_controller:
+            await self.ui_controller.submit_message(instruction)
+
     # ----- Trigger Management -----
 
     async def _cleanup_session_triggers(self, session_id: str) -> None:
@@ -1691,6 +1796,25 @@ class AgentBase:
 
             lines.append(f"Platform: {platform}")
 
+            # Add Living UI context if the user is on a Living UI page
+            living_ui_id = trigger.payload.get("living_ui_id") if trigger else None
+            if living_ui_id:
+                lines.append(f"Living UI ID: {living_ui_id}")
+                try:
+                    from app.living_ui import get_living_ui_manager
+                    mgr = get_living_ui_manager()
+                    if mgr:
+                        proj = mgr.get_project(living_ui_id)
+                        if proj:
+                            lines.append(f"Living UI Name: {proj.name}")
+                            lines.append(f"Living UI Path: {proj.path}")
+                            lines.append(f"  Read {proj.path}/LIVING_UI.md for app context")
+                            lines.append(f"  If debugging issues, FIRST read these logs:")
+                            lines.append(f"    - {proj.path}/backend/logs/subprocess_output.log (crashes, stack traces)")
+                            lines.append(f"    - {proj.path}/backend/logs/frontend_console.log (frontend errors, network failures)")
+                except Exception:
+                    pass
+
             sections.append("\n".join(lines))
 
         return "\n\n".join(sections)
@@ -1841,8 +1965,10 @@ class AgentBase:
                 logger.info(f"[CHAT] Direct reply to session {target_session_id}")
 
                 # Fire the target trigger directly, bypassing routing LLM
+                living_ui_id = payload.get("living_ui_id")
                 fired = await self.triggers.fire(
-                    target_session_id, message=chat_content, platform=platform
+                    target_session_id, message=chat_content, platform=platform,
+                    living_ui_id=living_ui_id
                 )
 
                 if fired:
@@ -1922,7 +2048,8 @@ class AgentBase:
                         # and attach the new user message so react() sees it.
                         # This also works for active triggers (being processed).
                         fired = await self.triggers.fire(
-                            matched_session_id, message=chat_content, platform=platform
+                            matched_session_id, message=chat_content, platform=platform,
+                            living_ui_id=payload.get("living_ui_id")
                         )
                         logger.info(
                             f"[CHAT] Routed message to existing session {matched_session_id} "
@@ -1991,6 +2118,29 @@ class AgentBase:
 
             # No existing triggers matched or action == "new" — create a fresh session
             await self.state_manager.start_session(gui_mode)
+
+            # If user is on a Living UI page, prepend context to the message
+            living_ui_id = payload.get("living_ui_id")
+            if living_ui_id:
+                living_ui_context = f"[Living UI: {living_ui_id}]"
+                try:
+                    from app.living_ui import get_living_ui_manager
+                    mgr = get_living_ui_manager()
+                    if mgr:
+                        proj = mgr.get_project(living_ui_id)
+                        if proj:
+                            living_ui_context = (
+                                f"[Living UI: {proj.name} ({living_ui_id}) | "
+                                f"Path: {proj.path} | "
+                                f"Read {proj.path}/LIVING_UI.md for app context]"
+                                f"  If debugging issues, FIRST read these logs:"
+                                f"    - {proj.path}/backend/logs/subprocess_output.log (crashes, stack traces)"
+                                f"    - {proj.path}/backend/logs/frontend_console.log (frontend errors, network failures)"
+                            )
+                except Exception:
+                    pass
+                chat_content = f"{living_ui_context}\n{chat_content}"
+
             self.state_manager.record_user_message(chat_content, platform=platform)
 
             # skip_merge=True because we already did routing above
@@ -1999,6 +2149,9 @@ class AgentBase:
                 "platform": platform,
                 "user_message": chat_content,  # Original user message for task event stream
             }
+            # Carry Living UI context if user is on a Living UI page
+            if payload.get("living_ui_id"):
+                trigger_payload["living_ui_id"] = payload["living_ui_id"]
             # Carry external message context for platform-aware routing
             if payload.get("external_event"):
                 trigger_payload["is_self_message"] = payload.get("is_self_message", False)
@@ -2177,7 +2330,7 @@ class AgentBase:
         Note: Call `self._get_interface_capabilities_prompt()` and append it to include
         interface-specific capabilities (e.g., file attachment support in browser mode).
         """
-        base_prompt = "You are a general computer-use AI agent that can switch between CLI/GUI mode."
+        base_prompt = "You are a general computer-use AI agent."
         return base_prompt + self._get_interface_capabilities_prompt()
 
     def _build_db_interface(self, *, data_dir: str, chroma_path: str):
@@ -3035,6 +3188,14 @@ class AgentBase:
             # Shutdown scheduler (handles all periodic tasks including memory processing)
             self.is_running = False
             await self.scheduler.shutdown()
+            # Stop all Living UI projects (kill backend/frontend processes)
+            try:
+                from app.living_ui import get_living_ui_manager
+                lui_mgr = get_living_ui_manager()
+                if lui_mgr:
+                    await lui_mgr.stop_all_projects()
+            except Exception as e:
+                logger.warning(f"[SHUTDOWN] Living UI cleanup error: {e}")
             # Gracefully shutdown MCP connections
             await self._shutdown_mcp()
             # Stop external communications

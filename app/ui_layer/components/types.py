@@ -73,6 +73,9 @@ class ChatMessage:
     task_session_id: Optional[str] = None
     options: Optional[List[ChatMessageOption]] = None
     option_selected: Optional[str] = None
+    # Client-generated UUID from the sender; echoed back so the browser can
+    # reconcile optimistic-pending messages with the server-acknowledged copy.
+    client_id: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Generate message_id if not provided."""

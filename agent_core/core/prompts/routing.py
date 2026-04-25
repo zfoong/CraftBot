@@ -43,6 +43,13 @@ Source Platform: {source_platform}
    - The message doesn't match any existing task's context AND there are multiple active sessions
    - The message appears to be a follow-up to a COMPLETED task visible in recent conversation history but NOT in existing sessions
 
+4. LIVING UI CONTEXT:
+   - Messages may include a Living UI context like [Living UI: AppName (id) | Path: ...] — this means the user is viewing that specific Living UI
+   - If the message has a Living UI ID, PRIORITIZE routing to a task with the SAME Living UI ID
+   - Do NOT route a Living UI A message to a Living UI B task UNLESS the message content clearly references Living UI B (e.g., mentions it by name)
+   - If no task exists for the incoming Living UI, create a NEW session — do not reuse a different Living UI's task
+   - Generic messages like "fix this", "it's broken", "add a feature" should go to the task matching the sender's Living UI, not a different one
+
 IMPORTANT NOTES:
 - If the message has no context, it is very LIKELY it is meant for another task, DO NOT CREATE a new session
 - If there is on-going task waiting for user reply, it is very LIKELY the incoming item is meant for the session

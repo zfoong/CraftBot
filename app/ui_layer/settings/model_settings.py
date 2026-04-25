@@ -324,6 +324,10 @@ def update_model_settings(
             elif provider_for_url == "remote":
                 settings["endpoints"]["remote_model_url"] = base_url
 
+        # Clear remote URL when switching away from remote so stale values don't persist
+        if llm_provider and llm_provider != "remote" and old_llm_provider == "remote" and not provider_for_url:
+            settings["endpoints"]["remote_model_url"] = ""
+
         # Save settings.json
         if not _save_settings(settings):
             return {
