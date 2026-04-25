@@ -172,9 +172,6 @@ export function NavBar() {
                       : <Box size={13} />}
                   </span>
                   <span className={styles.livingUITabLabel}>{project.name}</span>
-                  {project.status === 'creating' && (
-                    <span className={styles.livingUITabBadge}>installing</span>
-                  )}
                 </button>
               )
             })}

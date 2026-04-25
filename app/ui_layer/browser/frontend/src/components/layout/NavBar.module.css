@@ -187,15 +187,6 @@
   white-space: nowrap;
 }
 
-.livingUITabBadge {
-  font-size: 10px;
-  padding: 1px 6px;
-  background: var(--color-primary-subtle);
-  color: var(--color-primary);
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
-}
-
 /* Add Living UI button */
 .addLivingUIButton {
   display: flex;
