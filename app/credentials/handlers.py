@@ -1,6 +1,7 @@
 """All integration credential handlers + registry."""
 from __future__ import annotations
 
+
 import base64
 import hashlib
 import logging
@@ -52,7 +53,7 @@ class IntegrationHandler(ABC):
 # ═══════════════════════════════════════════════════════════════════
 
 class GoogleHandler(IntegrationHandler):
-    SCOPES = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"
+    SCOPES = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl"
 
     async def login(self, args):
         from app.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET

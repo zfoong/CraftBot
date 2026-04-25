@@ -9,6 +9,7 @@ that was polluting the CLI output).
 """
 from __future__ import annotations
 
+
 import base64
 import logging
 import os
@@ -168,12 +169,15 @@ class GeminiClient:
         model: str,
         *,
         text: str,
-        image_bytes: bytes,
+        image_bytes_list: List[bytes],
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         json_mode: bool = False,
     ) -> Dict[str, Any]:
-        """Generate text from a prompt that also contains an inline image.
+        """Generate text from a prompt that contains one or more inline images.
+
+        Normalises both single-image and multi-image inputs into a consistent
+        request format for the Gemini API.
 
         Returns a dict containing:
             - tokens_used: Total tokens consumed
@@ -185,7 +189,8 @@ class GeminiClient:
         Args:
             model: Model identifier
             text: The text prompt
-            image_bytes: PNG image data
+
+            image_bytes_list: List of image data (PNG/JPEG)
             system_prompt: Optional system instruction
             temperature: Sampling temperature
             json_mode: If True, enforce JSON output format
@@ -193,12 +198,16 @@ class GeminiClient:
         Returns:
             Dict with generation results and token counts
         """
-        inline_data = {
-            "mimeType": "image/png",
-            "data": base64.b64encode(image_bytes).decode("utf-8"),
-        }
+        parts: List[Dict[str, Any]] = [{"text": text}]
+        for img in image_bytes_list:
+            mime = "image/jpeg"
+            parts.append({
+                "inlineData": {
+                    "mimeType": mime,
+                    "data": base64.b64encode(img).decode("utf-8"),
+                }
+            })
 
-        parts: List[Dict[str, Any]] = [{"text": text}, {"inlineData": inline_data}]
         contents = [{"role": "user", "parts": parts}]
 
         payload: Dict[str, Any] = {"contents": contents}
@@ -235,6 +244,8 @@ class GeminiClient:
             "completion_tokens": completion_tokens,
             "cached_tokens": cached_tokens,
         }
+
+
 
     def embed_text(self, model: str, *, text: str) -> List[float]:
         """Fetch an embedding vector for the supplied text.

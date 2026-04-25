@@ -6,13 +6,14 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/OS-Windows-blue?logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/OS-macOS-lightgrey?logo=apple&logoColor=white" alt="macOS">
   <img src="https://img.shields.io/badge/OS-Linux-yellow?logo=linux&logoColor=black" alt="Linux">
-  
-  <a href="https://github.com/zfoong/CraftBot">
-    <img src="https://img.shields.io/github/stars/zfoong/CraftBot?style=social" alt="GitHub Repo stars">
+
+  <a href="https://github.com/CraftOS-dev/CraftBot">
+    <img src="https://img.shields.io/github/stars/CraftOS-dev/CraftBot?style=social" alt="GitHub Repo stars">
   </a>
 
-  <img src="https://img.shields.io/github/license/zfoong/CraftBot" alt="License">
+  <img src="https://img.shields.io/github/license/CraftOS-dev/CraftBot" alt="License">
 
   <a href="https://discord.gg/ZN9YHc37HG">
     <img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Discord">
@@ -21,10 +22,12 @@
 <br/>
 
 [![SPONSORED BY E2B FOR STARTUPS](https://img.shields.io/badge/SPONSORED%20BY-E2B%20FOR%20STARTUPS-ff8800?style=for-the-badge)](https://e2b.dev/startups)
+
+<a href="https://www.producthunt.com/products/craftbot?embed=true&amp;utm_source=badge-top-post-badge&amp;utm_medium=badge&amp;utm_campaign=badge-craftbot" target="_blank" rel="noopener noreferrer"><img alt="CraftBot - Self-hosted proactive AI assistant that lives locally | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/top-post-badge.svg?post_id=1110300&amp;theme=dark&amp;period=daily&amp;t=1776679679509"></a>
 </div>
 
 <p align="center">
-  <a href="README.ja.md"> 日本語版はこちら</a> | <a href="README.cn.md"> 中文版README </a>
+  <a href="README.ja.md">日本語</a> | <a href="README.cn.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a> | <a href="README.pt-BR.md">Português</a> | <a href="README.fr.md">Français</a> | <a href="README.de.md">Deutsch</a>
 </p>
 
 ## 🚀 Overview
@@ -49,13 +52,14 @@ CraftBot awaits your orders. Set up your own CraftBot now.
 - **Bring Your Own Key (BYOK)** — Flexible LLM provider system supporting OpenAI, Google Gemini, Anthropic Claude, BytePlus, and local Ollama models. Easily switch between providers.
 - **Memory System** — Distill and consolidate events that happened through the day at midnight.
 - **Proactive Agent** — Learn your preferences, habits, and life goals. Then, perform planning and initiate tasks (with approval, of course) to help you improve in life.
+- **Living UI** — Build, import, or evolve custom apps that live inside CraftBot. The agent stays aware of the UI's state and can read, write, and act on its data directly.
 - **External Tools Integration** — Connect to Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord, and Telegram (more to come!) with embedded credentials and OAuth support.
 - **MCP** — Model Context Protocol integration for extending agent capabilities with external tools and services.
 - **Skills** — Extensible skill framework with built-in skills for task planning, research, code review, git operations, and more.
-- **Cross-Platform** — Full support for Windows and Linux with platform-specific code variants and Docker containerization.
+- **Cross-Platform** — Full support for Windows, macOS, and Linux with platform-specific code variants and Docker containerization.
 
 > [!IMPORTANT]
-> **Note for GUI mode:** The GUI mode is still in experimental phase. This means you may encounter issues when the agent switches to GUI mode. We are actively improving this feature.
+> **GUI mode is deprecated.** CraftBot no longer supports GUI (desktop automation) mode. Please use Browser, TUI, or CLI mode instead.
 
 <div align="center">
     <img src="assets/craftbot_readme_features.png" alt="CraftBot Banner" width="1280"/>
@@ -78,7 +82,7 @@ CraftBot awaits your orders. Set up your own CraftBot now.
 
 ```bash
 # Clone the repository
-git clone https://github.com/zfoong/CraftBot.git
+git clone https://github.com/CraftOS-dev/CraftBot.git
 cd CraftBot
 
 # Install dependencies
@@ -111,9 +115,54 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 | **Browser** | `python run.py` | Node.js 18+ | Modern web interface, easiest to use |
 | **TUI** | `python run.py --tui` | None | Terminal UI, no dependencies needed |
 | **CLI** | `python run.py --cli` | None | Command-line, lightweight |
-| **GUI** | `python run.py --gui` | `install.py --gui` | Desktop automation with visual feedback |
 
 **Browser mode** is the default and recommended. If you don't have Node.js, the installer will provide installation instructions or you can use **TUI mode** instead.
+
+---
+
+## 🧬 Living UI
+
+**Living UI is a system/app/dashboard that evolve with your needs.**
+
+Need a kanban board with an AI co-pilot built in? A custom CRM shaped exactly
+like your workflow? A company dashboard that CraftBot can read and drive on
+your behalf? Spin it up as a Living UI that runs alongside CraftBot and grows as your needs change.
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### Three ways to create a Living UI
+
+1. **Build from scratch.** Describe what you want in plain language. CraftBot
+   scaffolds the data model, backend API, and React UI, then iterates with
+   you through a structured design process.
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="448"/>
+</div>
+
+2. **Install from the marketplace.** Browse community-built Living UIs from [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="448"/>
+</div>
+
+3. **Import an existing project.** Point CraftBot at a Go, Node.js, Python,
+   Rust, or static source code or github repo. It detects the runtime, configures health checks, and wraps it as a Living UI.
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="448"/>
+</div>
+
+### Keeps evolving with CraftBot inside the loop
+
+A Living UI is never "finished." Ask the agent to add features, redesign
+a view, or hook it into new data as your needs grow.
+
+CraftBot is embedded in every Living UI and **context-aware of its state**:
+it can read the current DOM and form values, query app data through the
+REST API, and trigger actions on your behalf.
 
 ---
 
@@ -133,7 +182,6 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 | **Skill Manager** | Loads and injects pluggable skills into the agent context. |
 | **MCP Adapter** | Model Context Protocol integration that converts MCP tools into native actions. |
 | **TUI Interface** | Terminal user interface built with Textual framework for interactive command-line operation. |
-| **GUI Module** | Experimental GUI automation using Docker containers, OmniParser for UI element detection, and Gradio client. |
 
 ---
 
@@ -143,27 +191,7 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 - [ ] **External Tool integration** — Still adding more!
 - [X] **MCP Layer** — Done.
 - [X] **Skill Layer** — Done.
-- [X] **Proactive Behaviour** — Pending
-
----
-
-## 🖥️ GUI Mode (Optional)
-
-GUI mode enables screen automation - the agent can see and interact with a desktop environment. This is optional and requires additional setup.
-
-```bash
-# Install with GUI support (using pip, no conda required)
-python install.py --gui
-
-# Install with GUI support and conda
-python install.py --gui --conda
-
-# Run with GUI mode
-python run.py --gui
-```
-
-> [!NOTE]
-> GUI mode is experimental and requires additional dependencies (~4GB for model weights). If you don't need desktop automation, skip this and use Browser/TUI mode instead which has no additional dependencies.
+- [ ] **Proactive Behaviour** — Pending
 
 ---
 
@@ -173,9 +201,7 @@ python run.py --gui
 
 | Flag | Description |
 |------|-------------|
-| `--gui` | Install GUI components (OmniParser) |
 | `--conda` | Use conda environment (optional) |
-| `--cpu-only` | Install CPU-only PyTorch (with --gui) |
 
 ### run.py
 
@@ -184,7 +210,6 @@ python run.py --gui
 | (none) | Run in **Browser** mode (recommended, requires Node.js) |
 | `--tui` | Run in **Terminal UI** mode (no dependencies needed) |
 | `--cli` | Run in **CLI** mode (lightweight) |
-| `--gui` | Enable GUI automation mode (requires `install.py --gui` first) |
 
 ### service.py
 
@@ -203,20 +228,8 @@ python run.py --gui
 # Simple pip installation (no conda)
 python install.py
 
-# With GUI support (using pip, no conda)
-python install.py --gui
-
-# With GUI on CPU-only systems (using pip, no conda)
-python install.py --gui --cpu-only
-
 # With conda environment (recommended for conda users)
 python install.py --conda
-
-# With GUI support and conda
-python install.py --gui --conda
-
-# With GUI on CPU-only systems with conda
-python install.py --gui --conda --cpu-only
 ```
 
 **Running CraftBot:**
@@ -230,9 +243,6 @@ python run.py --tui
 
 # CLI mode (lightweight)
 python run.py --cli
-
-# With GPU/GUI mode
-python run.py --gui
 
 # With conda environment
 conda run -n craftbot python run.py
@@ -251,9 +261,6 @@ python run.py --tui
 
 # CLI mode (lightweight)
 python run.py --cli
-
-# With GPU/GUI mode
-python run.py --gui
 
 # With conda environment
 conda run -n craftbot python run.py
@@ -303,7 +310,7 @@ python service.py logs     # See recent log output
 
 ---
 
-## � Troubleshooting & Common Issues
+## 🔧 Troubleshooting & Common Issues
 
 ### Missing Node.js (for Browser Mode)
 If you see **"npm not found in PATH"** when running `python run.py`:
@@ -328,14 +335,11 @@ Playwright chromium installation is optional. If it fails:
 - You can skip it or install later: `playwright install chromium`
 - Only needed for WhatsApp Web integration
 
-### GPU/CUDA Issues
-The installer automatically detects GPU availability:
-- If CUDA installation fails, it falls back to CPU mode automatically
-- For manual CPU setup: `python install.py --gui --cpu-only`
-
 For detailed troubleshooting, see [INSTALLATION_FIX.md](INSTALLATION_FIX.md).
 
 ---
+
+## 🔌 External Service Integration
 
 The agent can connect to various services using OAuth. Release builds come with embedded credentials, but you can also use your own.
 
@@ -411,7 +415,7 @@ LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
 4. Copy Client ID and Client Secret
 
 ---
-## Run with container
+## 🐳 Run with Container
 
 The repository root included a Docker configuration with Python 3.10, key system packages (including Tesseract for OCR), and all Python dependencies defined in `environment.yml`/`requirements.txt` so the agent can run consistently in isolated environments. 
 
@@ -439,29 +443,7 @@ If you need to supply environment variables, pass an env file (for example, base
 docker run --rm -it --env-file .env craftbot
 ```
 
-Mount any directories that should persist outside the container (such as data or cache folders) using `-v`, and adjust ports or additional flags as needed for your deployment. The container ships with system dependencies for OCR (`tesseract`), screen automation (`pyautogui`, `mss`, X11 utilities, and a virtual framebuffer), and common HTTP clients so the agent can work with files, network APIs, and GUI automation inside the container.
-
-### Enabling GUI/screen automation
-
-GUI actions (mouse/keyboard events, screenshots) require an X11 server. You can either attach to your host display or run headless with `xvfb`:
-
-* Use the host display (requires Linux with X11):
-
-  ```bash
-  docker run --rm -it 
-    -e DISPLAY=$DISPLAY \
-    -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -v $(pwd)/data:/app/app/data \
-    craftbot
-  ```
-
-  Add extra `-v` mounts for any folders the agent should read/write.
-
-* Run headlessly with a virtual display:
-
-  ```bash
-	docker run --rm -it --env-file .env craftbot bash -lc "Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99 && exec python -m app.main"
-  ```
+Mount any directories that should persist outside the container (such as data or cache folders) using `-v`, and adjust ports or additional flags as needed for your deployment. The container ships with system dependencies for OCR (`tesseract`) and common HTTP clients so the agent can work with files and network APIs inside the container.
 
 By default the image uses Python 3.10 and bundles the Python dependencies from `environment.yml`/`requirements.txt`, so `python -m app.main` works out of the box.
 
@@ -469,7 +451,7 @@ By default the image uses Python 3.10 and bundles the Python dependencies from `
 
 ## 🤝 How to Contribute
 
-Contributions and suggestions are welcome! You can contact [@zfoong](https://github.com/zfoong) @ thamyikfoong(at)craftos.net. We currently don't have checks set up, so we can't allow direct contributions but we appreciate any suggestions and feedback.
+PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (fork → branch from `dev` → PR). All pull requests run through lint + smoke-test CI automatically. For questions or a faster conversation, join us on [Discord](https://discord.gg/ZN9YHc37HG) or email thamyikfoong(at)craftos.net.
 
 ## 🧾 License
 
@@ -481,3 +463,15 @@ This project is licensed under the [MIT License](LICENSE). You are free to use, 
 
 Developed and maintained by [CraftOS](https://craftos.net/) and contributors [@zfoong](https://github.com/zfoong) and [@ahmad-ajmal](https://github.com/ahmad-ajmal).  
 If you find **CraftBot** useful, please ⭐ the repository and share it with others!
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=CraftOS-dev%2FCraftBot&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&legend=top-left" />
+ </picture>
+</a>

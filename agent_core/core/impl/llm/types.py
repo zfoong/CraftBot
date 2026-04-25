@@ -5,6 +5,7 @@ Shared types and enums for the LLM interface module.
 
 from __future__ import annotations
 
+
 from enum import Enum
 
 

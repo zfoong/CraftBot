@@ -24,7 +24,7 @@ from agent_core import action
         "action_sets": {
             "type": "array",
             "items": {"type": "string"},
-            "example": ["gui_interaction", "shell"],
+            "example": ["file_operations", "shell"],
             "description": (
                 "List of action set names to add. "
                 "Use 'list_action_sets' to see available options."
@@ -101,7 +101,7 @@ def add_action_sets(input_data: dict) -> dict:
         "action_sets": {
             "type": "array",
             "items": {"type": "string"},
-            "example": ["gui_interaction"],
+            "example": ["file_operations"],
             "description": "List of action set names to remove. Cannot remove 'core' set.",
         },
     },
@@ -124,7 +124,7 @@ def add_action_sets(input_data: dict) -> dict:
         },
     },
     test_payload={
-        "action_sets": ["gui_interaction"],
+        "action_sets": ["file_operations"],
         "simulated_mode": True,
     },
 )
@@ -204,7 +204,6 @@ def list_action_sets(input_data: dict) -> dict:
                 "file_operations": "File and folder manipulation",
                 "web_research": "Web search and browsing",
                 "document_processing": "PDF and document handling",
-                "gui_interaction": "Mouse, keyboard, screen",
                 "clipboard": "Clipboard operations",
                 "shell": "Command line execution",
             },

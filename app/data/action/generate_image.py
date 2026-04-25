@@ -77,7 +77,7 @@ from agent_core import action
             "description": "Status message or error message."
         }
     },
-    requirement=["google-generativeai", "Pillow"],
+    requirement=["google-genai", "Pillow"],
     test_payload={
         "prompt": "A cute cartoon cat sitting on a rainbow",
         "resolution": "1K",
@@ -241,7 +241,7 @@ def generate_image(input_data: dict) -> dict:
             subprocess.check_call([sys.executable, '-m', 'pip', 'install', pkg_name, '--quiet'])
 
     try:
-        _ensure_package('google-generativeai')
+        _ensure_package('google-genai')
         _ensure_package('Pillow')
     except Exception as e:
         return {
@@ -253,7 +253,7 @@ def generate_image(input_data: dict) -> dict:
         }
 
     try:
-        import google.generativeai as genai
+        from google import genai
         from PIL import Image
         import io
         import base64

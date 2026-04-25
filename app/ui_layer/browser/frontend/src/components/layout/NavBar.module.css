@@ -3,19 +3,101 @@
 .navBar {
   height: var(--navbar-height);
   display: flex;
-  align-items: center;
+  align-items: stretch;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-primary);
   padding: 0 var(--space-2);
   flex-shrink: 0;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
-.navItems {
+/* Scroll area wrapper holds the scrollable content + fade overlays */
+.scrollArea {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Scrollable content (left nav + divider + living UI tabs + add button) */
+.scrollContent {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  cursor: grab;
+  user-select: none;
+  touch-action: pan-x;
+  padding: 0 var(--space-1);
 }
 
+.scrollContent::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollContent:active {
+  cursor: grabbing;
+}
+
+/* Right section: Settings, pinned */
+.navRight {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Outer divider between scroll area and Settings */
+.divider {
+  flex-shrink: 0;
+  width: 1px;
+  align-self: stretch;
+  margin: var(--space-2) 0;
+  background: var(--border-primary);
+}
+
+/* Inner divider that scrolls with the content (between left nav and living UI) */
+.innerDivider {
+  flex-shrink: 0;
+  width: 1px;
+  align-self: stretch;
+  margin: var(--space-2) var(--space-1);
+  background: var(--border-primary);
+}
+
+/* Fade overlays on the sides of the scroll area */
+.fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 2;
+}
+
+.fadeLeft {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-primary) 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+.fadeRight {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-primary) 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+.fadeVisible {
+  opacity: 1;
+}
+
+/* Standard nav item (left nav + Settings) */
 .navItem {
   display: flex;
   align-items: center;
@@ -26,8 +108,10 @@
   font-weight: var(--font-medium);
   color: var(--text-secondary);
   background: transparent;
+  border: none;
   transition: all var(--transition-fast);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .navItem:hover {
@@ -52,6 +136,122 @@
 
 .label {
   display: block;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Living UI inline tab */
+.livingUITab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.livingUITab:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.livingUITabActive {
+  color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+.livingUITabActive:hover {
+  background: var(--color-primary-light);
+}
+
+.livingUITabIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.livingUITabLabel {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.livingUITabBadge {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+/* Add Living UI button */
+.addLivingUIButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 0 10px rgba(255, 79, 24, 0.35);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+}
+
+.addLivingUIButton:hover {
+  background: var(--color-primary-hover);
+  box-shadow: 0 0 16px rgba(255, 79, 24, 0.5);
+  transform: translateY(-1px);
+}
+
+.addLivingUIButton:active {
+  transform: translateY(0);
+  box-shadow: 0 0 8px rgba(255, 79, 24, 0.3);
+}
+
+.addLivingUIIcon {
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+.addLivingUIButton:hover .addLivingUIIcon {
+  transform: rotate(20deg) scale(1.15);
+}
+
+.addLivingUILabel {
+  white-space: nowrap;
+}
+
+/* Spinner animation */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Responsive: hide labels on smaller screens */
@@ -62,5 +262,9 @@
 
   .navItem {
     padding: var(--space-2);
+  }
+
+  .addLivingUILabel {
+    display: none;
   }
 }

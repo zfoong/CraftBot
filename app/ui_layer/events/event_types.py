@@ -17,6 +17,7 @@ class UIEventType(Enum):
     SYSTEM_MESSAGE = auto()
     ERROR_MESSAGE = auto()
     INFO_MESSAGE = auto()
+    LLM_FATAL_ERROR = auto()
 
     # Task/Action events
     TASK_START = auto()

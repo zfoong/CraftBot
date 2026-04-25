@@ -58,6 +58,50 @@ SHORTCUT_NAME = "CraftBot.lnk"
 LOGO_PNG = os.path.join(BASE_DIR, "craftbot_logo_1.png")
 LOGO_ICO = os.path.join(BASE_DIR, "craftbot_logo_1.ico")
 
+# ─── Terminal colors (orange/white brand palette) ─────────────────────────────
+
+def _enable_windows_vtp() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.GetStdHandle(-11)
+        m = ctypes.c_ulong()
+        k32.GetConsoleMode(h, ctypes.byref(m))
+        k32.SetConsoleMode(h, m.value | 0x0004)
+    except Exception:
+        pass
+
+_enable_windows_vtp()
+_USE_COLOR = sys.stdout.isatty()
+
+def _c(code: str) -> str:
+    return code if _USE_COLOR else ""
+
+ORANGE = _c("\033[38;2;255;79;24m")   # #FF4F18
+WHITE  = _c("\033[38;2;255;255;255m") # #FFFFFF
+BOLD   = _c("\033[1m")
+DIM    = _c("\033[38;2;80;80;80m")    # dark gray
+GREEN  = _c("\033[38;2;80;220;100m")
+RED    = _c("\033[91m")
+RESET  = _c("\033[0m")
+
+def _retro_step(num: int, total: int, desc: str) -> None:
+    """Print a retro-style step header box."""
+    W = 62
+    visible = f"  ▸ STEP {num}/{total}  ░░  {desc.upper()}"
+    pad = max(0, W - len(visible))
+    content = (
+        f"  {ORANGE}▸ STEP {num}/{total}{RESET}"
+        f"  {DIM}░░{RESET}"
+        f"  {WHITE}{desc.upper()}{RESET}"
+        + " " * pad
+    )
+    print(f"\n{ORANGE}╔{'═' * W}╗{RESET}")
+    print(f"{ORANGE}║{RESET}{content}{ORANGE}║{RESET}")
+    print(f"{ORANGE}╚{'═' * W}╝{RESET}")
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _to_short_path(path: str) -> str:
@@ -263,10 +307,11 @@ def cmd_start(extra_args: List[str]) -> None:
     try:
         proc = subprocess.Popen(cmd, **kwargs)
     except FileNotFoundError as e:
-        print(f"Error: Could not launch CraftBot — {e}")
+        print(f"  {RED}✗{RESET} {WHITE}Could not launch CraftBot — {e}{RESET}")
         return
 
     _write_pid(proc.pid)
+    print(f"  {GREEN}▸{RESET} {WHITE}CRAFTBOT STARTED{RESET}  {DIM}PID {proc.pid}{RESET}")
 
     # Create a desktop shortcut so the user can reopen the browser anytime
     if "--tui" not in run_args and "--cli" not in run_args:
@@ -277,9 +322,7 @@ def cmd_start(extra_args: List[str]) -> None:
 
     open_browser = "--tui" not in run_args and "--cli" not in run_args and "--no-open-browser" not in extra_args
     if open_browser:
-        # Fire-and-forget: a detached process waits a few seconds then opens
-        # the browser.  The current script exits immediately so the terminal
-        # can be closed right away without affecting CraftBot.
+        print(f"  {DIM}░░{RESET} {ORANGE}{BROWSER_URL}{RESET}")
         _open_browser_detached(BROWSER_URL)
 
 
@@ -291,11 +334,11 @@ def cmd_stop() -> None:
         return
 
     if not _is_running(pid):
-        print(f"CraftBot (PID {pid}) is not running. Cleaning up stale PID file.")
+        print(f"  {DIM}▸ PID {pid} not running — cleaning up stale PID file{RESET}")
         _remove_pid()
         return
 
-    print(f"Stopping CraftBot (PID {pid})...")
+    print(f"  {ORANGE}▸{RESET} {WHITE}STOPPING CRAFTBOT{RESET}  {DIM}PID {pid}{RESET}")
 
     if _PLATFORM == "win32":
         try:
@@ -323,24 +366,27 @@ def cmd_stop() -> None:
             print(f"Warning: {e}")
 
     _remove_pid()
-    print("CraftBot stopped.")
+    print(f"  {GREEN}▸{RESET} {WHITE}CRAFTBOT STOPPED{RESET}")
 
 
 def cmd_status() -> None:
     """Print whether CraftBot is currently running and whether auto-start is installed."""
+    W = 50
     pid = _read_pid()
+    print(f"\n{ORANGE}╔{'═' * W}╗{RESET}")
     if pid and _is_running(pid):
-        print(f"CraftBot is RUNNING (PID {pid}).")
-        print(f"Logs: {LOG_FILE}")
+        print(f"{ORANGE}║{RESET}  {GREEN}▸ RUNNING{RESET}  {DIM}PID {pid}{RESET}{' ' * (W - 14 - len(str(pid)))}{ORANGE}║{RESET}")
+        print(f"{ORANGE}║{RESET}  {DIM}░░ LOG: {LOG_FILE[:W-8]}{RESET}{' ' * max(0, W - 8 - len(LOG_FILE[:W-8]))}{ORANGE}║{RESET}")
     else:
         if pid:
             _remove_pid()
-        print("CraftBot is NOT running.")
-
+        print(f"{ORANGE}║{RESET}  {RED}▸ NOT RUNNING{RESET}{' ' * (W - 14)}{ORANGE}║{RESET}")
+    print(f"{ORANGE}║{' ' * W}║{RESET}")
     if _is_installed():
-        print("Auto-start: INSTALLED (CraftBot will start automatically on login).")
+        print(f"{ORANGE}║{RESET}  {GREEN}▸ AUTO-START: INSTALLED{RESET}{' ' * (W - 23)}{ORANGE}║{RESET}")
     else:
-        print("Auto-start: NOT installed  (run 'python service.py install' to enable).")
+        print(f"{ORANGE}║{RESET}  {DIM}▸ AUTO-START: NOT INSTALLED{RESET}{' ' * (W - 27)}{ORANGE}║{RESET}")
+    print(f"{ORANGE}╚{'═' * W}╝{RESET}\n")
 
 
 def cmd_logs(n: int = 50) -> None:
@@ -352,10 +398,12 @@ def cmd_logs(n: int = 50) -> None:
         with open(LOG_FILE, "r", errors="replace") as f:
             lines = f.readlines()
         tail = lines[-n:] if len(lines) > n else lines
-        print(f"--- Last {len(tail)} lines of {LOG_FILE} ---")
+        print(f"\n{ORANGE}╔{'═' * 60}╗{RESET}")
+        print(f"{ORANGE}║{RESET}  {WHITE}CRAFTBOT LOG{RESET}  {DIM}last {len(tail)} lines{RESET}{' ' * (44 - len(str(len(tail))))}{ORANGE}║{RESET}")
+        print(f"{ORANGE}╚{'═' * 60}╝{RESET}\n")
         print("".join(tail), end="")
     except Exception as e:
-        print(f"Error reading log: {e}")
+        print(f"  {RED}✗{RESET} {WHITE}Error reading log: {e}{RESET}")
 
 
 def cmd_restart(extra_args: List[str]) -> None:
@@ -761,9 +809,7 @@ def cmd_install(extra_args: List[str]) -> None:
     # ── Step 1: Install dependencies via install.py ────────────────────────
     install_script = os.path.join(BASE_DIR, "install.py")
     if os.path.isfile(install_script):
-        print("=" * 60)
-        print(" Step 1/3: Installing dependencies...")
-        print("=" * 60)
+        _retro_step(1, 3, "Installing dependencies")
         # Pass through any user flags (--conda etc.) and add --no-launch
         install_flags = [a for a in extra_args if a in ("--conda", "--mamba", "--cpu-only")]
         result = subprocess.run(
@@ -771,24 +817,21 @@ def cmd_install(extra_args: List[str]) -> None:
             cwd=BASE_DIR,
         )
         if result.returncode != 0:
-            print("\nDependency installation failed. Aborting.")
+            print(f"\n  {RED}✗{RESET} {WHITE}Dependency installation failed. Aborting.{RESET}")
             return
         print()
     else:
-        print("(install.py not found — skipping dependency install)\n")
+        print(f"  {DIM}(install.py not found — skipping dependency install){RESET}\n")
 
     # ── Step 2: Register auto-start ────────────────────────────────────────
     if _is_installed():
-        print("Step 2/3: Auto-start is already registered — skipping.")
-        # Still ensure the desktop shortcut exists
+        print(f"\n  {DIM}▸ STEP 2/3  ░░  AUTO-START ALREADY REGISTERED — SKIPPING{RESET}")
         if _PLATFORM == "win32":
             _create_desktop_shortcut_windows()
         elif _PLATFORM != "darwin":
             _create_desktop_shortcut_unix()
     else:
-        print("=" * 60)
-        print(" Step 2/3: Registering auto-start...")
-        print("=" * 60)
+        _retro_step(2, 3, "Registering auto-start")
         run_args = _build_run_args(extra_args, service_mode=True)
         plat = _PLATFORM
         if plat == "win32":
@@ -800,13 +843,11 @@ def cmd_install(extra_args: List[str]) -> None:
         print()
 
     # ── Step 3: Start the service now ──────────────────────────────────────
-    print("=" * 60)
-    print(" Step 3/3: Starting CraftBot...")
-    print("=" * 60)
+    _retro_step(3, 3, "Starting CraftBot")
     cmd_start(extra_args)
 
-    print("\nCraftBot is running in the background.")
-    print(f"Open your browser at: {BROWSER_URL}")
+    print(f"\n  {GREEN}▸{RESET} {WHITE}CRAFTBOT IS RUNNING IN THE BACKGROUND{RESET}")
+    print(f"  {DIM}░░{RESET} {ORANGE}{BROWSER_URL}{RESET}")
     print("You can close this window now.")
     time.sleep(2)
     _close_console_window()

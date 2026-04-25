@@ -22,6 +22,7 @@ from agent_core.core.impl.event_stream.event_stream import EventStream
 from agent_core.core.event_stream.event import Event
 from agent_core.core.protocols.llm import LLMInterfaceProtocol
 from agent_core.utils.logger import logger
+from agent_core.utils.file_utils import rotate_md_file_if_needed
 from agent_core.core.state.base import get_state_or_none
 
 # Import memory mode check (deferred to avoid circular imports)
@@ -298,6 +299,7 @@ class EventStreamManager:
             # Always write to EVENT.md (create if doesn't exist)
             try:
                 event_file = self._agent_file_system_path / "EVENT.md"
+                rotate_md_file_if_needed(event_file)
                 with open(event_file, "a", encoding="utf-8") as f:
                     f.write(event_line)
             except Exception as e:
@@ -309,6 +311,7 @@ class EventStreamManager:
             if not self._should_skip_unprocessed() and not self._should_skip_event_type(kind):
                 try:
                     unprocessed_file = self._agent_file_system_path / "EVENT_UNPROCESSED.md"
+                    rotate_md_file_if_needed(unprocessed_file)
                     with open(unprocessed_file, "a", encoding="utf-8") as f:
                         f.write(event_line)
                 except Exception as e:

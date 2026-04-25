@@ -47,3 +47,5 @@ app/config/settings.json
 **/onboarding_config.json
 **/config.json
 !build_template.py
+docs/LIVING_UI_DEVELOPER_GUIDE.md
+agent_file_system/ACTIONS.md
