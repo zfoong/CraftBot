@@ -5,9 +5,9 @@ Per-project settings from Phase 0 Q&A override these when they conflict.
 
 ## Design Preferences
 
-- **Primary Color:** #6366f1
-- **Secondary Color:** #8b5cf6
-- **Accent Color:** #06b6d4
+- **Primary Color:** #FF4F18
+- **Secondary Color:** #262626
+- **Accent Color:** #E64515
 - **Background Style:** Default (use CraftBot design tokens)
 - **Theme Mode:** Follow system (dark/light)
 - **Font Family:** System default (Segoe UI, sans-serif)

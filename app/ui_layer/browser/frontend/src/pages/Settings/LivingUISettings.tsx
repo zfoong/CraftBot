@@ -809,7 +809,7 @@ function ProjectCard({
           {isRunning ? (
             <Button
               size="sm"
-              variant="secondary"
+              variant="danger"
               icon={actionInProgress ? <Loader2 size={14} className={styles.spinning} /> : <Square size={14} />}
               onClick={onStop}
               disabled={actionInProgress}
