@@ -290,12 +290,23 @@ class StateManager:
                 display_message=content,
             )
 
-        # Record to conversation history for context injection into future tasks
-        self.event_stream_manager.record_conversation_message(
-            event_label,
-            content,
-            display_message=content,
+        # Skip _conversation_history (the global list re-injected into every active
+        # task's prompt via <conversation_history>) when this message is from a
+        # transient session that has no real task — e.g. the third-party email
+        # notification session. Otherwise the notification reply leaks into the
+        # currently-running task's next prompt.
+        is_transient_session = bool(
+            session_id
+            and self._task_manager
+            and self._task_manager.get_task_by_id(session_id) is None
         )
+        if not is_transient_session:
+            # Record to conversation history for context injection into future tasks
+            self.event_stream_manager.record_conversation_message(
+                event_label,
+                content,
+                display_message=content,
+            )
 
         self.bump_event_stream()
         self._append_to_conversation_history("agent", content)

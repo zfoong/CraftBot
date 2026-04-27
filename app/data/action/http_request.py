@@ -170,23 +170,47 @@ def send_http_requests(input_data: dict) -> dict:
     if not url or not (url.startswith('http://') or url.startswith('https://')):
         return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Invalid or missing URL.'}
 
-    # SSRF protection: block requests to private/internal networks and cloud metadata
+    # SSRF protection: block requests to private/internal networks and cloud metadata.
+    # Loopback is allowed only when the port belongs to a registered Living UI project,
+    # so the agent can talk to its own apps without exposing arbitrary localhost services.
     try:
         from urllib.parse import urlparse as _urlparse
         import ipaddress as _ipaddress
         import socket as _socket
         _parsed = _urlparse(url)
         _hostname = _parsed.hostname or ''
+        _port = _parsed.port
         # Block cloud metadata endpoints
         _BLOCKED_HOSTS = {'169.254.169.254', 'metadata.google.internal', 'metadata.internal'}
         if _hostname in _BLOCKED_HOSTS:
             return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':'Blocked: requests to cloud metadata endpoints are not allowed.'}
+
+        def _living_ui_ports() -> set:
+            try:
+                from app.living_ui import get_living_ui_manager
+                _mgr = get_living_ui_manager()
+                if not _mgr:
+                    return set()
+                _ports = set()
+                for _p in _mgr.projects.values():
+                    if _p.port:
+                        _ports.add(int(_p.port))
+                    if _p.backend_port:
+                        _ports.add(int(_p.backend_port))
+                return _ports
+            except Exception:
+                return set()
+
         # Resolve hostname and check for private IPs
         try:
             _resolved = _socket.getaddrinfo(_hostname, None)
             for _family, _type, _proto, _canonname, _sockaddr in _resolved:
                 _ip = _ipaddress.ip_address(_sockaddr[0])
-                if _ip.is_private or _ip.is_loopback or _ip.is_link_local:
+                if _ip.is_loopback:
+                    if _port and _port in _living_ui_ports():
+                        continue  # Allowed: targeting a known Living UI port
+                    return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':f'Blocked: requests to loopback addresses ({_hostname}) are only allowed for registered Living UI ports. Use the living_ui_http action with project_id to talk to your Living UI.'}
+                if _ip.is_private or _ip.is_link_local:
                     return {'status':'error','status_code':0,'response_headers':{},'body':'','final_url':'','elapsed_ms':0,'message':f'Blocked: requests to private/internal addresses ({_hostname}) are not allowed.'}
         except (socket.gaierror, ValueError):
             pass  # Let the request library handle DNS resolution errors

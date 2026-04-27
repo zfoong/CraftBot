@@ -60,6 +60,7 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
     actions,
     connected,
     sendMessage,
+    sendOptionClick,
     openFile,
     openFolder,
     lastSeenMessageId,
@@ -524,6 +525,7 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
                     onOpenFile={openFile}
                     onOpenFolder={openFolder}
                     onReply={handleChatReply}
+                    onOptionClick={sendOptionClick}
                   />
                 </div>
               )

@@ -49,8 +49,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   }, [selected])
   const { agentProfilePictureUrl } = useWebSocket()
 
-  // Show reply for ALL agent messages
-  const canReply = message.style === 'agent' && onReply
+  // Show reply for agent messages, except those presenting options that
+  // require the user to make an explicit choice via the option buttons.
+  const hasPendingOptions = !!(message.options && message.options.length > 0)
+  const canReply = message.style === 'agent' && onReply && !hasPendingOptions
 
   // Parse reply context for user messages
   const { userMessage, replyContext } = useMemo(() => {
