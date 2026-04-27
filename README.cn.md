@@ -78,23 +78,100 @@ CraftBot 静候你的指令，现在就部署属于你的 CraftBot 吧。
 - `Node.js` **18+**（可选 - 仅浏览器界面需要）
 - `conda`（可选 - 如未找到，安装器会提供自动安装 Miniconda 的选项）
 
-### 快速安装
+### 我该选哪种方式？
+
+> **不确定？选方案一。** 它会帮你搞定所有事。
+
+| | 方案一 — 服务安装 | 方案二 — Conda 安装 | 方案三 — 手动安装 |
+|---|---|---|---|
+| **适合谁** | 大多数用户、新手、测试 | 想要独立环境的 Conda 用户 | 进阶用户、自定义 Python、完全控制 |
+| **自动管理 Python 环境？** | ✅ 自动 | ✅ 自动 | ❌ 你自己管理 |
+| **后台运行？** | ✅ 是，作为服务 | ❌ 否 | ❌ 否 |
+| **启动方式** | `python craftbot.py install` | `python install.py --conda` | `python install.py` |
+
+---
+
+### ⭐ 方案一 — 服务安装（推荐）
+
+**适合你，如果：** 你希望 CraftBot 开箱即用——后台服务、开机自启、桌面快捷方式，无需手动操作。
+
+`craftbot.py` 全程自动处理：Python 环境、依赖安装、后台进程管理和自启注册。
 
 ```bash
-# 克隆仓库
+# 1. 克隆仓库
 git clone https://github.com/CraftOS-dev/CraftBot.git
 cd CraftBot
 
-# 安装依赖
+# 2. 安装、注册自启并启动 CraftBot
+python craftbot.py install
+```
+
+就这样。终端自动关闭，CraftBot 在后台运行，浏览器自动打开。同时会创建**桌面快捷方式**，随时可重新打开浏览器。
+
+**安装后的服务管理命令：**
+
+```bash
+python craftbot.py start      # 在后台启动 CraftBot
+python craftbot.py stop       # 停止 CraftBot
+python craftbot.py restart    # 重启 CraftBot
+python craftbot.py status     # 检查是否运行，自启是否已启用
+python craftbot.py logs       # 查看最近日志
+python craftbot.py uninstall  # 停止、移除自启并卸载包
+```
+
+> [!TIP]
+> 执行 `install` 或 `start` 后，系统会自动创建 **CraftBot 桌面快捷方式**。如果关闭了浏览器，双击快捷方式即可重新打开。
+
+---
+
+### 方案二 — Conda 安装
+
+**适合你，如果：** 你已经在使用 conda，希望 CraftBot 运行在独立的 conda 环境中。
+
+`install.py --conda` 会创建专用的 `craftbot` conda 环境。若系统中未找到 Miniconda，会自动安装。
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. 安装到 conda 环境
+python install.py --conda
+
+# 3. 运行 CraftBot
+conda run -n craftbot python run.py
+
+# 如果 conda 不在 PATH 中（仅 Windows）：
+&"$env:USERPROFILE\miniconda3\Scripts\conda.exe" run -n craftbot python run.py
+```
+
+> [!NOTE]
+> 每次运行 CraftBot 时，请使用 `conda run -n craftbot python run.py`。此方式没有后台服务——由你手动启停。
+
+---
+
+### 方案三 — 手动安装（pip）
+
+**适合你，如果：** 你希望完全掌控 Python 环境，不需要任何自动服务或后台进程，自己管理 CraftBot。
+
+`install.py`（不带参数）会对当前激活的 Python 环境执行标准 pip 安装。通过 `run.py` 手动启停 CraftBot。
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. 在当前 Python 环境中安装依赖
 python install.py
 
-# 运行代理
+# 3. 运行 CraftBot
 python run.py
 ```
 
-就这样！首次运行会引导你设置 API Key。
+首次运行会引导你完成 API Key 设置和偏好配置。
 
-**注意：** 如果你没有安装 Node.js，安装器会提供详细的安装指引。你也可以跳过浏览器模式，改用 TUI（见下方模式说明）。
+> [!NOTE]
+> 如果未安装 Node.js，安装器会提供详细指引。你也可以完全跳过浏览器模式，直接使用 TUI 模式——无需 Node.js：`python run.py --tui`
 
 ### 安装完成后你可以做什么？
 - 用自然语言与代理交流
@@ -260,32 +337,32 @@ conda run -n craftbot python run.py
 
 ```bash
 # 安装依赖、注册开机自启、启动 CraftBot
-python service.py install
+python craftbot.py install
 ```
 
 就这样。终端会自动关闭，CraftBot 在后台运行，浏览器自动打开。
 
 ```bash
 # 其他服务命令：
-python service.py start    # 在后台启动 CraftBot
-python service.py status   # 检查是否正在运行
-python service.py stop     # 停止 CraftBot
-python service.py restart  # 重启 CraftBot
-python service.py logs     # 查看最近日志输出
+python craftbot.py start    # 在后台启动 CraftBot
+python craftbot.py status   # 检查是否正在运行
+python craftbot.py stop     # 停止 CraftBot
+python craftbot.py restart  # 重启 CraftBot
+python craftbot.py logs     # 查看最近日志输出
 ```
 
 | 命令 | 说明 |
 |---------|-------------|
-| `python service.py install` | 安装依赖、注册开机自启、启动 CraftBot、打开浏览器，并自动关闭终端 |
-| `python service.py start` | 在后台启动 CraftBot（若已运行则自动重启，终端自动关闭） |
-| `python service.py stop` | 停止 CraftBot |
-| `python service.py restart` | 停止并重启 CraftBot |
-| `python service.py status` | 检查 CraftBot 是否在运行，以及自动启动是否已启用 |
-| `python service.py logs` | 显示最近日志（使用 `-n 100` 查看更多行） |
-| `python service.py uninstall` | 停止 CraftBot、注销自启、卸载 pip 包并清理 pip 缓存 |
+| `python craftbot.py install` | 安装依赖、注册开机自启、启动 CraftBot、打开浏览器，并自动关闭终端 |
+| `python craftbot.py start` | 在后台启动 CraftBot（若已运行则自动重启，终端自动关闭） |
+| `python craftbot.py stop` | 停止 CraftBot |
+| `python craftbot.py restart` | 停止并重启 CraftBot |
+| `python craftbot.py status` | 检查 CraftBot 是否在运行，以及自动启动是否已启用 |
+| `python craftbot.py logs` | 显示最近日志（使用 `-n 100` 查看更多行） |
+| `python craftbot.py uninstall` | 停止 CraftBot、注销自启、卸载 pip 包并清理 pip 缓存 |
 
 > [!TIP]
-> 执行 `service.py start` 或 `service.py install` 后，系统会自动创建 **CraftBot 桌面快捷方式**。如果不小心关闭了浏览器，双击快捷方式即可重新打开。
+> 执行 `craftbot.py start` 或 `craftbot.py install` 后，系统会自动创建 **CraftBot 桌面快捷方式**。如果不小心关闭了浏览器，双击快捷方式即可重新打开。
 
 > [!NOTE]
 > **安装：** 安装器会在缺少依赖时提供清晰的指引。如果未找到 Node.js，会提示你安装或切换到 TUI 模式。安装会自动检测 GPU 可用性，必要时回退到仅 CPU 模式。

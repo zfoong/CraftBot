@@ -78,23 +78,100 @@ CraftBotはあなたの命令を待っています。今すぐあなた専用の
 - `Node.js` **18+**（オプション - ブラウザインターフェースにのみ必要）
 - `conda`（オプション - 見つからない場合、インストーラーがMinicondaの自動インストールを提案します）
 
-### クイックインストール
+### どのセットアップを使えばいいですか？
+
+> **迷ったらオプション1を選んでください。** すべて自動で処理されます。
+
+| | オプション1 — サービスインストール | オプション2 — Condaインストール | オプション3 — 手動インストール |
+|---|---|---|---|
+| **対象ユーザー** | ほとんどのユーザー、初心者、テスト目的 | 独立環境が必要なCondaユーザー | 上級ユーザー、Pythonのカスタマイズ、完全制御 |
+| **Python/環境を自動管理？** | ✅ 自動 | ✅ 自動 | ❌ 自分で管理 |
+| **バックグラウンドで動作？** | ✅ はい、サービスとして | ❌ いいえ | ❌ いいえ |
+| **起動方法** | `python craftbot.py install` | `python install.py --conda` | `python install.py` |
+
+---
+
+### ⭐ オプション1 — サービスインストール（推奨）
+
+**これを選ぶなら：** CraftBotをすぐに使いたい場合 — バックグラウンドサービス、ログイン時の自動起動、デスクトップショートカット、手動操作不要。
+
+`craftbot.py` がすべて処理します：Python環境、依存関係、バックグラウンドプロセス管理、自動起動の登録。
 
 ```bash
-# リポジトリをクローン
+# 1. リポジトリをクローン
 git clone https://github.com/CraftOS-dev/CraftBot.git
 cd CraftBot
 
-# 依存関係をインストール
+# 2. インストール、自動起動の登録、CraftBotの起動
+python craftbot.py install
+```
+
+以上です。ターミナルは自動で閉じ、CraftBotはバックグラウンドで動作し、ブラウザが自動で開きます。**デスクトップショートカット**が作成されるので、ブラウザをいつでも再度開けます。
+
+**インストール後のサービス管理：**
+
+```bash
+python craftbot.py start      # CraftBotをバックグラウンドで起動
+python craftbot.py stop       # CraftBotを停止
+python craftbot.py restart    # CraftBotを再起動
+python craftbot.py status     # 実行中か確認、自動起動が有効かも確認
+python craftbot.py logs       # 最近のログを確認
+python craftbot.py uninstall  # 停止、自動起動削除、パッケージをアンインストール
+```
+
+> [!TIP]
+> `install` または `start` の後、**CraftBotデスクトップショートカット**が自動作成されます。ブラウザを誤って閉じた場合は、ショートカットをダブルクリックして再度開けます。
+
+---
+
+### オプション2 — Condaインストール
+
+**これを選ぶなら：** すでにcondaを使用していて、独立したconda環境でCraftBotを動かしたい場合。
+
+`install.py --conda` は専用の `craftbot` conda環境を設定します。Minicondaが見つからない場合は自動的にインストールされます。
+
+```bash
+# 1. リポジトリをクローン
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. conda環境にインストール
+python install.py --conda
+
+# 3. CraftBotを実行
+conda run -n craftbot python run.py
+
+# condaがPATHにない場合（Windowsのみ）：
+&"$env:USERPROFILE\miniconda3\Scripts\conda.exe" run -n craftbot python run.py
+```
+
+> [!NOTE]
+> CraftBotを実行するたびに `conda run -n craftbot python run.py` を使用してください。バックグラウンドサービスはありません — 自分で起動と停止を行います。
+
+---
+
+### オプション3 — 手動インストール（pip）
+
+**これを選ぶなら：** Python環境を完全に自分で管理したい場合、自動サービスやバックグラウンドプロセスは不要な場合。
+
+`install.py`（フラグなし）は現在アクティブなPython環境に標準pip installを実行します。`run.py` を使って手動でCraftBotを起動・停止します。
+
+```bash
+# 1. リポジトリをクローン
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. アクティブなPython環境に依存関係をインストール
 python install.py
 
-# エージェントを実行
+# 3. CraftBotを実行
 python run.py
 ```
 
-以上です！初回実行時にAPIキーの設定がガイドされます。
+初回実行時にAPIキーと設定のセットアップがガイドされます。
 
-**注意:** Node.jsがインストールされていない場合、インストーラーがステップバイステップの手順をガイドします。ブラウザモードをスキップしてTUIを使用することもできます（以下のモードを参照）。
+> [!NOTE]
+> Node.jsがインストールされていない場合、インストーラーがステップバイステップの手順を提供します。ブラウザモードを完全にスキップしてTUIモードを使用することもできます — Node.js不要：`python run.py --tui`
 
 ### インストール後にできること
 - エージェントと自然言語で会話
@@ -261,32 +338,32 @@ conda run -n craftbot python run.py
 
 ```bash
 # 依存関係インストール、ログイン時自動起動の登録、CraftBot の起動
-python service.py install
+python craftbot.py install
 ```
 
 以上です。ターミナルは自動で閉じ、CraftBot はバックグラウンドで動作し、ブラウザが自動で開きます。
 
 ```bash
 # その他のサービスコマンド:
-python service.py start    # CraftBot をバックグラウンドで起動
-python service.py status   # 実行中かどうか確認
-python service.py stop     # CraftBot を停止
-python service.py restart  # CraftBot を再起動
-python service.py logs     # 最近のログ出力を確認
+python craftbot.py start    # CraftBot をバックグラウンドで起動
+python craftbot.py status   # 実行中かどうか確認
+python craftbot.py stop     # CraftBot を停止
+python craftbot.py restart  # CraftBot を再起動
+python craftbot.py logs     # 最近のログ出力を確認
 ```
 
 | コマンド | 説明 |
 |---------|-------------|
-| `python service.py install` | 依存関係インストール、ログイン時自動起動の登録、CraftBot 起動、ブラウザを開き、ターミナルを自動で閉じる |
-| `python service.py start` | CraftBot をバックグラウンドで起動（すでに実行中の場合は自動再起動、ターミナルは自動で閉じる） |
-| `python service.py stop` | CraftBot を停止 |
-| `python service.py restart` | CraftBot を停止して再起動 |
-| `python service.py status` | CraftBot が実行中か、自動起動が有効かを確認 |
-| `python service.py logs` | 最近のログ出力を表示（`-n 100` でより多く表示） |
-| `python service.py uninstall` | CraftBot を停止、自動起動の登録解除、pip パッケージのアンインストール、pip キャッシュの削除 |
+| `python craftbot.py install` | 依存関係インストール、ログイン時自動起動の登録、CraftBot 起動、ブラウザを開き、ターミナルを自動で閉じる |
+| `python craftbot.py start` | CraftBot をバックグラウンドで起動（すでに実行中の場合は自動再起動、ターミナルは自動で閉じる） |
+| `python craftbot.py stop` | CraftBot を停止 |
+| `python craftbot.py restart` | CraftBot を停止して再起動 |
+| `python craftbot.py status` | CraftBot が実行中か、自動起動が有効かを確認 |
+| `python craftbot.py logs` | 最近のログ出力を表示（`-n 100` でより多く表示） |
+| `python craftbot.py uninstall` | CraftBot を停止、自動起動の登録解除、pip パッケージのアンインストール、pip キャッシュの削除 |
 
 > [!TIP]
-> `service.py start` または `service.py install` の後、**CraftBot デスクトップショートカット**が自動作成されます。ブラウザを誤って閉じた場合は、ショートカットをダブルクリックして再度開けます。
+> `craftbot.py start` または `craftbot.py install` の後、**CraftBot デスクトップショートカット**が自動作成されます。ブラウザを誤って閉じた場合は、ショートカットをダブルクリックして再度開けます。
 
 > [!NOTE]
 > **インストール:** インストーラーは依存関係が不足している場合、明確なガイダンスを提供します。Node.jsが見つからない場合は、インストールを促すか、TUIモードに切り替えることができます。インストールはGPUの可用性を自動検出し、必要に応じてCPU専用モードにフォールバックします。

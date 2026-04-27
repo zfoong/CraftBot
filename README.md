@@ -75,26 +75,107 @@ CraftBot awaits your orders. Set up your own CraftBot now.
 - Python **3.10+**
 - `git` (required to clone the repository)
 - An API key for your chosen LLM provider (OpenAI, Gemini, or Anthropic)
-- `Node.js` **18+** (optional - only required for browser interface)
-- `conda` (optional - if not found, installer offers to auto-install Miniconda)
+- `Node.js` **18+** (optional — only required for browser interface)
+- `conda` (optional — only required for the conda setup path)
 
-### Quick Install
+---
+
+### Which setup should I use?
+
+> **Not sure? Use Option 1.** It handles everything for you.
+
+| | Option 1 — Service | Option 2 — Conda | Option 3 — Manual |
+|---|---|---|---|
+| **Who it's for** | Most users, first-timers, testing | Conda users who want isolated envs | Power users, custom Python, full control |
+| **Manages Python & env?** | ✅ Automatic | ✅ Automatic | ❌ You manage it |
+| **Runs in background?** | ✅ Yes, as a service | ❌ No | ❌ No |
+| **How to start** | `python craftbot.py install` | `python install.py --conda` | `python install.py` |
+
+---
+
+### ⭐ Option 1 — Service Install (Recommended)
+
+**Use this if:** you want CraftBot to just work — background service, auto-start on login, desktop shortcut, no manual steps.
+
+`craftbot.py` handles everything: Python environment, dependencies, background process management, and auto-start registration.
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/CraftOS-dev/CraftBot.git
 cd CraftBot
 
-# Install dependencies
+# 2. Install, register auto-start, and launch CraftBot
+python craftbot.py install
+```
+
+That's it. The terminal closes itself, CraftBot runs in the background, and the browser opens automatically. A **desktop shortcut** is created so you can reopen the browser anytime.
+
+**Managing the service after install:**
+
+```bash
+python craftbot.py start      # Start CraftBot in the background
+python craftbot.py stop       # Stop CraftBot
+python craftbot.py restart    # Restart CraftBot
+python craftbot.py status     # Check if it's running and if auto-start is enabled
+python craftbot.py logs       # See recent log output
+python craftbot.py uninstall  # Stop, remove auto-start, and uninstall packages
+```
+
+> [!TIP]
+> After `install` or `start`, a **CraftBot desktop shortcut** is created automatically. If you close the browser, just double-click the shortcut to reopen it.
+
+---
+
+### Option 2 — Conda Install
+
+**Use this if:** you already use conda and want CraftBot in an isolated conda environment.
+
+`install.py --conda` sets up a dedicated `craftbot` conda environment. If Miniconda is not found on your system, it will be installed automatically.
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. Install into a conda environment
+python install.py --conda
+
+# 3. Run CraftBot
+conda run -n craftbot python run.py
+
+# If conda is not in PATH (Windows only):
+&"$env:USERPROFILE\miniconda3\Scripts\conda.exe" run -n craftbot python run.py
+```
+
+> [!NOTE]
+> Each time you want to run CraftBot, use `conda run -n craftbot python run.py`. There is no background service — you start and stop it yourself.
+
+---
+
+### Option 3 — Manual Install (pip)
+
+**Use this if:** you want full control over your Python environment and prefer managing CraftBot yourself with no automatic service or background process.
+
+`install.py` (no flags) does a standard pip install into whichever Python environment is currently active. You start and stop CraftBot manually using `run.py`.
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. Install dependencies into your active Python environment
 python install.py
 
-# Run the agent
+# 3. Run CraftBot
 python run.py
 ```
 
-That's it! The first run will guide you through setting up your API keys.
+The first run will guide you through setting up your API keys and preferences.
 
-**Note:** If you don't have Node.js installed, the installer will guide you with step-by-step instructions. You can also skip browser mode and use TUI instead (see modes below).
+> [!NOTE]
+> If Node.js is not installed, the installer will provide step-by-step instructions. You can also skip browser mode entirely and use TUI mode — no Node.js required: `python run.py --tui`
+
+---
 
 ### What you can do right after?
 - Talk to the agent naturally
@@ -197,13 +278,40 @@ REST API, and trigger actions on your behalf.
 
 ## 📋 Command Reference
 
-### install.py
+### craftbot.py — Automatic Setup (Recommended)
+
+| Command | Description |
+|---------|-------------|
+| `python craftbot.py install` | Install dependencies, register auto-start on login, start CraftBot, open browser, and close the terminal automatically |
+| `python craftbot.py start` | Start CraftBot in the background — auto-restarts if already running (terminal closes automatically) |
+| `python craftbot.py stop` | Stop CraftBot |
+| `python craftbot.py restart` | Stop and start CraftBot |
+| `python craftbot.py status` | Check if CraftBot is running and if auto-start is enabled |
+| `python craftbot.py logs` | Show recent log output (`-n 100` for more lines) |
+| `python craftbot.py uninstall` | Stop CraftBot, remove auto-start registration, uninstall pip packages, and purge pip cache |
+
+---
+
+### install.py — Manual Setup
 
 | Flag | Description |
 |------|-------------|
-| `--conda` | Use conda environment (optional) |
+| (none) | Standard pip install — uses your active Python environment |
+| `--conda` | Install into a conda environment (auto-installs Miniconda if not found) |
 
-### run.py
+```bash
+# Standard pip install
+python install.py
+
+# With conda environment
+python install.py --conda
+```
+
+---
+
+### run.py — Running CraftBot (Manual Setup Only)
+
+> If you used `craftbot.py install`, CraftBot starts automatically. Use `run.py` only when running manually.
 
 | Flag | Description |
 |------|-------------|
@@ -211,29 +319,7 @@ REST API, and trigger actions on your behalf.
 | `--tui` | Run in **Terminal UI** mode (no dependencies needed) |
 | `--cli` | Run in **CLI** mode (lightweight) |
 
-### service.py
-
-| Command | Description |
-|---------|-------------|
-| `install` | Install deps, register auto-start, and start CraftBot |
-| `start` | Start CraftBot in the background |
-| `stop` | Stop CraftBot |
-| `restart` | Stop then start |
-| `status` | Show running status and auto-start state |
-| `logs [-n N]` | Show last N log lines (default: 50) |
-| `uninstall` | Remove auto-start registration |
-
-**Installation Examples:**
-```bash
-# Simple pip installation (no conda)
-python install.py
-
-# With conda environment (recommended for conda users)
-python install.py --conda
-```
-
-**Running CraftBot:**
-
+**Windows (PowerShell):**
 ```powershell
 # Browser mode (default, requires Node.js)
 python run.py
@@ -253,51 +339,13 @@ conda run -n craftbot python run.py
 
 **Linux/macOS (Bash):**
 ```bash
-# Browser mode (default, requires Node.js)
-python run.py
-
-# TUI mode (no Node.js required)
-python run.py --tui
-
-# CLI mode (lightweight)
-python run.py --cli
+python run.py          # Browser mode
+python run.py --tui    # TUI mode
+python run.py --cli    # CLI mode
 
 # With conda environment
 conda run -n craftbot python run.py
 ```
-
-### 🔧 Background Service (Recommended)
-
-Run CraftBot as a background service so it stays running even after you close the terminal. A desktop shortcut is created automatically so you can reopen the browser anytime.
-
-```bash
-# Install dependencies, register auto-start on login, and start CraftBot
-python service.py install
-```
-
-That's it. The terminal closes itself, CraftBot runs in the background, and the browser opens automatically.
-
-```bash
-# Other service commands:
-python service.py start    # Start CraftBot in background
-python service.py status   # Check if it's running
-python service.py stop     # Stop CraftBot
-python service.py restart  # Restart CraftBot
-python service.py logs     # See recent log output
-```
-
-| Command | Description |
-|---------|-------------|
-| `python service.py install` | Install dependencies, register auto-start on login, start CraftBot, open browser, and close the terminal automatically |
-| `python service.py start` | Start CraftBot in the background — auto-restarts if already running (terminal closes automatically) |
-| `python service.py stop` | Stop CraftBot |
-| `python service.py restart` | Stop and start CraftBot |
-| `python service.py status` | Check if CraftBot is running and if auto-start is enabled |
-| `python service.py logs` | Show recent log output (`-n 100` for more lines) |
-| `python service.py uninstall` | Stop CraftBot, remove auto-start registration, uninstall pip packages, and purge pip cache |
-
-> [!TIP]
-> After `service.py start` or `service.py install`, a **CraftBot desktop shortcut** is created automatically. If you accidentally close the browser, just double-click the shortcut to reopen it.
 
 > [!NOTE]
 > **Installation:** The installer now provides clear guidance if dependencies are missing. If Node.js is not found, you'll be prompted to install it or can switch to TUI mode. Installation automatically detects GPU availability and falls back to CPU-only mode if needed.

@@ -78,23 +78,100 @@ CraftBot attend vos ordres. Configurez dès maintenant votre propre CraftBot.
 - `Node.js` **18+** (optionnel — requis uniquement pour l'interface navigateur)
 - `conda` (optionnel — s'il est introuvable, l'installateur propose d'installer Miniconda automatiquement)
 
-### Installation rapide
+### Quelle option choisir ?
+
+> **Vous hésitez ? Optez pour l'Option 1.** Elle gère tout pour vous.
+
+| | Option 1 — Service | Option 2 — Conda | Option 3 — Manuel |
+|---|---|---|---|
+| **Pour qui** | La plupart des utilisateurs, débutants, tests | Utilisateurs Conda souhaitant des environnements isolés | Utilisateurs avancés, Python personnalisé, contrôle total |
+| **Gère Python/l'environnement automatiquement ?** | ✅ Automatique | ✅ Automatique | ❌ Vous le gérez |
+| **Tourne en arrière-plan ?** | ✅ Oui, en tant que service | ❌ Non | ❌ Non |
+| **Comment démarrer** | `python craftbot.py install` | `python install.py --conda` | `python install.py` |
+
+---
+
+### ⭐ Option 1 — Installation en service (Recommandée)
+
+**Choisissez cette option si :** vous voulez que CraftBot fonctionne directement — service en arrière-plan, démarrage automatique à la connexion, raccourci sur le bureau, aucune étape manuelle.
+
+`craftbot.py` gère tout : environnement Python, dépendances, gestion du processus en arrière-plan et enregistrement du démarrage automatique.
 
 ```bash
-# Cloner le dépôt
+# 1. Clonez le dépôt
 git clone https://github.com/CraftOS-dev/CraftBot.git
 cd CraftBot
 
-# Installer les dépendances
+# 2. Installez, enregistrez le démarrage automatique et lancez CraftBot
+python craftbot.py install
+```
+
+C'est tout. Le terminal se ferme tout seul, CraftBot tourne en arrière-plan et le navigateur s'ouvre automatiquement. Un **raccourci sur le bureau** est créé pour rouvrir le navigateur à tout moment.
+
+**Gestion du service après installation :**
+
+```bash
+python craftbot.py start      # Démarrer CraftBot en arrière-plan
+python craftbot.py stop       # Arrêter CraftBot
+python craftbot.py restart    # Redémarrer CraftBot
+python craftbot.py status     # Vérifier s'il tourne et si le démarrage automatique est activé
+python craftbot.py logs       # Voir les logs récents
+python craftbot.py uninstall  # Arrêter, supprimer le démarrage auto et désinstaller les paquets
+```
+
+> [!TIP]
+> Après `install` ou `start`, un **raccourci CraftBot sur le bureau** est créé automatiquement. Si vous fermez le navigateur, double-cliquez sur le raccourci pour le rouvrir.
+
+---
+
+### Option 2 — Installation Conda
+
+**Choisissez cette option si :** vous utilisez déjà conda et souhaitez CraftBot dans un environnement conda isolé.
+
+`install.py --conda` configure un environnement conda dédié `craftbot`. Si Miniconda n'est pas trouvé sur votre système, il sera installé automatiquement.
+
+```bash
+# 1. Clonez le dépôt
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. Installez dans un environnement conda
+python install.py --conda
+
+# 3. Lancez CraftBot
+conda run -n craftbot python run.py
+
+# Si conda n'est pas dans le PATH (Windows uniquement) :
+&"$env:USERPROFILE\miniconda3\Scripts\conda.exe" run -n craftbot python run.py
+```
+
+> [!NOTE]
+> Chaque fois que vous voulez lancer CraftBot, utilisez `conda run -n craftbot python run.py`. Il n'y a pas de service en arrière-plan — vous le démarrez et l'arrêtez vous-même.
+
+---
+
+### Option 3 — Installation manuelle (pip)
+
+**Choisissez cette option si :** vous souhaitez un contrôle total sur votre environnement Python et préférez gérer CraftBot vous-même, sans service automatique ni processus en arrière-plan.
+
+`install.py` (sans options) effectue une installation pip standard dans l'environnement Python actif. Vous démarrez et arrêtez CraftBot manuellement avec `run.py`.
+
+```bash
+# 1. Clonez le dépôt
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. Installez les dépendances dans votre environnement Python actif
 python install.py
 
-# Lancer l'agent
+# 3. Lancez CraftBot
 python run.py
 ```
 
-C'est tout ! La première exécution vous guidera dans la configuration de vos clés API.
+La première exécution vous guidera dans la configuration de vos clés API et préférences.
 
-**Remarque :** Si Node.js n'est pas installé, l'installateur fournira des instructions pas à pas. Vous pouvez aussi ignorer le mode navigateur et utiliser la TUI (voir les modes ci-dessous).
+> [!NOTE]
+> Si Node.js n'est pas installé, l'installateur fournira des instructions étape par étape. Vous pouvez aussi ignorer complètement le mode navigateur et utiliser le mode TUI — sans Node.js : `python run.py --tui`
 
 ### Que pouvez-vous faire tout de suite ?
 - Discuter avec l'agent naturellement
@@ -214,7 +291,7 @@ données de l'app via l'API REST, et déclencher des actions en votre nom.
 | `--tui` | Lancer en mode **Terminal UI** (aucune dépendance) |
 | `--cli` | Lancer en mode **CLI** (léger) |
 
-### service.py
+### craftbot.py
 
 | Commande | Description |
 |---------|-------------|
@@ -275,32 +352,32 @@ Exécutez CraftBot en tant que service en arrière-plan pour qu'il continue de f
 
 ```bash
 # Installer les dépendances, enregistrer le démarrage automatique à la connexion et lancer CraftBot
-python service.py install
+python craftbot.py install
 ```
 
 C'est tout. Le terminal se ferme tout seul, CraftBot tourne en arrière-plan et le navigateur s'ouvre automatiquement.
 
 ```bash
 # Autres commandes du service :
-python service.py start    # Démarre CraftBot en arrière-plan
-python service.py status   # Vérifie s'il tourne
-python service.py stop     # Arrête CraftBot
-python service.py restart  # Redémarre CraftBot
-python service.py logs     # Affiche les logs récents
+python craftbot.py start    # Démarre CraftBot en arrière-plan
+python craftbot.py status   # Vérifie s'il tourne
+python craftbot.py stop     # Arrête CraftBot
+python craftbot.py restart  # Redémarre CraftBot
+python craftbot.py logs     # Affiche les logs récents
 ```
 
 | Commande | Description |
 |---------|-------------|
-| `python service.py install` | Installe les dépendances, enregistre le démarrage automatique à la connexion, lance CraftBot, ouvre le navigateur et ferme le terminal automatiquement |
-| `python service.py start` | Démarre CraftBot en arrière-plan — redémarre automatiquement s'il est déjà lancé (le terminal se ferme tout seul) |
-| `python service.py stop` | Arrête CraftBot |
-| `python service.py restart` | Arrête puis démarre CraftBot |
-| `python service.py status` | Vérifie si CraftBot tourne et si le démarrage automatique est activé |
-| `python service.py logs` | Affiche les logs récents (`-n 100` pour plus de lignes) |
-| `python service.py uninstall` | Arrête CraftBot, supprime le démarrage automatique, désinstalle les paquets pip et purge le cache pip |
+| `python craftbot.py install` | Installe les dépendances, enregistre le démarrage automatique à la connexion, lance CraftBot, ouvre le navigateur et ferme le terminal automatiquement |
+| `python craftbot.py start` | Démarre CraftBot en arrière-plan — redémarre automatiquement s'il est déjà lancé (le terminal se ferme tout seul) |
+| `python craftbot.py stop` | Arrête CraftBot |
+| `python craftbot.py restart` | Arrête puis démarre CraftBot |
+| `python craftbot.py status` | Vérifie si CraftBot tourne et si le démarrage automatique est activé |
+| `python craftbot.py logs` | Affiche les logs récents (`-n 100` pour plus de lignes) |
+| `python craftbot.py uninstall` | Arrête CraftBot, supprime le démarrage automatique, désinstalle les paquets pip et purge le cache pip |
 
 > [!TIP]
-> Après `service.py start` ou `service.py install`, un **raccourci CraftBot sur le bureau** est créé automatiquement. Si vous fermez le navigateur par accident, double-cliquez sur le raccourci pour le rouvrir.
+> Après `craftbot.py start` ou `craftbot.py install`, un **raccourci CraftBot sur le bureau** est créé automatiquement. Si vous fermez le navigateur par accident, double-cliquez sur le raccourci pour le rouvrir.
 
 > [!NOTE]
 > **Installation :** L'installateur fournit maintenant des indications claires si des dépendances manquent. Si Node.js est introuvable, on vous proposera de l'installer ou de basculer en mode TUI. L'installation détecte automatiquement la disponibilité du GPU et bascule en mode CPU si nécessaire.

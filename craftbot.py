@@ -6,13 +6,13 @@ Run CraftBot as a background process that survives terminal closure,
 and optionally register it to auto-start when your system boots.
 
 Commands:
-    python service.py start [options]    Start CraftBot in background
-    python service.py stop               Stop CraftBot
-    python service.py restart [options]  Stop then start
-    python service.py status             Show if CraftBot is running
-    python service.py logs [-n N]        Show last N log lines (default: 50)
-    python service.py install [options]  Register for auto-start on boot/login
-    python service.py uninstall          Remove auto-start registration
+    python craftbot.py start [options]    Start CraftBot in background
+    python craftbot.py stop               Stop CraftBot
+    python craftbot.py restart [options]  Stop then start
+    python craftbot.py status             Show if CraftBot is running
+    python craftbot.py logs [-n N]        Show last N log lines (default: 50)
+    python craftbot.py install [options]  Register for auto-start on boot/login
+    python craftbot.py uninstall          Remove auto-start registration
 
 Options passed to 'start' / 'install':
     --tui                   Run in TUI mode instead of browser
@@ -24,12 +24,12 @@ Options passed to 'start' / 'install':
     --no-conda              Don't use conda
 
 Examples:
-    python service.py start                   # Start in background (browser mode)
-    python service.py start --tui             # Start in background (TUI mode)
-    python service.py install                 # Auto-start on login (browser mode)
-    python service.py install --no-open-browser  # Auto-start without opening browser
-    python service.py stop
-    python service.py logs -n 100
+    python craftbot.py start                   # Start in background (browser mode)
+    python craftbot.py start --tui             # Start in background (TUI mode)
+    python craftbot.py install                 # Auto-start on login (browser mode)
+    python craftbot.py install --no-open-browser  # Auto-start without opening browser
+    python craftbot.py stop
+    python craftbot.py logs -n 100
 """
 import os
 import sys
@@ -203,7 +203,7 @@ def _open_browser_when_ready(url: str, pid_check_fn, delay: float = 4.0) -> None
     time.sleep(delay)
     if not pid_check_fn():
         print("\nWarning: CraftBot process exited before browser could open.")
-        print(f"Check logs: python service.py logs")
+        print(f"Check logs: python craftbot.py logs")
         return
     webbrowser.open(url)
 
@@ -263,7 +263,7 @@ def cmd_start(extra_args: List[str]) -> None:
 
     # service_mode=False — don't suppress the browser; we open it ourselves below
     run_args = _build_run_args(extra_args, service_mode=False)
-    # Always pass --no-open-browser to run.py; service.py handles opening the browser
+    # Always pass --no-open-browser to run.py; craftbot.py handles opening the browser
     if "--tui" not in run_args and "--cli" not in run_args:
         if "--no-open-browser" not in run_args:
             run_args.append("--no-open-browser")
@@ -591,7 +591,7 @@ def _install_windows(run_args: List[str]) -> None:
         print(f"Open CraftBot: {BROWSER_URL}")
         _create_desktop_shortcut_windows()
     else:
-        print("Could not register auto-start. Use 'python service.py start' to start manually.")
+        print("Could not register auto-start. Use 'python craftbot.py start' to start manually.")
 
 
 def _uninstall_windows() -> None:
@@ -1003,7 +1003,7 @@ def main() -> None:
 
     else:
         print(f"Unknown command: '{command}'")
-        print("Run 'python service.py --help' for usage.")
+        print("Run 'python craftbot.py --help' for usage.")
         sys.exit(1)
 
 
