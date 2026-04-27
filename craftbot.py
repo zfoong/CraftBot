@@ -307,9 +307,12 @@ def cmd_start(extra_args: List[str]) -> None:
     try:
         proc = subprocess.Popen(cmd, **kwargs)
     except FileNotFoundError as e:
+        log_fh.close()
         print(f"  {RED}✗{RESET} {WHITE}Could not launch CraftBot — {e}{RESET}")
         return
 
+    # Parent closes its copy — the child process (run.py) keeps the fd open
+    log_fh.close()
     _write_pid(proc.pid)
     print(f"  {GREEN}▸{RESET} {WHITE}CRAFTBOT STARTED{RESET}  {DIM}PID {proc.pid}{RESET}")
 
@@ -524,23 +527,33 @@ def _create_desktop_shortcut_windows() -> None:
 
 
 def _create_desktop_shortcut_unix() -> None:
-    """Create a .desktop shortcut on Linux/macOS Desktop."""
+    """Create a desktop shortcut on Linux or macOS."""
     desktop = _find_desktop()
     if not desktop:
         return
-    shortcut_path = os.path.join(desktop, "CraftBot.desktop")
     try:
-        content = (
-            "[Desktop Entry]\n"
-            "Type=Application\n"
-            "Name=CraftBot\n"
-            f"Exec=xdg-open {BROWSER_URL}\n"
-            "Icon=web-browser\n"
-            "Terminal=false\n"
-        )
-        with open(shortcut_path, "w") as f:
-            f.write(content)
-        os.chmod(shortcut_path, 0o755)
+        if _PLATFORM == "darwin":
+            # macOS does not support XDG .desktop files — create a double-clickable .command script
+            shortcut_path = os.path.join(desktop, "CraftBot.command")
+            content = f"#!/bin/sh\nopen '{BROWSER_URL}'\n"
+            with open(shortcut_path, "w") as f:
+                f.write(content)
+            os.chmod(shortcut_path, 0o755)
+        else:
+            # Linux: standard XDG .desktop entry
+            shortcut_path = os.path.join(desktop, "CraftBot.desktop")
+            open_cmd = "xdg-open" if os.path.isfile("/usr/bin/xdg-open") or os.path.isfile("/usr/local/bin/xdg-open") else "sensible-browser"
+            content = (
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=CraftBot\n"
+                f"Exec={open_cmd} {BROWSER_URL}\n"
+                "Icon=web-browser\n"
+                "Terminal=false\n"
+            )
+            with open(shortcut_path, "w") as f:
+                f.write(content)
+            os.chmod(shortcut_path, 0o755)
         print(f"  Desktop shortcut created: {shortcut_path}")
         print(f"  Double-click it anytime to open CraftBot in your browser.")
     except Exception as e:
@@ -860,6 +873,8 @@ def _remove_desktop_shortcut() -> None:
         return
     if _PLATFORM == "win32":
         shortcut_path = os.path.join(desktop, SHORTCUT_NAME)
+    elif _PLATFORM == "darwin":
+        shortcut_path = os.path.join(desktop, "CraftBot.command")
     else:
         shortcut_path = os.path.join(desktop, "CraftBot.desktop")
     if os.path.isfile(shortcut_path):

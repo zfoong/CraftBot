@@ -61,6 +61,309 @@ def _enable_windows_vtp() -> None:
     except Exception:
         pass
 
+
+def _download_progress(count: int, block_size: int, total_size: int) -> None:
+    """urllib reporthook that draws a retro progress bar."""
+    if total_size <= 0:
+        return
+    pct = min(100, int(count * block_size * 100 / total_size))
+    filled = int(40 * pct / 100)
+    bar = f"{ORANGE}{'▓' * filled}{DIM}{'░' * (40 - filled)}{RESET}"
+    sys.stdout.write(f"\r  Downloading  {bar}  {ORANGE}[ {pct:3d}% ]{RESET}")
+    sys.stdout.flush()
+
+
+def _find_existing_python310() -> Optional[str]:
+    """Return a verified Python 3.10 executable path if one is already installed, else None."""
+    candidates = []
+
+    if sys.platform == "win32":
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        candidates = [
+            os.path.join(local_app, "Programs", "Python", "Python310", "python.exe"),
+            r"C:\Python310\python.exe",
+            os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "Python310", "python.exe"),
+        ]
+        # Also try the py launcher
+        py_launcher = shutil.which("py")
+        if py_launcher:
+            try:
+                r = subprocess.run([py_launcher, "-3.10", "--version"],
+                                   capture_output=True, text=True, timeout=8)
+                if "3.10" in (r.stdout + r.stderr):
+                    return py_launcher  # caller uses it with "-3.10" flag
+            except Exception:
+                pass
+    elif sys.platform == "darwin":
+        candidates = [
+            shutil.which("python3.10") or "",
+            "/Library/Frameworks/Python.framework/Versions/3.10/bin/python3.10",
+            "/usr/local/bin/python3.10",
+            "/opt/homebrew/bin/python3.10",
+        ]
+    else:
+        candidates = [shutil.which("python3.10") or ""]
+
+    for path in candidates:
+        if path and os.path.isfile(path):
+            try:
+                r = subprocess.run([path, "--version"],
+                                   capture_output=True, text=True, timeout=8)
+                if "3.10" in (r.stdout + r.stderr):
+                    return path
+            except Exception:
+                pass
+    return None
+
+
+def _auto_install_python_310() -> None:
+    """Download and silently install Python 3.10 (tries recent patch versions in order), then re-launch install.py with it."""
+    import urllib.request
+
+    # Try recent patch versions in descending order.
+    PYTHON_VERSION_CANDIDATES = [
+        "3.10.17", "3.10.16", "3.10.15", "3.10.14",
+        "3.10.13", "3.10.12", "3.10.11",
+    ]
+
+    if sys.platform == "win32":
+        is_64bit = sys.maxsize > 2 ** 32
+
+        installer = None
+        chosen_version = None
+        for version in PYTHON_VERSION_CANDIDATES:
+            suffix = "-amd64.exe" if is_64bit else ".exe"
+            filename = f"python-{version}{suffix}"
+            url = f"https://www.python.org/ftp/python/{version}/{filename}"
+            dest = os.path.join(BASE_DIR, filename)
+            print(f"\n  {WHITE}Trying Python {version}...{RESET}")
+            print(f"  Source : {url}")
+            print(f"  Size   : ~25 MB\n")
+            try:
+                urllib.request.urlretrieve(url, dest, reporthook=_download_progress)
+                print()  # newline after progress bar
+                installer = dest
+                chosen_version = version
+                break
+            except Exception as exc:
+                print(f"\n  {RED}✗{RESET} Download failed: {exc}")
+                try:
+                    os.remove(dest)
+                except Exception:
+                    pass
+
+        if installer is None or chosen_version is None:
+            print(f"\n  {RED}✗{RESET} {WHITE}Could not download Python automatically.{RESET}")
+            print(f"  All download attempts failed (HTTP 404 or network error).")
+            print(f"\n  Please install Python 3.10 manually:")
+            print(f"  1. Go to: https://www.python.org/downloads/")
+            print(f"  2. Download the latest Python 3.10 installer for Windows")
+            print(f"  3. Run the installer (check 'Add Python to PATH')")
+            print(f"  4. Open a NEW terminal and run: python install.py")
+            sys.exit(1)
+
+        print(f"\n  {WHITE}Installing Python {chosen_version} (this window may briefly flash)...{RESET}")
+        result = subprocess.run([
+            installer,
+            "/passive",           # minimal UI — shows a small progress dialog
+            "InstallAllUsers=0",  # current user only (no admin needed)
+            "PrependPath=1",      # adds python to PATH
+            "AssociateFiles=1",
+            "Include_pip=1",
+            "Include_launcher=1",
+        ], timeout=300)
+
+        try:
+            os.remove(installer)
+        except Exception:
+            pass
+
+        if result.returncode != 0:
+            print(f"\n  {RED}✗{RESET} Installer exited with code {result.returncode}.")
+            print(f"\n  Please install Python 3.10 manually:")
+            print(f"  1. Go to: https://www.python.org/downloads/")
+            print(f"  2. Download the latest Python 3.10 installer for Windows")
+            print(f"  3. Run the installer (check 'Add Python to PATH')")
+            print(f"  4. Open a NEW terminal and run: python install.py")
+            sys.exit(1)
+
+        print(f"\n  {GREEN}✓{RESET} {WHITE}Python {chosen_version} installed!{RESET}")
+
+        # Locate the freshly installed python.exe and verify it is actually 3.10.
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        search_paths = [
+            os.path.join(local_app, "Programs", "Python", "Python310", "python.exe"),
+            r"C:\Python310\python.exe",
+            os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "Python310", "python.exe"),
+        ]
+        new_python310 = None
+        for path in search_paths:
+            if os.path.isfile(path):
+                try:
+                    ver_result = subprocess.run(
+                        [path, "--version"], capture_output=True, text=True, timeout=10
+                    )
+                    ver_text = (ver_result.stdout + ver_result.stderr).strip()
+                    if "3.10" in ver_text:
+                        new_python310 = path
+                        break
+                except Exception:
+                    pass
+
+        # Fallback: try the py launcher with -3.10 and verify it resolves to 3.10
+        if new_python310 is None:
+            py_launcher = shutil.which("py")
+            if py_launcher:
+                try:
+                    ver_result = subprocess.run(
+                        [py_launcher, "-3.10", "--version"], capture_output=True, text=True, timeout=10
+                    )
+                    ver_text = (ver_result.stdout + ver_result.stderr).strip()
+                    if "3.10" in ver_text:
+                        new_python310 = py_launcher  # will use with -3.10 flag below
+                except Exception:
+                    pass
+
+        if new_python310:
+            print(f"\n  {ORANGE}▸{RESET} Re-launching installer with Python 3.10...\n")
+            if new_python310.lower().endswith("py.exe"):
+                cmd = [new_python310, "-3.10", __file__]
+            else:
+                cmd = [new_python310, __file__]
+            # Pass --skip-python-check so the re-launched process skips the
+            # version gate and doesn't loop back into auto-install again.
+            extra = [a for a in sys.argv[1:] if a not in ("--no-launch",)]
+            subprocess.run(cmd + extra + ["--skip-python-check"])
+        else:
+            print(f"\n  {ORANGE}▸{RESET} {WHITE}Python 3.10 installed — please open a NEW terminal and run:{RESET}")
+            print(f"  {ORANGE}python install.py{RESET}")
+            print(f"  (The new terminal will pick up Python 3.10 automatically.)")
+
+        sys.exit(0)
+
+    elif sys.platform == "darwin":
+        PYTHON_VERSION_CANDIDATES = [
+            "3.10.17", "3.10.16", "3.10.15", "3.10.14",
+            "3.10.13", "3.10.12", "3.10.11",
+        ]
+        installer = None
+        chosen_version = None
+        for version in PYTHON_VERSION_CANDIDATES:
+            url = f"https://www.python.org/ftp/python/{version}/python-{version}-macos11.pkg"
+            dest = os.path.join(BASE_DIR, f"python-{version}.pkg")
+            print(f"\n  {WHITE}Trying Python {version}...{RESET}")
+            print(f"  Source : {url}")
+            try:
+                urllib.request.urlretrieve(url, dest, reporthook=_download_progress)
+                print()
+                installer = dest
+                chosen_version = version
+                break
+            except Exception as exc:
+                print(f"\n  {RED}✗{RESET} Download failed: {exc}")
+                try:
+                    os.remove(dest)
+                except Exception:
+                    pass
+
+        if installer is None or chosen_version is None:
+            print(f"\n  {RED}✗{RESET} {WHITE}Could not download Python automatically.{RESET}")
+            print(f"\n  Please install Python 3.10 manually:")
+            print(f"  1. Go to: https://www.python.org/downloads/")
+            print(f"  2. Download the latest Python 3.10 macOS installer")
+            print(f"  3. Run the installer")
+            print(f"  4. Open a NEW terminal and run: python3.10 install.py")
+            sys.exit(1)
+
+        print(f"\n  {WHITE}Installing (sudo required)...{RESET}")
+        result = subprocess.run(["sudo", "installer", "-pkg", installer, "-target", "/"], timeout=300)
+        try:
+            os.remove(installer)
+        except Exception:
+            pass
+        if result.returncode != 0:
+            print(f"\n  {RED}✗{RESET} Installation failed.")
+            print(f"\n  Please install Python 3.10 manually from: https://www.python.org/downloads/")
+            sys.exit(1)
+        print(f"\n  {GREEN}✓{RESET} {WHITE}Python {chosen_version} installed!{RESET}")
+        _mac_candidates = [
+            shutil.which("python3.10"),
+            "/Library/Frameworks/Python.framework/Versions/3.10/bin/python3.10",
+            "/usr/local/bin/python3.10",
+            "/opt/homebrew/bin/python3.10",
+        ]
+        new_python = next((p for p in _mac_candidates if p and os.path.isfile(p)), None)
+        if new_python:
+            print(f"\n  {ORANGE}▸{RESET} Re-launching with Python 3.10...\n")
+            os.execv(new_python, [new_python, __file__] + sys.argv[1:])
+        else:
+            print(f"\n  Please open a new terminal and run: python3.10 install.py")
+        sys.exit(0)
+
+    else:  # Linux — try multiple package managers in order
+        def _run_step(cmd: list) -> bool:
+            print(f"  {DIM}▸ {' '.join(cmd)}{RESET}")
+            return subprocess.run(cmd).returncode == 0
+
+        installed = False
+
+        if shutil.which("apt-get") or shutil.which("apt"):
+            apt = shutil.which("apt-get") or shutil.which("apt")
+            print(f"  Detected apt — installing Python 3.10 (sudo required)...\n")
+
+            # Step 1: try direct install first (works on Kali, Debian 12, Ubuntu 22.04+)
+            _run_step(["sudo", apt, "update", "-qq"])
+            ok = _run_step(["sudo", apt, "install", "-y", "python3.10", "python3.10-venv"])
+
+            if not ok:
+                # Step 2: add deadsnakes PPA (Ubuntu/Mint where direct install fails)
+                print(f"\n  Direct install failed — trying deadsnakes PPA...\n")
+                _run_step(["sudo", apt, "install", "-y", "software-properties-common"])
+                _run_step(["sudo", "add-apt-repository", "-y", "ppa:deadsnakes/ppa"])
+                _run_step(["sudo", apt, "update", "-qq"])
+                ok = _run_step(["sudo", apt, "install", "-y", "python3.10", "python3.10-venv"])
+
+            if ok:
+                # python3.10-distutils was removed in Ubuntu 23.04+ — ignore failure
+                subprocess.run(["sudo", apt, "install", "-y", "python3.10-distutils"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                installed = True
+
+        elif shutil.which("dnf"):
+            print(f"  Detected dnf (Fedora/RHEL) — installing Python 3.10 (sudo required)...\n")
+            installed = _run_step(["sudo", "dnf", "install", "-y", "python3.10"])
+
+        elif shutil.which("pacman"):
+            # Arch ships Python 3.11+ as 'python'; 3.10 available via AUR or python310 package
+            print(f"  Detected pacman (Arch) — installing python3.10 (sudo required)...\n")
+            installed = _run_step(["sudo", "pacman", "-Sy", "--noconfirm", "python310"])
+            if not installed:
+                # Fallback: current python package (3.11+) is still compatible
+                installed = _run_step(["sudo", "pacman", "-Sy", "--noconfirm", "python"])
+
+        elif shutil.which("zypper"):
+            print(f"  Detected zypper (openSUSE) — installing Python 3.10 (sudo required)...\n")
+            installed = _run_step(["sudo", "zypper", "install", "-y", "python310"])
+
+        if not installed:
+            print(f"\n  {RED}✗{RESET} Could not install Python 3.10 automatically on this system.")
+            print(f"\n  Please install Python 3.10 manually using pyenv (works on any distro):")
+            print(f"    curl https://pyenv.run | bash")
+            print(f"    pyenv install 3.10.17")
+            print(f"    pyenv local 3.10.17")
+            print(f"    python install.py")
+            sys.exit(1)
+
+        new_python = shutil.which("python3.10")
+        if new_python:
+            print(f"\n  {GREEN}✓{RESET} {WHITE}Python 3.10 installed!{RESET}")
+            print(f"\n  {ORANGE}▸{RESET} Re-launching installer with Python 3.10...\n")
+            os.execv(new_python, [new_python, __file__] + sys.argv[1:])
+        else:
+            print(f"\n  {GREEN}✓{RESET} {WHITE}Python 3.10 installed!{RESET}")
+            print(f"\n  Please open a new terminal and run: python3.10 install.py")
+            sys.exit(0)
+
 _enable_windows_vtp()
 _USE_COLOR = sys.stdout.isatty()
 
@@ -1262,28 +1565,22 @@ def _check_linux_python() -> None:
     ver = sys.version_info
 
     # Already gated to >= 3.9 above, but warn hard about 3.9 since
-    # it's the bare minimum — 3.11+ is much more reliable.
+    # it's the bare minimum — 3.10+ is recommended.
     if ver < (3, 10):
         print("\n" + "=" * 62)
         print(f" ⚠  Python {ver.major}.{ver.minor} detected — upgrade recommended")
         print("=" * 62)
         print(f"\n  You are running Python {ver.major}.{ver.minor}.{ver.micro}.")
-        print("  CraftBot works on 3.9+ but runs best on Python 3.11 or newer.")
-        print("\n  To install Python 3.11 on Ubuntu/Debian/Kali:")
-        print("    sudo apt update")
-        print("    sudo apt install -y software-properties-common")
-        print("    sudo add-apt-repository ppa:deadsnakes/ppa")
-        print("    sudo apt install -y python3.11 python3.11-venv python3.11-pip")
-        print("    python3.11 install.py")
-        print()
-        print("  Or use pyenv (works on any distro):")
-        print("    curl https://pyenv.run | bash")
-        print("    pyenv install 3.11.9")
-        print("    pyenv local 3.11.9")
-        print("    python install.py")
+        print("  CraftBot works on 3.9+ but runs best on Python 3.10 or newer.")
+        print("\n  Recommended: use Python 3.10.17")
         print("=" * 62)
-        choice = input("\n  Continue with Python 3.9 anyway? (y/n): ").strip().lower()
-        if choice != "y":
+        print(f"\n  {ORANGE}[y]{RESET} Continue with Python {ver.major}.{ver.minor} anyway")
+        print(f"  {GREEN}[i]{RESET} Auto-install Python 3.10.17 and re-launch  {DIM}(recommended){RESET}")
+        print(f"  {RED}[n]{RESET} Cancel")
+        choice = input("\n  Your choice (y/i/n): ").strip().lower()
+        if choice == "i":
+            _auto_install_python_310()
+        elif choice != "y":
             print("\n  Installation cancelled. Please upgrade Python and try again.\n")
             sys.exit(1)
         print()
@@ -1322,24 +1619,17 @@ def _check_mac_python() -> None:
     print(f"\n  This Python ({ver.major}.{ver.minor}.{ver.micro}) is reserved for macOS")
     print("  system tools. Installing packages into it can be unreliable")
     print("  and may break system components.")
-    print("\n  Recommended fix — install Python via Homebrew:")
-    print()
-    print("    # 1. Install Homebrew (if not already installed):")
-    print('    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"')
-    print()
-    print("    # 2. Install Python 3.11 (or newer):")
-    print("    brew install python@3.11")
-    print()
-    print("    # 3. Re-run the installer with Homebrew Python:")
-    print("    /opt/homebrew/bin/python3.11 install.py   # Apple Silicon")
-    print("    /usr/local/bin/python3.11 install.py      # Intel Mac")
-    print()
-    print("  Alternative: download Python from https://www.python.org/downloads/")
+    print("\n  Recommended: use Python 3.10.17 (official python.org build)")
     print("=" * 62)
+    print(f"\n  {ORANGE}[y]{RESET} Continue with the current interpreter anyway")
+    print(f"  {GREEN}[i]{RESET} Auto-install Python 3.10.17 and re-launch  {DIM}(recommended){RESET}")
+    print(f"  {RED}[n]{RESET} Cancel")
 
-    choice = input("\n  Continue with the current interpreter anyway? (y/n): ").strip().lower()
-    if choice != "y":
-        print("\n  Installation cancelled. Please use a Homebrew or python.org Python.\n")
+    choice = input("\n  Your choice (y/i/n): ").strip().lower()
+    if choice == "i":
+        _auto_install_python_310()
+    elif choice != "y":
+        print("\n  Installation cancelled. Please use a python.org Python 3.10.\n")
         sys.exit(1)
     print()
 
@@ -1350,6 +1640,11 @@ def _check_mac_python() -> None:
 if __name__ == "__main__":
     # ── Python version gate ────────────────────────────────────────────────
     _ver = sys.version_info
+    # --skip-python-check is passed by _auto_install_python_310 when it
+    # re-launches install.py after installing Python 3.10, so we don't loop
+    # back into the auto-install prompt again.
+    _skip_python_check = "--skip-python-check" in sys.argv
+
     if _ver < (3, 9):
         print(f"\n❌ Python {_ver.major}.{_ver.minor} is not supported.")
         print("   CraftBot requires Python 3.9 or newer.")
@@ -1362,28 +1657,58 @@ if __name__ == "__main__":
             print("\n   Please install Python 3.9+ from https://www.python.org/downloads/")
         sys.exit(1)
 
-    # ── Pre-release Python warning ─────────────────────────────────────────
-    if _ver >= (3, 14):
+    # ── Pre-release / wrong-version Python handling ───────────────────────
+    if (_ver >= (3, 14) or _ver < (3, 10)) and not _skip_python_check:
+        # Before prompting, check if Python 3.10 is already installed.
+        # If it is, silently re-launch with it — no need to ask the user again.
+        _python310 = _find_existing_python310()
+        if _python310:
+            print(f"\n  {GREEN}▸{RESET} {WHITE}Python 3.10 detected — re-launching automatically...{RESET}\n")
+            if _python310.lower().endswith("py.exe"):
+                _relaunch_cmd = [_python310, "-3.10", __file__]
+            else:
+                _relaunch_cmd = [_python310, __file__]
+            _extra = [a for a in sys.argv[1:] if a != "--no-launch"]
+            subprocess.run(_relaunch_cmd + _extra + ["--skip-python-check"])
+            sys.exit(0)
+
+        # Python 3.10 not found — show the prompt.
+        if _ver >= (3, 14):
+            _reason = f"Python {_ver.major}.{_ver.minor} is a pre-release version"
+            _detail = (
+                f"  You are running Python {_ver.major}.{_ver.minor}.{_ver.micro}.\n"
+                "  Pre-release Python versions are not yet supported by all\n"
+                "  packages CraftBot depends on and may cause install failures."
+            )
+        else:
+            _reason = f"Python {_ver.major}.{_ver.minor} is older than recommended"
+            _detail = (
+                f"  You are running Python {_ver.major}.{_ver.minor}.{_ver.micro}.\n"
+                "  CraftBot works best on Python 3.10 or newer."
+            )
         print(f"\n" + "=" * 62)
-        print(f" ⚠  Python {_ver.major}.{_ver.minor} is a pre-release version")
+        print(f" ⚠  {_reason}")
         print("=" * 62)
-        print(f"\n  You are running Python {_ver.major}.{_ver.minor}.{_ver.micro}.")
-        print("  Pre-release Python versions are not yet supported by all")
-        print("  packages CraftBot depends on and may cause install failures.")
-        print("\n  Recommended: use Python 3.11 or 3.12")
-        print("  Download from: https://www.python.org/downloads/")
+        print(f"\n{_detail}")
+        print("\n  Recommended: use Python 3.10.17")
         print("=" * 62)
-        _choice = input("\n  Continue with Python 3.14 anyway? (y/n): ").strip().lower()
-        if _choice != "y":
-            print("\n  Installation cancelled. Please use Python 3.11 or 3.12.\n")
+        print(f"\n  {ORANGE}[y]{RESET} Continue with Python {_ver.major}.{_ver.minor} anyway")
+        print(f"  {GREEN}[i]{RESET} Auto-install Python 3.10.17 and re-launch  {DIM}(recommended){RESET}")
+        print(f"  {RED}[n]{RESET} Cancel")
+        _choice = input("\n  Your choice (y/i/n): ").strip().lower()
+        if _choice == "i":
+            _auto_install_python_310()
+        elif _choice != "y":
+            print("\n  Installation cancelled. Please use Python 3.10.17.\n")
             sys.exit(1)
         print()
 
     # ── platform-specific interpreter checks ──────────────────────────────
-    if sys.platform == "darwin":
-        _check_mac_python()
-    elif sys.platform == "linux":
-        _check_linux_python()
+    if not _skip_python_check:
+        if sys.platform == "darwin":
+            _check_mac_python()
+        elif sys.platform == "linux":
+            _check_linux_python()
 
     args = set(sys.argv[1:])
 
