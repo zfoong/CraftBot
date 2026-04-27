@@ -264,7 +264,13 @@ class ActionManager:
             event=f"Running action {action.name} with input: {pretty_input}.",
             display_message=f"Running {action.display_name}",
             action_name=action.name,
-            session_id=session_id if is_running_task else None,
+            # Always pass session_id when present so the event_stream_manager can route
+            # to the correct task stream OR fall back to main_stream for transient
+            # sessions (e.g. third-party email notification). Previously this gated on
+            # is_running_task, which meant conversation-mode actions logged with
+            # task_id=None and got attributed to whatever task_stream get_stream()
+            # returned via STATE.current_task_id — leaking events into unrelated tasks.
+            session_id=session_id,
         )
 
         logger.debug(f"Starting execution of action {action.name}...")
@@ -320,7 +326,13 @@ class ActionManager:
             logger.debug(f"[OUTPUT DATA] Final outputs for action {action.name}: {outputs}")
 
             if status != "error":
-                status = "success"
+                # If the action returned an error dict (either via exception path in
+                # execute_atomic_action or an explicit failure from the action body),
+                # treat the run as an error so on_action_end and runtime logs reflect it.
+                if outputs and outputs.get("status") == "error":
+                    status = "error"
+                else:
+                    status = "success"
 
         except asyncio.CancelledError:
             status = "error"
@@ -340,7 +352,7 @@ class ActionManager:
         # 3. Persist final state
         # ────────────────────────────────────────────────────────────────
 
-        logger.debug(f"Action {action.name} completed with status: {status}.")
+        logger.info(f"Action {action.name} completed with status: {status}.")
 
         # Log to event stream
         # Only pass session_id when is_running_task=True (task stream exists)
@@ -353,7 +365,13 @@ class ActionManager:
             event=f"Action {action.name} completed with output: {pretty_output}.",
             display_message=f"{action.display_name} → {display_status}",
             action_name=action.name,
-            session_id=session_id if is_running_task else None,
+            # Always pass session_id when present so the event_stream_manager can route
+            # to the correct task stream OR fall back to main_stream for transient
+            # sessions (e.g. third-party email notification). Previously this gated on
+            # is_running_task, which meant conversation-mode actions logged with
+            # task_id=None and got attributed to whatever task_stream get_stream()
+            # returned via STATE.current_task_id — leaking events into unrelated tasks.
+            session_id=session_id,
         )
 
         # Emit waiting_for_user event if requested
@@ -364,7 +382,7 @@ class ActionManager:
                 event="Agent is waiting for user response.",
                 display_message=None,
                 action_name=action.name,
-                session_id=session_id if is_running_task else None,
+                session_id=session_id,
             )
 
         logger.debug(f"Persisting final state for action {action.name}...")
@@ -557,7 +575,10 @@ class ActionManager:
 
         except Exception as e:
             logger.exception("Error occurred while executing atomic action")
-            return {"error": f"Execution failed: {str(e)}"}
+            # Mark status=error so the caller (execute_action) propagates "error" to
+            # the action_end event, the UI display_status, and the on_action_end hook.
+            # Without this, the action is reported as "completed/success" despite raising.
+            return {"status": "error", "error": f"Execution failed: {str(e)}"}
 
     @staticmethod
     def _parse_action_output(raw_output: str) -> Any:

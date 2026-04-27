@@ -356,13 +356,16 @@ class EventStreamManager:
         if task_id is not None and task_id in self._task_streams:
             stream = self._task_streams[task_id]
         elif task_id is not None and task_id not in self._task_streams:
-            # Task ID provided but stream not found - fall back to global stream
-            # Only warn if other streams exist (indicates a bug/race condition).
-            # If no streams exist, this is expected (conversation mode, before task creation).
+            # Task ID provided but stream not found — fall back to the MAIN stream,
+            # not get_stream(). get_stream() resolves via global STATE.current_task_id
+            # which is the *currently running* task; that path leaks events from a
+            # parallel conversation reaction (e.g. third-party email notification in
+            # session 0489cf) into whatever task happens to be active (e.g. translate
+            # task 15a11d). Only warn if other streams exist (indicates a bug/race).
             if self._task_streams:
-                logger.warning(f"[EVENT_STREAM] Task stream not found for task_id={task_id!r}, falling back to global stream. "
+                logger.warning(f"[EVENT_STREAM] Task stream not found for task_id={task_id!r}, falling back to main stream. "
                               f"Available streams: {list(self._task_streams.keys())}")
-            stream = self.get_stream()
+            stream = self._main_stream
         else:
             stream = self.get_stream()
         idx = stream.log(
