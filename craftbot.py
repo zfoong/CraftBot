@@ -74,6 +74,15 @@ def _enable_windows_vtp() -> None:
         pass
 
 _enable_windows_vtp()
+
+# Force UTF-8 output on Windows so Unicode box-drawing characters don't crash
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 _USE_COLOR = sys.stdout.isatty()
 
 def _c(code: str) -> str:
@@ -219,13 +228,13 @@ def _open_browser_detached(url: str) -> None:
         "import sys, time, webbrowser\n"
         "try:\n"
         "    from urllib.request import urlopen\n"
-        "    deadline = time.time() + 30\n"
+        "    deadline = time.time() + 120\n"
         "    while time.time() < deadline:\n"
         "        try:\n"
         f"            urlopen('{url}', timeout=1).close()\n"
         "            break\n"
         "        except Exception:\n"
-        "            time.sleep(0.5)\n"
+        "            time.sleep(1)\n"
         "except Exception:\n"
         "    pass\n"
         f"webbrowser.open('{url}')\n"
@@ -831,6 +840,19 @@ def cmd_install(extra_args: List[str]) -> None:
         )
         if result.returncode != 0:
             print(f"\n  {RED}✗{RESET} {WHITE}Dependency installation failed. Aborting.{RESET}")
+            print(f"  {DIM}Run 'python install.py' directly to see the full error.{RESET}")
+            return
+
+        # Verify critical packages are actually importable with this interpreter.
+        # install.py may exit 0 while packages ended up in a different site-packages.
+        _critical_check = subprocess.run(
+            [sys.executable, "-c", "import openai, requests, aiohttp, websockets"],
+            capture_output=True,
+        )
+        if _critical_check.returncode != 0:
+            print(f"\n  {RED}✗{RESET} {WHITE}Packages installed but not importable — wrong interpreter?{RESET}")
+            print(f"  {DIM}Current Python: {sys.executable}{RESET}")
+            print(f"  {DIM}Run 'python install.py' to reinstall with this Python.{RESET}")
             return
         print()
     else:

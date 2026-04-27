@@ -1189,13 +1189,15 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
                         print("✓ Core dependencies installed (--pre)")
                         return
 
-                    # Second retry: binary-only (skip source builds that need a compiler)
-                    print("   Retrying with --only-binary=:all: to skip source builds...")
+                    # Second retry: prefer binary wheels, fall back to source only when needed.
+                    # --prefer-binary is much safer than --only-binary=:all: because it still
+                    # allows source builds for packages that genuinely have no wheel yet.
+                    print("   Retrying with --prefer-binary to favour wheels over source builds...")
                     cmd_bin = [sys.executable, "-m", "pip", "install", "--no-color", "--pre",
-                               "--only-binary=:all:", "-r", requirements_file]
-                    result = run_command_with_progress(cmd_bin, message="Retrying (binary only)", check=False, env_extras=_pip_env)
+                               "--prefer-binary", "-r", requirements_file]
+                    result = run_command_with_progress(cmd_bin, message="Retrying (prefer-binary)", check=False, env_extras=_pip_env)
                     if result and hasattr(result, 'returncode') and result.returncode == 0:
-                        print("✓ Core dependencies installed (binary-only)")
+                        print("✓ Core dependencies installed (prefer-binary)")
                         return
 
                 # Show as much context as possible then give up
@@ -1223,6 +1225,30 @@ def setup_pip_environment(requirements_file: str = REQUIREMENTS_FILE):
                 sys.exit(1)
         else:
             print("✓ Core dependencies installed")
+
+        # Quick import smoke-test: verify that the most critical packages are
+        # actually importable with the current interpreter.  pip can report
+        # returncode 0 yet leave some packages missing (e.g. version conflicts,
+        # wrong interpreter, PEP 668 partial installs).
+        _critical = ["openai", "anthropic", "requests", "aiohttp", "websockets"]
+        _missing = []
+        for _pkg in _critical:
+            chk = subprocess.run(
+                [sys.executable, "-c", f"import {_pkg}"],
+                capture_output=True,
+            )
+            if chk.returncode != 0:
+                _missing.append(_pkg)
+        if _missing:
+            print(f"\n  ✗ Import check failed — these packages are not importable:")
+            for _m in _missing:
+                print(f"    • {_m}")
+            print("\n  This usually means pip installed them for a different Python")
+            print(f"  interpreter. Current interpreter: {sys.executable}")
+            print("\n  Fix: re-run with the correct Python:")
+            print(f"    {sys.executable} install.py")
+            sys.exit(1)
+        print(f"  ✓ Import check passed")
     except Exception as e:
         print(f"\n✗ Exception during setup: {e}")
         raise
@@ -1801,8 +1827,16 @@ if __name__ == "__main__":
     # Install Playwright browser (needed for WhatsApp Web)
     install_playwright_browser(use_conda=use_conda)
 
-    # Install browser frontend dependencies
-    install_browser_frontend()
+    # Install browser frontend dependencies — required for browser mode
+    frontend_ok = install_browser_frontend()
+    if not frontend_ok:
+        print(f"\n  {RED}✗{RESET} {WHITE}Browser frontend setup failed.{RESET}")
+        print("  Browser mode (localhost:7925) will not work until Node.js is installed")
+        print("  and 'npm install' succeeds in app/ui_layer/browser/frontend/")
+        print("\n  Fix:")
+        print("    1. Install Node.js LTS from https://nodejs.org/")
+        print("    2. Re-run: python install.py")
+        sys.exit(1)
 
     # Step 2: Install GUI components (optional)
     if install_gui:
