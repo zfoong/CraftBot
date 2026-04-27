@@ -769,12 +769,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         setState(prev => ({
           ...prev,
           livingUICreating: status,
-          // Update project status
-          livingUIProjects: prev.livingUIProjects.map(p =>
-            p.id === status.projectId
-              ? { ...p, status: status.phase === 'launching' ? 'ready' : 'creating' }
-              : p
-          ),
+          // Only update project status during creation; never downgrade a running project
+          // back to 'creating'/'ready' just because the agent emitted a progress event.
+          livingUIProjects: prev.livingUIProjects.map(p => {
+            if (p.id !== status.projectId) return p
+            if (p.status === 'running') return p
+            return { ...p, status: status.phase === 'launching' ? 'ready' : 'creating' }
+          }),
         }))
         break
       }

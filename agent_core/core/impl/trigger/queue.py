@@ -300,6 +300,7 @@ class TriggerQueue:
                 conversation_id=trig.payload.get("conversation_id", "N/A"),
                 existing_sessions=existing_sessions,
                 recent_conversation=recent_conversation,
+                current_living_ui_id=trig.payload.get("living_ui_id") or "(not on a Living UI page)",
             )
 
             logger.debug(f"[UNIFIED ROUTING PROMPT]:\n{usr_msg}")

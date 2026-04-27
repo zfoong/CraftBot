@@ -31,6 +31,11 @@ import threading
 
 SEVERITIES = ("DEBUG", "INFO", "WARN", "ERROR")
 MAX_EVENT_INLINE_CHARS = 200000
+# Always preserve at least this many most-recent events in tail_events when summarizing.
+# Guards against a single oversized event (e.g. a large read_pdf result) being purged in the
+# same tick it arrives — the UI consumer polls tail_events and would otherwise miss it,
+# leaving the action displayed as "running" forever.
+MIN_KEEP_RECENT_EVENTS = 2
 
 
 def get_cached_token_count(rec: "EventRecord") -> int:
@@ -199,18 +204,21 @@ class EventStream:
         if not events:
             return 0
 
-        # Calculate tokens from the end, accumulating until we reach keep_tokens
+        # Calculate tokens from the end, accumulating until we reach keep_tokens.
+        # MIN_KEEP_RECENT_EVENTS overrides the token budget so the most recent events
+        # always survive a summarization pass — needed because the UI polls tail_events
+        # and would never see an event that's purged in the same tick it arrived.
         tokens_from_end = 0
         keep_count = 0
         for rec in reversed(events):
             event_tokens = get_cached_token_count(rec)
-            if tokens_from_end + event_tokens > keep_tokens:
+            if tokens_from_end + event_tokens > keep_tokens and keep_count >= MIN_KEEP_RECENT_EVENTS:
                 break
             tokens_from_end += event_tokens
             keep_count += 1
 
         # Return how many events to summarize (from the beginning)
-        cutoff = len(events) - keep_count
+        cutoff = max(0, len(events) - keep_count)
         duration_ms = (time.perf_counter() - start) * 1000
         profiler.record(
             "find_token_cutoff",

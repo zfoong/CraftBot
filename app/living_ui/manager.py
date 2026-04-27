@@ -13,6 +13,7 @@ Manages the lifecycle of Living UI projects:
 import asyncio
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -24,7 +25,7 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Set, TYPE_CHECKING
+from typing import Dict, List, Optional, Any, Set, Tuple, TYPE_CHECKING
 try:
     from loguru import logger
 except ImportError:
@@ -2272,6 +2273,84 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             "port": proxy_port,
         }
 
+    @staticmethod
+    def _append_node_args(command: str, extra_args: str) -> str:
+        """Append CLI args to an npm/pnpm/yarn run command using `--`, or to a direct binary call."""
+        if re.match(r'^\s*(?:npm|pnpm|yarn)\s+run\s+\S+', command):
+            return f"{command} {extra_args}" if ' -- ' in command else f"{command} -- {extra_args}"
+        return f"{command} {extra_args}"
+
+    def _normalize_node_start_command(
+        self, project_path: Path, start_command: str, env: Dict[str, str]
+    ) -> Tuple[str, Dict[str, str]]:
+        """
+        Adjust an imported Node.js project's start command + env so it embeds cleanly
+        in CraftBot's iframe:
+          - bind to the allocated PORT (config-file ports often override env vars)
+          - suppress system-browser auto-open (Vite/CRA's default behavior)
+
+        Returns (start_command, env) — possibly modified. Falls back to the inputs
+        on any parse error.
+        """
+        new_env = dict(env) if env else {}
+        new_start = start_command
+
+        pkg_json_path = project_path / 'package.json'
+        if not pkg_json_path.exists():
+            return new_start, new_env
+
+        try:
+            pkg = json.loads(pkg_json_path.read_text(encoding='utf-8'))
+        except Exception as e:
+            logger.warning(f"[LIVING_UI] Could not parse {pkg_json_path}, skipping start-command normalization: {e}")
+            return new_start, new_env
+
+        deps = {**pkg.get('dependencies', {}), **pkg.get('devDependencies', {})}
+        scripts = pkg.get('scripts', {})
+
+        # If start_command is `npm/pnpm/yarn run X`, look up what X actually invokes
+        underlying = start_command
+        run_match = re.match(r'^\s*(?:npm|pnpm|yarn)\s+run\s+(\S+)', start_command)
+        if run_match:
+            underlying = scripts.get(run_match.group(1), '')
+
+        def uses(name: str) -> bool:
+            return name in deps or bool(re.search(rf'\b{re.escape(name)}\b', underlying))
+
+        already_has_port = bool(re.search(r'(--port|-p\s|--hostname|-H\s)', new_start))
+
+        if uses('vite'):
+            # Vite: CLI --port overrides server.port; BROWSER=none suppresses server.open auto-open
+            new_env.setdefault('BROWSER', 'none')
+            if not already_has_port:
+                new_start = self._append_node_args(
+                    new_start, '--port {{PORT}} --host 127.0.0.1 --strictPort'
+                )
+        elif uses('next'):
+            # Next.js: -p PORT, -H HOST. Doesn't auto-open by default.
+            if not already_has_port:
+                new_start = self._append_node_args(new_start, '-p {{PORT}} -H 127.0.0.1')
+        elif uses('react-scripts') or uses('webpack-dev-server'):
+            # CRA / webpack-dev-server: respect PORT env, BROWSER=none disables auto-open
+            new_env.setdefault('BROWSER', 'none')
+        elif uses('@vue/cli-service') or uses('vue-cli-service'):
+            new_env.setdefault('BROWSER', 'none')
+            if not already_has_port:
+                new_start = self._append_node_args(
+                    new_start, '--port {{PORT}} --host 127.0.0.1'
+                )
+        else:
+            # Generic Node app — defensively suppress browser auto-open
+            new_env.setdefault('BROWSER', 'none')
+
+        if new_start != start_command or new_env != env:
+            logger.info(
+                f"[LIVING_UI] Normalized Node start command: '{start_command}' -> '{new_start}' "
+                f"(env additions: {set(new_env) - set(env or {})})"
+            )
+
+        return new_start, new_env
+
     async def import_external_app(
         self,
         name: str,
@@ -2312,6 +2391,15 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
             health_cfg["url"] = health_url or f"http://localhost:{{{{PORT}}}}"
             health_cfg["timeout"] = 30
 
+        env_dict: Dict[str, str] = {port_env_var: "{{PORT}}"} if port_env_var else {}
+
+        # Auto-normalize Node.js dev-server start commands so the app binds to
+        # CraftBot's allocated port and doesn't pop a system browser tab.
+        if app_runtime == 'node':
+            start_command, env_dict = self._normalize_node_start_command(
+                project_path, start_command, env_dict
+            )
+
         # Generate manifest
         manifest = {
             "id": project_id,
@@ -2327,7 +2415,7 @@ The frontend is a Vite+React app at {project.path}/frontend/"""
                     "cwd": ".",
                     "install": install_command,
                     "start": start_command,
-                    "env": {port_env_var: "{{PORT}}"} if port_env_var else {},
+                    "env": env_dict,
                     "health": health_cfg,
                 }
             },

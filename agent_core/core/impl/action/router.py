@@ -98,15 +98,6 @@ class ActionRouter:
         # Base conversation mode actions
         base_actions = ["send_message", "task_start", "ignore"]
 
-        # Integration management actions (always available so the agent can
-        # help users connect / disconnect external apps via conversation)
-        integration_actions = [
-            "list_available_integrations",
-            "connect_integration",
-            "disconnect_integration",
-            "check_integration_status",
-        ]
-
         # Dynamically add messaging actions for connected platforms
         try:
             from app.external_comms.integration_discovery import (
@@ -115,10 +106,10 @@ class ActionRouter:
             )
             connected_platforms = get_connected_messaging_platforms()
             messaging_actions = get_messaging_actions_for_platforms(connected_platforms)
-            conversation_mode_actions = base_actions + integration_actions + messaging_actions
+            conversation_mode_actions = base_actions + messaging_actions
         except Exception as e:
             logger.debug(f"[ACTION] Could not discover messaging actions: {e}")
-            conversation_mode_actions = base_actions + integration_actions
+            conversation_mode_actions = base_actions
 
         action_candidates = []
 
