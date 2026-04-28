@@ -6,16 +6,49 @@ All configuration is read from settings.json - no .env file is used.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+def _frozen_user_data_root() -> Path:
+    """Return the per-user data directory for the frozen agent.
+
+    When packaged as a PyInstaller binary the agent must NOT write
+    runtime files (agent_file_system, chroma_db_memory, logs, dbs)
+    into:
+      - sys._MEIPASS — wiped when the process exits
+      - the install directory (Program Files / %LOCALAPPDATA%\\Programs)
+        — install dirs by Windows convention are read-only-from-the-user's
+        perspective, and writing user data there mixes binaries with state.
+
+    Mirrors craftbot.py's _user_data_dir() so the installer wizard and the
+    agent agree on where things live (e.g. logs).
+    """
+    if sys.platform == "win32":
+        root = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+        path = Path(root) / "CraftBot"
+    elif sys.platform == "darwin":
+        path = Path(os.path.expanduser("~/Library/Application Support/CraftBot"))
+    else:
+        root = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        path = Path(root) / "craftbot"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def get_project_root() -> Path:
-    """Get the project root directory"""
+    """Get the project root directory.
+
+    Source mode: <repo>/ — relative to this file.
+    Frozen mode: the per-user data dir (%LOCALAPPDATA%\\CraftBot on Windows,
+    ~/Library/Application Support/CraftBot on macOS, ${XDG_DATA_HOME}/craftbot
+    on Linux). Runtime state (agent_file_system, chroma_db_memory, dbs, logs)
+    lives there so the install dir stays clean and uninstalls don't lose data.
+    """
     if getattr(sys, 'frozen', False):
-        # Frozen exe: use CWD so logs/workspace persist (not the temp _MEIPASS dir)
-        return Path.cwd()
+        return _frozen_user_data_root()
     return Path(__file__).resolve().parent.parent
 
 PROJECT_ROOT = get_project_root()

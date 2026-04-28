@@ -45,19 +45,40 @@ else:
 
 
 def _bootstrap_frozen():
-    """Copy bundled config/data from _MEIPASS to CWD on first run.
+    """Copy bundled config/data from _MEIPASS to the user data dir on first run.
 
     PyInstaller extracts bundled files into a temp directory (sys._MEIPASS)
     which is read-only and deleted on exit. The app expects mutable config
-    and data directories under CWD so they persist between runs.
+    and data directories that persist between runs. We target a per-user
+    data dir (NOT the install dir, NOT cwd) so:
+      - User data lives outside Program Files / install location
+      - Uninstall + reinstall preserves history
+      - Direct double-click of CraftBotAgent.exe doesn't dump runtime files
+        next to the binary
     """
     if not getattr(sys, 'frozen', False):
         return
 
     import shutil as _shutil
 
+    # Per-user data root — same convention as the installer wizard
+    # (craftbot._user_data_dir() / app.config._frozen_user_data_root()).
+    if sys.platform == "win32":
+        _root = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+        user_data = os.path.join(_root, "CraftBot")
+    elif sys.platform == "darwin":
+        user_data = os.path.expanduser("~/Library/Application Support/CraftBot")
+    else:
+        _root = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        user_data = os.path.join(_root, "craftbot")
+    os.makedirs(user_data, exist_ok=True)
+
+    # Switch CWD so any code that still uses os.getcwd() / relative paths
+    # ends up writing into user_data instead of the install dir.
+    os.chdir(user_data)
+
     meipass = sys._MEIPASS
-    cwd = os.getcwd()
+    cwd = user_data
 
     # Directories to bootstrap (source relative to _MEIPASS)
     dirs_to_copy = [

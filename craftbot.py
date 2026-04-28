@@ -13,6 +13,12 @@ Commands:
     python craftbot.py logs [-n N]        Show last N log lines (default: 50)
     python craftbot.py install [options]  Register for auto-start on boot/login
     python craftbot.py uninstall          Remove auto-start registration
+    python craftbot.py repair [options]   Re-copy current EXE over the installed
+                                          copy and restart (frozen EXE only)
+    python craftbot.py wizard             Open the GUI wizard
+
+When running as a frozen EXE (CraftBot.exe with no args), the wizard opens
+automatically. Subcommands work the same as in source mode.
 
 Options passed to 'start' / 'install':
     --tui                   Run in TUI mode instead of browser
@@ -31,40 +37,174 @@ Examples:
     python craftbot.py stop
     python craftbot.py logs -n 100
 """
-import os
+
 import sys
+
+# In windowed (console=False) PyInstaller builds, sys.stdout and sys.stderr
+# are None. Lots of libraries (including run.py at import time) call
+# sys.stdout.isatty() unconditionally and crash with AttributeError. Install
+# a dummy file-like before ANY other import that might transitively hit
+# stdout. Must be the very first thing this module does.
+if sys.stdout is None or sys.stderr is None:
+    import io
+
+    class _NullIO(io.TextIOBase):
+        def isatty(self) -> bool:
+            return False
+
+        def write(self, s: str) -> int:
+            return len(s)
+
+        def flush(self) -> None:
+            pass
+
+    if sys.stdout is None:
+        sys.stdout = _NullIO()
+    if sys.stderr is None:
+        sys.stderr = _NullIO()
+
+import os
+import shutil
 import signal
 import subprocess
 import threading
 import time
 import webbrowser
-from typing import List, Optional
+from typing import Callable, List, Optional
+
+from installer import helpers as _helpers
+from installer import metadata as _metadata
+from installer import payload as _payload
 
 # Store platform once so static analysers don't short-circuit platform branches
 _PLATFORM: str = sys.platform
 
+# ─── Frozen-mode detection ────────────────────────────────────────────────────
+
+# True when running as a PyInstaller-bundled EXE. The frozen EXE is the
+# *installer* — a small Tkinter wizard that downloads the agent payload from
+# GitHub Releases and installs it into a chosen location. The installer does
+# NOT contain the agent itself (no run.py, no openai/anthropic/etc bundled).
+IS_FROZEN: bool = bool(getattr(sys, "frozen", False))
+EXE_PATH: Optional[str] = sys.executable if IS_FROZEN else None
+
+# Agent payload (download/extract/version) lives in craftbot_payload.
+# These re-exports keep external callers (e.g. CraftBotInstaller.spec docstring,
+# any future tooling) working with the legacy `craftbot.GITHUB_OWNER` etc.
+GITHUB_OWNER = _payload.GITHUB_OWNER
+GITHUB_REPO = _payload.GITHUB_REPO
+
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RUN_SCRIPT = os.path.join(BASE_DIR, "run.py")
-PID_FILE = os.path.join(BASE_DIR, "craftbot.pid")
-LOG_FILE = os.path.join(BASE_DIR, "craftbot.log")
 
-TASK_NAME = "CraftBot"          # Windows Task Scheduler task name
-SYSTEMD_SERVICE = "craftbot"    # Linux systemd service name
+
+def _read_bundled_version() -> str:
+    return _payload.read_bundled_version(BASE_DIR)
+
+
+def _user_data_dir() -> str:
+    """Return the per-user persistent data directory for CraftBot.
+
+    Used for PID file, log file, and install metadata when running as a
+    frozen EXE (BASE_DIR points at the temp-extracted bundle, which is
+    wiped between runs). For source installs we keep the legacy behaviour
+    of writing alongside craftbot.py, since BASE_DIR is already stable.
+    """
+    if not IS_FROZEN:
+        return BASE_DIR
+    if _PLATFORM == "win32":
+        root = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+        path = os.path.join(root, "CraftBot")
+    elif _PLATFORM == "darwin":
+        path = os.path.expanduser("~/Library/Application Support/CraftBot")
+    else:
+        root = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        path = os.path.join(root, "craftbot")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+PID_FILE = os.path.join(_user_data_dir(), "craftbot.pid")
+LOG_FILE = os.path.join(_user_data_dir(), "craftbot.log")
+INSTALL_METADATA_FILE = os.path.join(_user_data_dir(), "install.json")
+
+# Source-mode only — relative to craftbot.py. The frozen installer never
+# uses this; it spawns the installed agent EXE directly.
+RUN_SCRIPT = os.path.join(BASE_DIR, "run.py")
+
+
+def download_agent_zip(
+    progress_cb: Optional[Callable[[int, Optional[int]], None]] = None,
+) -> str:
+    return _payload.download_agent_zip(BASE_DIR, EXE_PATH, progress_cb=progress_cb)
+
+
+def extract_agent_zip(zip_path: str, target_dir: str) -> str:
+    return _payload.extract_agent_zip(zip_path, target_dir)
+
+
+def default_install_location() -> str:
+    """Return the default install directory used by the wizard's location chooser.
+
+    Picks a per-user path that does NOT require admin elevation. The wizard
+    lets the user override this via filedialog.askdirectory().
+    """
+    if _PLATFORM == "win32":
+        root = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+        return os.path.join(root, "Programs", "CraftBot")
+    if _PLATFORM == "darwin":
+        return os.path.expanduser("~/Applications/CraftBot")
+    return os.path.expanduser("~/.local/share/craftbot")
+
+
+# Install metadata helpers — pure-function impls live in craftbot_metadata.
+# We keep these no-arg wrappers so the wizard (and any external caller) can
+# use the legacy `craftbot.installed_exe_path()` API without threading the
+# metadata-file path through every call site.
+
+def read_install_metadata() -> Optional[dict]:
+    return _metadata.read(INSTALL_METADATA_FILE)
+
+
+def write_install_metadata(installed_path: str, mode: str) -> None:
+    _metadata.write(INSTALL_METADATA_FILE, installed_path, mode)
+
+
+def clear_install_metadata() -> None:
+    _metadata.clear(INSTALL_METADATA_FILE)
+
+
+def installed_exe_path() -> Optional[str]:
+    return _metadata.installed_exe_path(INSTALL_METADATA_FILE)
+
+
+TASK_NAME = "CraftBot"  # Windows Task Scheduler task name
+SYSTEMD_SERVICE = "craftbot"  # Linux systemd service name
 LAUNCHD_LABEL = "com.craftbot.agent"  # macOS launchd label
 BROWSER_URL = "http://localhost:7925"
 SHORTCUT_NAME = "CraftBot.lnk"
-LOGO_PNG = os.path.join(BASE_DIR, "craftbot_logo_1.png")
-LOGO_ICO = os.path.join(BASE_DIR, "craftbot_logo_1.ico")
+# Bundled icons live in sys._MEIPASS in frozen mode (PyInstaller's runtime
+# extract dir) and alongside craftbot.py in source mode. _ensure_ico() copies
+# the bundled icon to the persistent user data dir during install so the
+# desktop shortcut keeps a stable path after _MEIPASS is wiped.
+_BUNDLE_DIR = getattr(sys, "_MEIPASS", BASE_DIR)
+LOGO_PNG = os.path.join(_BUNDLE_DIR, "craftbot_logo_1.png")
+LOGO_ICO = os.path.join(_BUNDLE_DIR, "craftbot_logo_1.ico")
+# Wordmark logo for the wizard header.
+LOGO_TEXT_WHITE_PNG = os.path.join(
+    _BUNDLE_DIR, "assets", "craftbot_logo_text_no_border_dark.png"
+)
 
 # ─── Terminal colors (orange/white brand palette) ─────────────────────────────
+
 
 def _enable_windows_vtp() -> None:
     if sys.platform != "win32":
         return
     try:
         import ctypes
+
         k32 = ctypes.windll.kernel32
         h = k32.GetStdHandle(-11)
         m = ctypes.c_ulong()
@@ -72,6 +212,7 @@ def _enable_windows_vtp() -> None:
         k32.SetConsoleMode(h, m.value | 0x0004)
     except Exception:
         pass
+
 
 _enable_windows_vtp()
 
@@ -85,16 +226,19 @@ if sys.platform == "win32":
 
 _USE_COLOR = sys.stdout.isatty()
 
+
 def _c(code: str) -> str:
     return code if _USE_COLOR else ""
 
-ORANGE = _c("\033[38;2;255;79;24m")   # #FF4F18
-WHITE  = _c("\033[38;2;255;255;255m") # #FFFFFF
-BOLD   = _c("\033[1m")
-DIM    = _c("\033[38;2;80;80;80m")    # dark gray
-GREEN  = _c("\033[38;2;80;220;100m")
-RED    = _c("\033[91m")
-RESET  = _c("\033[0m")
+
+ORANGE = _c("\033[38;2;255;79;24m")  # #FF4F18
+WHITE = _c("\033[38;2;255;255;255m")  # #FFFFFF
+BOLD = _c("\033[1m")
+DIM = _c("\033[38;2;80;80;80m")  # dark gray
+GREEN = _c("\033[38;2;80;220;100m")
+RED = _c("\033[91m")
+RESET = _c("\033[0m")
+
 
 def _retro_step(num: int, total: int, desc: str) -> None:
     """Print a retro-style step header box."""
@@ -104,14 +248,15 @@ def _retro_step(num: int, total: int, desc: str) -> None:
     content = (
         f"  {ORANGE}▸ STEP {num}/{total}{RESET}"
         f"  {DIM}░░{RESET}"
-        f"  {WHITE}{desc.upper()}{RESET}"
-        + " " * pad
+        f"  {WHITE}{desc.upper()}{RESET}" + " " * pad
     )
     print(f"\n{ORANGE}╔{'═' * W}╗{RESET}")
     print(f"{ORANGE}║{RESET}{content}{ORANGE}║{RESET}")
     print(f"{ORANGE}╚{'═' * W}╝{RESET}")
 
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _to_short_path(path: str) -> str:
     """Return the Windows 8.3 short path form to avoid Unicode / long-path
@@ -120,6 +265,7 @@ def _to_short_path(path: str) -> str:
         return path
     try:
         import ctypes
+
         buf = ctypes.create_unicode_buffer(1024)
         if ctypes.windll.kernel32.GetShortPathNameW(path, buf, len(buf)):
             return buf.value
@@ -133,12 +279,16 @@ def _warn_path_issues() -> None:
     if len(BASE_DIR) > 200:
         print(f"WARNING: Installation path is very long ({len(BASE_DIR)} chars).")
         print("         Windows MAX_PATH limit may cause failures.")
-        print(f"         Consider moving CraftBot to a shorter path.\n")
+        print("         Consider moving CraftBot to a shorter path.\n")
     try:
         BASE_DIR.encode("ascii")
     except UnicodeEncodeError:
-        print("WARNING: Installation path contains non-ASCII characters (e.g. Japanese).")
-        print("         Some commands may fail. Short paths will be used where possible.\n")
+        print(
+            "WARNING: Installation path contains non-ASCII characters (e.g. Japanese)."
+        )
+        print(
+            "         Some commands may fail. Short paths will be used where possible.\n"
+        )
 
 
 def _python_exe() -> str:
@@ -178,7 +328,9 @@ def _is_running(pid: int) -> bool:
         try:
             result = subprocess.run(
                 ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return str(pid) in result.stdout
         except Exception:
@@ -189,6 +341,20 @@ def _is_running(pid: int) -> bool:
             return True
         except (ProcessLookupError, PermissionError):
             return False
+
+
+def _stop_running_agent_if_alive(grace_s: float = 1.0) -> bool:
+    """If an agent is currently running, stop it and pause briefly so the OS
+    releases file handles before we try to overwrite the agent EXE. Used by
+    install/repair so reinstall over a running agent doesn't fail with
+    "Permission denied" on Windows. Returns True if a process was stopped.
+    """
+    pid = _read_pid()
+    if pid and _is_running(pid):
+        cmd_stop()
+        time.sleep(grace_s)
+        return True
+    return False
 
 
 def _build_run_args(extra: List[str], service_mode: bool = True) -> List[str]:
@@ -207,23 +373,42 @@ def _build_run_args(extra: List[str], service_mode: bool = True) -> List[str]:
 
 # ─── Core operations ──────────────────────────────────────────────────────────
 
+
 def _open_browser_when_ready(url: str, pid_check_fn, delay: float = 4.0) -> None:
     """Wait for the server to start, then open the browser."""
     time.sleep(delay)
     if not pid_check_fn():
         print("\nWarning: CraftBot process exited before browser could open.")
-        print(f"Check logs: python craftbot.py logs")
+        print("Check logs: python craftbot.py logs")
         return
     webbrowser.open(url)
 
 
 def _open_browser_detached(url: str) -> None:
-    """Launch a detached Python process that polls for the server then opens the browser.
+    """Poll the server URL and open the browser once it responds.
 
-    Uses Python's built-in webbrowser module — no PowerShell execution policy issues.
-    The spawned process is fully detached so the calling script can exit immediately.
+    In frozen mode (installer EXE) sys.executable is CraftBotInstaller.exe,
+    not python — so spawning `sys.executable -c <script>` would just re-launch
+    the wizard. We run the poll in-process on a daemon thread instead. In
+    source mode we keep the detached-subprocess path so `python craftbot.py
+    start` returns immediately even on slow agent boots.
     """
-    # Inline Python script: poll until the server responds (max 30s), then open.
+    if IS_FROZEN:
+        def _poll_and_open() -> None:
+            from urllib.request import urlopen
+
+            deadline = time.time() + 120
+            while time.time() < deadline:
+                try:
+                    urlopen(url, timeout=1).close()
+                    break
+                except Exception:
+                    time.sleep(1)
+            webbrowser.open(url)
+
+        threading.Thread(target=_poll_and_open, daemon=True).start()
+        return
+
     poll_script = (
         "import sys, time, webbrowser\n"
         "try:\n"
@@ -240,7 +425,6 @@ def _open_browser_detached(url: str) -> None:
         f"webbrowser.open('{url}')\n"
     )
 
-    # On Windows use pythonw.exe so no console window flashes up.
     python = sys.executable
     if _PLATFORM == "win32":
         pythonw = python.replace("python.exe", "pythonw.exe")
@@ -251,14 +435,8 @@ def _open_browser_detached(url: str) -> None:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        **_helpers.detached_popen_flags(),
     )
-    if _PLATFORM == "win32":
-        DETACHED_PROCESS = 0x00000008
-        CREATE_NO_WINDOW = 0x08000000
-        kwargs["creationflags"] = DETACHED_PROCESS | CREATE_NO_WINDOW
-        kwargs["close_fds"] = True
-    else:
-        kwargs["start_new_session"] = True
 
     subprocess.Popen([python, "-c", poll_script], **kwargs)
 
@@ -269,7 +447,6 @@ def cmd_start(extra_args: List[str]) -> None:
     if pid and _is_running(pid):
         cmd_stop()
 
-
     # service_mode=False — don't suppress the browser; we open it ourselves below
     run_args = _build_run_args(extra_args, service_mode=False)
     # Always pass --no-open-browser to run.py; craftbot.py handles opening the browser
@@ -277,19 +454,29 @@ def cmd_start(extra_args: List[str]) -> None:
         if "--no-open-browser" not in run_args:
             run_args.append("--no-open-browser")
 
-    python = _python_exe()
+    if IS_FROZEN:
+        # In frozen-installer mode, spawn the installed agent EXE (downloaded
+        # by the install flow). The agent EXE is its own self-contained
+        # PyInstaller binary and runs run.py's __main__ block directly.
+        installed = installed_exe_path()
+        if not installed:
+            print("Error: no installed agent found — run install first.")
+            return
+        cmd = [installed] + run_args
+    else:
+        python = _python_exe()
+        # Use plain python.exe for TUI/CLI because pythonw has no console
+        if "--tui" in run_args or "--cli" in run_args:
+            python = sys.executable
+        cmd = [python, RUN_SCRIPT] + run_args
 
-    # Use plain python.exe for TUI/CLI because pythonw has no console
-    if "--tui" in run_args or "--cli" in run_args:
-        python = sys.executable
-
-    cmd = [python, RUN_SCRIPT] + run_args
-
-    log_fh = open(LOG_FILE, "a")
-    log_fh.write(f"\n{'='*60}\n")
+    # UTF-8 with replace so the agent's Unicode banner / box-drawing chars
+    # don't crash on Windows where the default file encoding is cp1252.
+    log_fh = open(LOG_FILE, "a", encoding="utf-8", errors="replace")
+    log_fh.write(f"\n{'=' * 60}\n")
     log_fh.write(f"CraftBot service started at {_timestamp()}\n")
     log_fh.write(f"Command: {' '.join(cmd)}\n")
-    log_fh.write(f"{'='*60}\n")
+    log_fh.write(f"{'=' * 60}\n")
     log_fh.flush()
 
     env = os.environ.copy()
@@ -302,16 +489,8 @@ def cmd_start(extra_args: List[str]) -> None:
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
         env=env,
+        **_helpers.detached_popen_flags(new_process_group=True),
     )
-
-    if _PLATFORM == "win32":
-        DETACHED_PROCESS = 0x00000008
-        CREATE_NEW_PROCESS_GROUP = 0x00000200
-        CREATE_NO_WINDOW = 0x08000000
-        kwargs["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
-        kwargs["close_fds"] = True
-    else:
-        kwargs["start_new_session"] = True
 
     try:
         proc = subprocess.Popen(cmd, **kwargs)
@@ -323,7 +502,9 @@ def cmd_start(extra_args: List[str]) -> None:
     # Parent closes its copy — the child process (run.py) keeps the fd open
     log_fh.close()
     _write_pid(proc.pid)
-    print(f"  {GREEN}▸{RESET} {WHITE}CRAFTBOT STARTED{RESET}  {DIM}PID {proc.pid}{RESET}")
+    print(
+        f"  {GREEN}▸{RESET} {WHITE}CRAFTBOT STARTED{RESET}  {DIM}PID {proc.pid}{RESET}"
+    )
 
     # Create a desktop shortcut so the user can reopen the browser anytime
     if "--tui" not in run_args and "--cli" not in run_args:
@@ -332,7 +513,11 @@ def cmd_start(extra_args: List[str]) -> None:
         else:
             _create_desktop_shortcut_unix()
 
-    open_browser = "--tui" not in run_args and "--cli" not in run_args and "--no-open-browser" not in extra_args
+    open_browser = (
+        "--tui" not in run_args
+        and "--cli" not in run_args
+        and "--no-open-browser" not in extra_args
+    )
     if open_browser:
         print(f"  {DIM}░░{RESET} {ORANGE}{BROWSER_URL}{RESET}")
         _open_browser_detached(BROWSER_URL)
@@ -356,7 +541,8 @@ def cmd_stop() -> None:
         try:
             subprocess.run(
                 ["taskkill", "/PID", str(pid), "/F", "/T"],
-                capture_output=True, timeout=15,
+                capture_output=True,
+                timeout=15,
             )
         except Exception as e:
             print(f"Warning: taskkill failed — {e}")
@@ -387,17 +573,27 @@ def cmd_status() -> None:
     pid = _read_pid()
     print(f"\n{ORANGE}╔{'═' * W}╗{RESET}")
     if pid and _is_running(pid):
-        print(f"{ORANGE}║{RESET}  {GREEN}▸ RUNNING{RESET}  {DIM}PID {pid}{RESET}{' ' * (W - 14 - len(str(pid)))}{ORANGE}║{RESET}")
-        print(f"{ORANGE}║{RESET}  {DIM}░░ LOG: {LOG_FILE[:W-8]}{RESET}{' ' * max(0, W - 8 - len(LOG_FILE[:W-8]))}{ORANGE}║{RESET}")
+        print(
+            f"{ORANGE}║{RESET}  {GREEN}▸ RUNNING{RESET}  {DIM}PID {pid}{RESET}{' ' * (W - 14 - len(str(pid)))}{ORANGE}║{RESET}"
+        )
+        print(
+            f"{ORANGE}║{RESET}  {DIM}░░ LOG: {LOG_FILE[: W - 8]}{RESET}{' ' * max(0, W - 8 - len(LOG_FILE[: W - 8]))}{ORANGE}║{RESET}"
+        )
     else:
         if pid:
             _remove_pid()
-        print(f"{ORANGE}║{RESET}  {RED}▸ NOT RUNNING{RESET}{' ' * (W - 14)}{ORANGE}║{RESET}")
+        print(
+            f"{ORANGE}║{RESET}  {RED}▸ NOT RUNNING{RESET}{' ' * (W - 14)}{ORANGE}║{RESET}"
+        )
     print(f"{ORANGE}║{' ' * W}║{RESET}")
     if _is_installed():
-        print(f"{ORANGE}║{RESET}  {GREEN}▸ AUTO-START: INSTALLED{RESET}{' ' * (W - 23)}{ORANGE}║{RESET}")
+        print(
+            f"{ORANGE}║{RESET}  {GREEN}▸ AUTO-START: INSTALLED{RESET}{' ' * (W - 23)}{ORANGE}║{RESET}"
+        )
     else:
-        print(f"{ORANGE}║{RESET}  {DIM}▸ AUTO-START: NOT INSTALLED{RESET}{' ' * (W - 27)}{ORANGE}║{RESET}")
+        print(
+            f"{ORANGE}║{RESET}  {DIM}▸ AUTO-START: NOT INSTALLED{RESET}{' ' * (W - 27)}{ORANGE}║{RESET}"
+        )
     print(f"{ORANGE}╚{'═' * W}╝{RESET}\n")
 
 
@@ -411,7 +607,9 @@ def cmd_logs(n: int = 50) -> None:
             lines = f.readlines()
         tail = lines[-n:] if len(lines) > n else lines
         print(f"\n{ORANGE}╔{'═' * 60}╗{RESET}")
-        print(f"{ORANGE}║{RESET}  {WHITE}CRAFTBOT LOG{RESET}  {DIM}last {len(tail)} lines{RESET}{' ' * (44 - len(str(len(tail))))}{ORANGE}║{RESET}")
+        print(
+            f"{ORANGE}║{RESET}  {WHITE}CRAFTBOT LOG{RESET}  {DIM}last {len(tail)} lines{RESET}{' ' * (44 - len(str(len(tail))))}{ORANGE}║{RESET}"
+        )
         print(f"{ORANGE}╚{'═' * 60}╝{RESET}\n")
         print("".join(tail), end="")
     except Exception as e:
@@ -426,6 +624,7 @@ def cmd_restart(extra_args: List[str]) -> None:
 
 # ─── Desktop shortcut ─────────────────────────────────────────────────────────
 
+
 def _find_desktop() -> Optional[str]:
     """Return the path to the user's Desktop folder.
 
@@ -436,10 +635,12 @@ def _find_desktop() -> Optional[str]:
         # Method 1: Read the registry directly — fast, no subprocess
         try:
             import winreg
+
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
-                0, winreg.KEY_READ,
+                0,
+                winreg.KEY_READ,
             )
             raw, _ = winreg.QueryValueEx(key, "Desktop")
             winreg.CloseKey(key)
@@ -452,6 +653,7 @@ def _find_desktop() -> Optional[str]:
         # Method 2: ctypes SHGetFolderPath (CSIDL_DESKTOPDIRECTORY = 0x0010)
         try:
             import ctypes
+
             buf = ctypes.create_unicode_buffer(260)
             ctypes.windll.shell32.SHGetFolderPathW(None, 0x0010, None, 0, buf)
             path = buf.value
@@ -471,16 +673,32 @@ def _find_desktop() -> Optional[str]:
 
 
 def _ensure_ico() -> Optional[str]:
-    """Convert craftbot_logo_1.png to .ico if needed. Returns .ico path or None."""
+    """Return a path to a .ico file the desktop shortcut can reference long-term.
+
+    In frozen mode prefer the persistent copy in _user_data_dir() (the bundled
+    _MEIPASS path is wiped when the EXE exits, which would break the shortcut's
+    icon after the first run).
+    """
+    persistent_ico = os.path.join(_user_data_dir(), "craftbot_logo_1.ico")
+    if os.path.isfile(persistent_ico):
+        return persistent_ico
     if os.path.isfile(LOGO_ICO):
         return LOGO_ICO
     if not os.path.isfile(LOGO_PNG):
         return None
     try:
         from PIL import Image
+
         img = Image.open(LOGO_PNG)
-        img.save(LOGO_ICO, format="ICO", sizes=[(256, 256), (48, 48), (32, 32), (16, 16)])
-        return LOGO_ICO
+        # Write the converted .ico into the persistent dir so it survives
+        # process exit when running as a frozen EXE.
+        os.makedirs(os.path.dirname(persistent_ico), exist_ok=True)
+        img.save(
+            persistent_ico,
+            format="ICO",
+            sizes=[(256, 256), (48, 48), (32, 32), (16, 16)],
+        )
+        return persistent_ico
     except Exception:
         return None
 
@@ -498,18 +716,19 @@ def _create_desktop_shortcut_windows() -> None:
         # Write the PS script to a temp file with UTF-8-BOM so PowerShell
         # handles non-ASCII paths (e.g. Japanese Desktop folder) correctly.
         import tempfile
+
         ps_lines = [
-            f'$ws = New-Object -ComObject WScript.Shell',
+            "$ws = New-Object -ComObject WScript.Shell",
             f'$s = $ws.CreateShortcut("{shortcut_path}")',
-            f'$s.TargetPath = "cmd.exe"',
+            '$s.TargetPath = "cmd.exe"',
             f'$s.Arguments = "/c start {BROWSER_URL}"',
-            f'$s.WindowStyle = 7',  # minimized (hides the cmd flash)
+            "$s.WindowStyle = 7",  # minimized (hides the cmd flash)
         ]
         if ico_path:
             ps_lines.append(f'$s.IconLocation = "{ico_path},0"')
         ps_lines += [
-            f'$s.Description = "Open CraftBot in your browser"',
-            f'$s.Save()',
+            '$s.Description = "Open CraftBot in your browser"',
+            "$s.Save()",
         ]
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".ps1", delete=False, encoding="utf-8-sig"
@@ -518,8 +737,16 @@ def _create_desktop_shortcut_windows() -> None:
             tmp_ps1 = tf.name
         try:
             subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp_ps1],
-                capture_output=True, timeout=15,
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    tmp_ps1,
+                ],
+                capture_output=True,
+                timeout=15,
             )
         finally:
             try:
@@ -528,7 +755,7 @@ def _create_desktop_shortcut_windows() -> None:
                 pass
         if os.path.exists(shortcut_path):
             print(f"  Desktop shortcut created: {shortcut_path}")
-            print(f"  Double-click it anytime to open CraftBot in your browser.")
+            print("  Double-click it anytime to open CraftBot in your browser.")
         else:
             print(f"  (Shortcut creation may have failed — check {desktop})")
     except Exception as e:
@@ -551,7 +778,12 @@ def _create_desktop_shortcut_unix() -> None:
         else:
             # Linux: standard XDG .desktop entry
             shortcut_path = os.path.join(desktop, "CraftBot.desktop")
-            open_cmd = "xdg-open" if os.path.isfile("/usr/bin/xdg-open") or os.path.isfile("/usr/local/bin/xdg-open") else "sensible-browser"
+            open_cmd = (
+                "xdg-open"
+                if os.path.isfile("/usr/bin/xdg-open")
+                or os.path.isfile("/usr/local/bin/xdg-open")
+                else "sensible-browser"
+            )
             content = (
                 "[Desktop Entry]\n"
                 "Type=Application\n"
@@ -564,21 +796,24 @@ def _create_desktop_shortcut_unix() -> None:
                 f.write(content)
             os.chmod(shortcut_path, 0o755)
         print(f"  Desktop shortcut created: {shortcut_path}")
-        print(f"  Double-click it anytime to open CraftBot in your browser.")
+        print("  Double-click it anytime to open CraftBot in your browser.")
     except Exception as e:
         print(f"  (Could not create desktop shortcut: {e})")
 
 
 # ─── Auto-start: Windows Task Scheduler ───────────────────────────────────────
 
+
 def _install_windows_registry(action: str) -> bool:
     """Fallback: register auto-start via HKCU Run registry key (no admin needed)."""
     try:
         import winreg
+
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0, winreg.KEY_SET_VALUE,
+            0,
+            winreg.KEY_SET_VALUE,
         )
         winreg.SetValueEx(key, TASK_NAME, 0, winreg.REG_SZ, action)
         winreg.CloseKey(key)
@@ -588,18 +823,41 @@ def _install_windows_registry(action: str) -> bool:
 
 
 def _install_windows(run_args: List[str]) -> None:
-    python = _python_exe()
-    # Use 8.3 short paths to avoid Unicode/long-path failures in schtasks /tr
-    python_s = _to_short_path(python)
-    script_s = _to_short_path(RUN_SCRIPT)
-    action = f'"{python_s}" "{script_s}" {" ".join(run_args)}'
+    if IS_FROZEN:
+        # Frozen mode: register the extracted agent EXE for auto-start.
+        target = installed_exe_path()
+        if not target:
+            print(
+                f"  {RED}✗{RESET} {WHITE}No installed agent found — run install first.{RESET}"
+            )
+            return
+        target_s = _to_short_path(target)
+        action = f'"{target_s}" {" ".join(run_args)}'.strip()
+    else:
+        python = _python_exe()
+        # Use 8.3 short paths to avoid Unicode/long-path failures in schtasks /tr
+        python_s = _to_short_path(python)
+        script_s = _to_short_path(RUN_SCRIPT)
+        action = f'"{python_s}" "{script_s}" {" ".join(run_args)}'
 
     # Try Task Scheduler first; silently fall back to Registry on failure
     registered = False
     try:
         result = subprocess.run(
-            ["schtasks", "/create", "/tn", TASK_NAME, "/tr", action, "/sc", "ONLOGON", "/f"],
-            capture_output=True, text=True, timeout=30,
+            [
+                "schtasks",
+                "/create",
+                "/tn",
+                TASK_NAME,
+                "/tr",
+                action,
+                "/sc",
+                "ONLOGON",
+                "/f",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         registered = result.returncode == 0
     except Exception:
@@ -609,11 +867,13 @@ def _install_windows(run_args: List[str]) -> None:
         registered = _install_windows_registry(action)
 
     if registered:
-        print(f"Auto-start registered. CraftBot will start automatically on login.")
+        print("Auto-start registered. CraftBot will start automatically on login.")
         print(f"Open CraftBot: {BROWSER_URL}")
         _create_desktop_shortcut_windows()
     else:
-        print("Could not register auto-start. Use 'python craftbot.py start' to start manually.")
+        print(
+            "Could not register auto-start. Use 'python craftbot.py start' to start manually."
+        )
 
 
 def _uninstall_windows() -> None:
@@ -623,7 +883,9 @@ def _uninstall_windows() -> None:
     try:
         result = subprocess.run(
             ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if result.returncode == 0:
             print(f"Auto-start removed (task '{TASK_NAME}' deleted).")
@@ -634,10 +896,12 @@ def _uninstall_windows() -> None:
     # Remove from Registry (HKCU\...\Run) — the fallback auto-start method
     try:
         import winreg
+
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0, winreg.KEY_SET_VALUE,
+            0,
+            winreg.KEY_SET_VALUE,
         )
         try:
             winreg.DeleteValue(key, TASK_NAME)
@@ -656,13 +920,21 @@ def _uninstall_windows() -> None:
 
 # ─── Auto-start: Linux systemd (user service) ─────────────────────────────────
 
+
 def _install_linux(run_args: List[str]) -> None:
     service_dir = os.path.expanduser("~/.config/systemd/user")
     os.makedirs(service_dir, exist_ok=True)
 
     service_file = os.path.join(service_dir, f"{SYSTEMD_SERVICE}.service")
-    python = sys.executable
-    exec_start = f"{python} {RUN_SCRIPT} {' '.join(run_args)}"
+    if IS_FROZEN:
+        target = installed_exe_path()
+        if not target:
+            print("Error: no installed agent found — run install first.")
+            return
+        exec_start = f"{target} {' '.join(run_args)}".strip()
+    else:
+        python = sys.executable
+        exec_start = f"{python} {RUN_SCRIPT} {' '.join(run_args)}"
 
     content = f"""[Unit]
 Description=CraftBot AI Agent
@@ -684,7 +956,9 @@ WantedBy=default.target
 
     try:
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=10)
-        subprocess.run(["systemctl", "--user", "enable", SYSTEMD_SERVICE], check=True, timeout=10)
+        subprocess.run(
+            ["systemctl", "--user", "enable", SYSTEMD_SERVICE], check=True, timeout=10
+        )
         print(f"Auto-start registered as systemd user service '{SYSTEMD_SERVICE}'.")
         print("CraftBot will start automatically when you log in.")
         print(f"\nOpen CraftBot: {BROWSER_URL}")
@@ -695,38 +969,60 @@ WantedBy=default.target
     except subprocess.CalledProcessError as e:
         print(f"Error enabling systemd service: {e}")
         print(f"Service file written to: {service_file}")
-        print("Try manually: systemctl --user daemon-reload && systemctl --user enable craftbot")
+        print(
+            "Try manually: systemctl --user daemon-reload && systemctl --user enable craftbot"
+        )
     except FileNotFoundError:
         print("systemctl not found. Is systemd running on this system?")
 
 
 def _uninstall_linux() -> None:
-    service_file = os.path.expanduser(f"~/.config/systemd/user/{SYSTEMD_SERVICE}.service")
+    service_file = os.path.expanduser(
+        f"~/.config/systemd/user/{SYSTEMD_SERVICE}.service"
+    )
     try:
-        subprocess.run(["systemctl", "--user", "disable", SYSTEMD_SERVICE], capture_output=True, timeout=10)
-        subprocess.run(["systemctl", "--user", "stop", SYSTEMD_SERVICE], capture_output=True, timeout=10)
+        subprocess.run(
+            ["systemctl", "--user", "disable", SYSTEMD_SERVICE],
+            capture_output=True,
+            timeout=10,
+        )
+        subprocess.run(
+            ["systemctl", "--user", "stop", SYSTEMD_SERVICE],
+            capture_output=True,
+            timeout=10,
+        )
     except Exception:
         pass
     if os.path.isfile(service_file):
         os.remove(service_file)
-        print(f"Auto-start removed (service file deleted).")
+        print("Auto-start removed (service file deleted).")
     else:
         print("No systemd service file found.")
     try:
-        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=10)
+        subprocess.run(
+            ["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=10
+        )
     except Exception:
         pass
 
 
 # ─── Auto-start: macOS launchd ────────────────────────────────────────────────
 
+
 def _install_macos(run_args: List[str]) -> None:
     agents_dir = os.path.expanduser("~/Library/LaunchAgents")
     os.makedirs(agents_dir, exist_ok=True)
 
     plist_file = os.path.join(agents_dir, f"{LAUNCHD_LABEL}.plist")
-    python = sys.executable
-    program_args = [python, RUN_SCRIPT] + run_args
+    if IS_FROZEN:
+        target = installed_exe_path()
+        if not target:
+            print("Error: no installed agent found — run install first.")
+            return
+        program_args = [target] + run_args
+    else:
+        python = sys.executable
+        program_args = [python, RUN_SCRIPT] + run_args
     program_args_xml = "\n".join(f"        <string>{a}</string>" for a in program_args)
 
     content = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -779,7 +1075,9 @@ def _uninstall_macos() -> None:
     plist_file = os.path.expanduser(f"~/Library/LaunchAgents/{LAUNCHD_LABEL}.plist")
     if os.path.isfile(plist_file):
         try:
-            subprocess.run(["launchctl", "unload", plist_file], capture_output=True, timeout=10)
+            subprocess.run(
+                ["launchctl", "unload", plist_file], capture_output=True, timeout=10
+            )
         except Exception:
             pass
         os.remove(plist_file)
@@ -790,6 +1088,7 @@ def _uninstall_macos() -> None:
 
 # ─── Install / Uninstall dispatch ─────────────────────────────────────────────
 
+
 def _is_installed() -> bool:
     """Return True if CraftBot is registered for auto-start on this platform."""
     plat = _PLATFORM
@@ -798,7 +1097,8 @@ def _is_installed() -> bool:
         try:
             result = subprocess.run(
                 ["schtasks", "/query", "/tn", TASK_NAME],
-                capture_output=True, timeout=10,
+                capture_output=True,
+                timeout=10,
             )
             if result.returncode == 0:
                 return True
@@ -807,10 +1107,12 @@ def _is_installed() -> bool:
         # Check Registry fallback
         try:
             import winreg
+
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Run",
-                0, winreg.KEY_READ,
+                0,
+                winreg.KEY_READ,
             )
             winreg.QueryValueEx(key, TASK_NAME)
             winreg.CloseKey(key)
@@ -821,26 +1123,133 @@ def _is_installed() -> bool:
         plist = os.path.expanduser(f"~/Library/LaunchAgents/{LAUNCHD_LABEL}.plist")
         return os.path.isfile(plist)
     else:
-        service_file = os.path.expanduser(f"~/.config/systemd/user/{SYSTEMD_SERVICE}.service")
+        service_file = os.path.expanduser(
+            f"~/.config/systemd/user/{SYSTEMD_SERVICE}.service"
+        )
         return os.path.isfile(service_file)
 
 
+def _full_install_frozen(
+    target_dir: str,
+    extra_args: List[str],
+    progress_cb: Optional[Callable[[int, Optional[int]], None]] = None,
+) -> None:
+    """Frozen-mode install: download the agent zip from GitHub Releases,
+    extract it to target_dir, register auto-start pointing at the extracted
+    agent EXE, create a desktop shortcut, then start the service.
+
+    No pip / dependency install runs — the agent payload is self-contained.
+    Called by cmd_install when IS_FROZEN, and by the wizard's Install button.
+
+    Args:
+        target_dir: Directory to extract the agent into.
+        extra_args: User-supplied flags (--tui, --cli, --browser, etc.).
+        progress_cb: Optional download-progress callback (bytes_read, total_or_none).
+    """
+    if not IS_FROZEN:
+        raise RuntimeError("_full_install_frozen called outside frozen mode")
+
+    target_dir = os.path.normpath(target_dir)
+
+    # 0. If there's an existing install at this location, stop the agent and
+    #    remove the old files first. Otherwise extraction fails with Permission
+    #    denied because the running agent has CraftBotAgent.exe open.
+    if _stop_running_agent_if_alive():
+        print("  Stopped running agent before reinstalling.")
+
+    existing_agent_dir = os.path.join(target_dir, "CraftBotAgent")
+    if os.path.isdir(existing_agent_dir):
+        print(f"  Removing previous install at {existing_agent_dir}")
+        try:
+            shutil.rmtree(existing_agent_dir)
+        except OSError as e:
+            raise RuntimeError(
+                f"Could not remove previous install at {existing_agent_dir} — {e}.\n"
+                f"Close any running CraftBotAgent.exe (Task Manager) and try again."
+            )
+
+    # 1. Download the agent payload (or use a locally-staged zip if available)
+    print(f"  Downloading agent payload (version {_read_bundled_version()})…")
+    zip_path = download_agent_zip(progress_cb=progress_cb)
+    try:
+        # 2. Extract into target_dir; locate the agent EXE
+        agent_exe = extract_agent_zip(zip_path, target_dir)
+        print(f"  Installed agent at {agent_exe}")
+    finally:
+        # Only delete if we downloaded it to a temp file. A locally-staged zip
+        # next to the installer (dev test workflow) must survive the install.
+        if _payload.is_temp_zip(zip_path):
+            try:
+                os.unlink(zip_path)
+            except OSError:
+                pass
+
+    # 3. Persist install metadata so subsequent commands know where the
+    #    installed agent lives.
+    mode = (
+        "tui"
+        if "--tui" in extra_args
+        else "cli"
+        if "--cli" in extra_args
+        else "browser"
+    )
+    write_install_metadata(agent_exe, mode)
+
+    # 4. Copy the icon out of the bundled _MEIPASS dir into the persistent
+    #    user data dir. The desktop shortcut's IconLocation will point at
+    #    this stable copy — _MEIPASS is wiped when the installer exits.
+    persistent_icon = os.path.join(_user_data_dir(), "craftbot_logo_1.ico")
+    persistent_png = os.path.join(_user_data_dir(), "craftbot_logo_1.png")
+    for src, dest in ((LOGO_ICO, persistent_icon), (LOGO_PNG, persistent_png)):
+        if os.path.isfile(src) and not os.path.isfile(dest):
+            try:
+                shutil.copy2(src, dest)
+            except OSError as e:
+                print(f"  (could not copy icon: {e})")
+
+    # 5. Register auto-start using the extracted agent EXE
+    run_args = _build_run_args(extra_args, service_mode=True)
+    _helpers.dispatch_per_platform(
+        win=_install_windows, mac=_install_macos, linux=_install_linux
+    )(run_args)
+
+    # 6. Start the service via the extracted agent EXE
+    cmd_start(extra_args)
+
+
 def cmd_install(extra_args: List[str]) -> None:
-    """Install dependencies, register auto-start, and start CraftBot."""
+    """Install dependencies (source mode) or copy-and-register (frozen mode),
+    then start the service."""
+    if IS_FROZEN:
+        # Frozen mode: skip pip, run the full installer in the default location.
+        # The wizard provides a UI for picking a custom location; the CLI just
+        # uses the default to keep `CraftBot.exe install` non-interactive.
+        _warn_path_issues()
+        target_dir = default_install_location()
+        print(f"  {ORANGE}▸{RESET} {WHITE}Installing CraftBot to {target_dir}{RESET}")
+        _full_install_frozen(target_dir, extra_args)
+        return
+
     _warn_path_issues()
     # ── Step 1: Install dependencies via install.py ────────────────────────
     install_script = os.path.join(BASE_DIR, "install.py")
     if os.path.isfile(install_script):
         _retro_step(1, 3, "Installing dependencies")
         # Pass through any user flags (--conda etc.) and add --no-launch
-        install_flags = [a for a in extra_args if a in ("--conda", "--mamba", "--cpu-only")]
+        install_flags = [
+            a for a in extra_args if a in ("--conda", "--mamba", "--cpu-only")
+        ]
         result = subprocess.run(
             [sys.executable, install_script, "--no-launch"] + install_flags,
             cwd=BASE_DIR,
         )
         if result.returncode != 0:
-            print(f"\n  {RED}✗{RESET} {WHITE}Dependency installation failed. Aborting.{RESET}")
-            print(f"  {DIM}Run 'python install.py' directly to see the full error.{RESET}")
+            print(
+                f"\n  {RED}✗{RESET} {WHITE}Dependency installation failed. Aborting.{RESET}"
+            )
+            print(
+                f"  {DIM}Run 'python install.py' directly to see the full error.{RESET}"
+            )
             return
 
         # Verify critical packages are actually importable with this interpreter.
@@ -850,9 +1259,13 @@ def cmd_install(extra_args: List[str]) -> None:
             capture_output=True,
         )
         if _critical_check.returncode != 0:
-            print(f"\n  {RED}✗{RESET} {WHITE}Packages installed but not importable — wrong interpreter?{RESET}")
+            print(
+                f"\n  {RED}✗{RESET} {WHITE}Packages installed but not importable — wrong interpreter?{RESET}"
+            )
             print(f"  {DIM}Current Python: {sys.executable}{RESET}")
-            print(f"  {DIM}Run 'python install.py' to reinstall with this Python.{RESET}")
+            print(
+                f"  {DIM}Run 'python install.py' to reinstall with this Python.{RESET}"
+            )
             return
         print()
     else:
@@ -860,7 +1273,9 @@ def cmd_install(extra_args: List[str]) -> None:
 
     # ── Step 2: Register auto-start ────────────────────────────────────────
     if _is_installed():
-        print(f"\n  {DIM}▸ STEP 2/3  ░░  AUTO-START ALREADY REGISTERED — SKIPPING{RESET}")
+        print(
+            f"\n  {DIM}▸ STEP 2/3  ░░  AUTO-START ALREADY REGISTERED — SKIPPING{RESET}"
+        )
         if _PLATFORM == "win32":
             _create_desktop_shortcut_windows()
         elif _PLATFORM != "darwin":
@@ -868,13 +1283,9 @@ def cmd_install(extra_args: List[str]) -> None:
     else:
         _retro_step(2, 3, "Registering auto-start")
         run_args = _build_run_args(extra_args, service_mode=True)
-        plat = _PLATFORM
-        if plat == "win32":
-            _install_windows(run_args)
-        elif plat == "darwin":
-            _install_macos(run_args)
-        else:
-            _install_linux(run_args)
+        _helpers.dispatch_per_platform(
+            win=_install_windows, mac=_install_macos, linux=_install_linux
+        )(run_args)
         print()
 
     # ── Step 3: Start the service now ──────────────────────────────────────
@@ -893,12 +1304,12 @@ def _remove_desktop_shortcut() -> None:
     desktop = _find_desktop()
     if not desktop:
         return
-    if _PLATFORM == "win32":
-        shortcut_path = os.path.join(desktop, SHORTCUT_NAME)
-    elif _PLATFORM == "darwin":
-        shortcut_path = os.path.join(desktop, "CraftBot.command")
-    else:
-        shortcut_path = os.path.join(desktop, "CraftBot.desktop")
+    shortcut_path = os.path.join(
+        desktop,
+        _helpers.dispatch_per_platform(
+            win=SHORTCUT_NAME, mac="CraftBot.command", linux="CraftBot.desktop"
+        ),
+    )
     if os.path.isfile(shortcut_path):
         try:
             os.remove(shortcut_path)
@@ -910,26 +1321,87 @@ def _remove_desktop_shortcut() -> None:
 def cmd_uninstall() -> None:
     """Remove auto-start registration and uninstall dependencies."""
     # Stop the service first if running
-    pid = _read_pid()
-    if pid and _is_running(pid):
-        cmd_stop()
+    _stop_running_agent_if_alive(grace_s=0)
 
     # Clean up PID file
     _remove_pid()
 
     # Remove auto-start registration
-    plat = _PLATFORM
-    if plat == "win32":
-        _uninstall_windows()
-    elif plat == "darwin":
-        _uninstall_macos()
-    else:
-        _uninstall_linux()
+    _helpers.dispatch_per_platform(
+        win=_uninstall_windows, mac=_uninstall_macos, linux=_uninstall_linux
+    )()
 
     # Remove desktop shortcut
     _remove_desktop_shortcut()
 
-    # Uninstall pip packages
+    if IS_FROZEN:
+        # Frozen mode: remove the install dir and everything in the user data
+        # dir EXCEPT a small allow-list of user-generated state. Deletes:
+        #   - The extracted agent install dir (Programs\CraftBot\CraftBotAgent)
+        #   - %LOCALAPPDATA%\CraftBot\: bootstrapped folders (app/, agents/,
+        #     assets/, skills/), logs, PID, icons, install metadata,
+        #     config.json, .env.example, rthook marker
+        # Keeps in %LOCALAPPDATA%\CraftBot\:
+        #   - agent_file_system/  (memory, conversation history, workspace)
+        #   - chroma_db_memory/   (vector store)
+        # Reinstall regenerates everything else from the bundled defaults.
+        _remove_pid()
+        installed = installed_exe_path()
+        if installed and os.path.isfile(installed):
+            install_dir = os.path.dirname(installed)
+            if os.path.basename(install_dir).lower() == "craftbotagent":
+                install_dir = os.path.dirname(install_dir)
+            try:
+                shutil.rmtree(install_dir, ignore_errors=False)
+                print(f"Removed installed agent directory: {install_dir}")
+            except OSError as e:
+                print(f"Warning: could not remove {install_dir} — {e}")
+                print("(It may be in use; close the wizard / installed EXE first.)")
+
+        # Compute user data dir path independently of _user_data_dir() (that
+        # helper recreates the dir, which we don't want here).
+        if _PLATFORM == "win32":
+            _root = os.environ.get("LOCALAPPDATA") or os.path.expanduser(
+                r"~\AppData\Local"
+            )
+            user_data = os.path.join(_root, "CraftBot")
+        elif _PLATFORM == "darwin":
+            user_data = os.path.expanduser("~/Library/Application Support/CraftBot")
+        else:
+            _root = os.environ.get("XDG_DATA_HOME") or os.path.expanduser(
+                "~/.local/share"
+            )
+            user_data = os.path.join(_root, "craftbot")
+
+        # Allow-list: anything else in user_data gets removed.
+        keep = {"agent_file_system", "chroma_db_memory"}
+        if os.path.isdir(user_data):
+            removed_any = False
+            for entry in os.listdir(user_data):
+                if entry in keep:
+                    continue
+                path = os.path.join(user_data, entry)
+                try:
+                    if os.path.isdir(path):
+                        shutil.rmtree(path, ignore_errors=True)
+                    else:
+                        os.remove(path)
+                    removed_any = True
+                except OSError as e:
+                    print(f"Warning: could not remove {path} — {e}")
+            if removed_any:
+                print(
+                    f"Cleaned bootstrapped files in {user_data} (kept: {', '.join(sorted(keep))})"
+                )
+
+        # Final: clear install metadata. Done last so the print() lines above
+        # could still reference installed_exe_path() if needed.
+        clear_install_metadata()
+
+        print("\nUninstall complete.")
+        return
+
+    # Source mode: uninstall pip packages
     req_file = os.path.join(BASE_DIR, "requirements.txt")
     if os.path.isfile(req_file):
         print("\nUninstalling pip packages...")
@@ -947,14 +1419,70 @@ def cmd_uninstall() -> None:
     print("\nUninstall complete.")
 
 
+def cmd_repair(
+    extra_args: List[str],
+    progress_cb: Optional[Callable[[int, Optional[int]], None]] = None,
+) -> None:
+    """Re-download and re-extract the agent payload over the installed location,
+    then re-register and restart. Useful for upgrading: a newer installer EXE
+    is pinned to a newer agent version, and Repair fetches that version.
+
+    Args:
+        extra_args: User flags (--tui, --cli, etc.).
+        progress_cb: Optional download-progress callback (bytes_read, total_or_none).
+    """
+    if not IS_FROZEN:
+        print(f"  {DIM}Repair is only meaningful for frozen EXE installs.{RESET}")
+        print(
+            f"  {DIM}For source installs, just `git pull` and `python craftbot.py restart`.{RESET}"
+        )
+        return
+
+    meta = read_install_metadata()
+    if not meta:
+        print(
+            f"  {RED}✗{RESET} {WHITE}No install metadata found — run install first.{RESET}"
+        )
+        return
+
+    installed = meta["installed_path"]
+    # The install location is the dir CONTAINING the agent EXE's nested
+    # CraftBotAgent/ folder (or the agent EXE directly if extracted flat).
+    # _full_install_frozen is idempotent and will overwrite either layout.
+    target_dir = os.path.dirname(installed)
+    if os.path.basename(target_dir).lower() == "craftbotagent":
+        target_dir = os.path.dirname(target_dir)
+    print(f"  Repairing CraftBot at {target_dir}")
+
+    # Stop the existing service so we can overwrite the agent files
+    _stop_running_agent_if_alive()
+
+    # Re-run the install flow at the existing location with the existing mode
+    mode_flag_map = {"tui": ["--tui"], "cli": ["--cli"], "browser": []}
+    mode_args = mode_flag_map.get(meta.get("mode", "browser"), [])
+    _full_install_frozen(target_dir, mode_args + extra_args, progress_cb=progress_cb)
+    print("\n  REPAIR COMPLETE")
+
+
 # ─── Utility ──────────────────────────────────────────────────────────────────
+
 
 def _get_parent_pid() -> Optional[int]:
     """Return the PID of the parent process (cmd.exe / terminal)."""
     try:
         result = subprocess.run(
-            ["wmic", "process", "where", f"ProcessId={os.getpid()}", "get", "ParentProcessId", "/value"],
-            capture_output=True, text=True, timeout=5,
+            [
+                "wmic",
+                "process",
+                "where",
+                f"ProcessId={os.getpid()}",
+                "get",
+                "ParentProcessId",
+                "/value",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         for line in result.stdout.splitlines():
             if "ParentProcessId=" in line:
@@ -972,17 +1500,17 @@ def _close_console_window() -> None:
     try:
         parent_pid = _get_parent_pid()
         if parent_pid:
-            DETACHED_PROCESS = 0x00000008
-            CREATE_NO_WINDOW = 0x08000000
             subprocess.Popen(
                 [
-                    "powershell", "-NoProfile", "-Command",
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
                     f"Start-Sleep -Milliseconds 500; Stop-Process -Id {parent_pid} -Force -ErrorAction SilentlyContinue",
                 ],
-                creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                **_helpers.detached_popen_flags(),
             )
     except Exception:
         pass
@@ -991,6 +1519,7 @@ def _close_console_window() -> None:
 
 def _timestamp() -> str:
     import datetime
+
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -1000,8 +1529,18 @@ def _usage() -> None:
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     args = sys.argv[1:]
+
+    # Frozen EXE double-clicked with no args → launch the Tkinter wizard.
+    # Source installs (no IS_FROZEN) keep the legacy "print usage" behaviour
+    # so `python craftbot.py` still helps developers find the CLI.
+    if not args and IS_FROZEN:
+        from installer.wizard import launch_wizard
+
+        launch_wizard()
+        return
 
     if not args or args[0] in ("-h", "--help"):
         _usage()
@@ -1037,6 +1576,15 @@ def main() -> None:
 
     elif command == "uninstall":
         cmd_uninstall()
+
+    elif command == "repair":
+        cmd_repair(rest)
+
+    elif command == "wizard":
+        # Explicit wizard launch (works even on source installs for dev/testing).
+        from installer.wizard import launch_wizard
+
+        launch_wizard()
 
     else:
         print(f"Unknown command: '{command}'")

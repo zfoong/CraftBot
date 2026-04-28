@@ -100,11 +100,31 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Install Linux webview system packages
+        if: matrix.os_label == 'linux'
+        shell: bash
+        run: |
+          # PyGObject builds against these headers. WebKitGTK + the
+          # webkit2-4.0 GObject introspection bindings are what pywebview's
+          # GTK backend talks to at runtime. End users need the runtime
+          # halves of these too (libwebkit2gtk-4.0-37, gir1.2-webkit2-4.0).
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-37 \
+            gir1.2-webkit2-4.0 \
+            libgirepository1.0-dev \
+            libcairo2-dev \
+            python3-gi \
+            python3-gi-cairo
+
       - name: Install dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # Installer-only deps (pywebview + per-OS backend bindings). Kept
+          # in a separate file so the agent's requirements.txt stays lean.
+          pip install -r packaging/requirements-installer.txt
           pip install pyinstaller
 
       - name: Set up Node.js
@@ -126,65 +146,55 @@ jobs:
         run: |
           echo "{\"use_conda\": false, \"gui_mode_enabled\": false}" > config.json
 
-      - name: Build with PyInstaller
+      - name: Write VERSION file from git tag
         shell: bash
         run: |
-          pyinstaller \
-            --noconfirm \
-            --clean \
-            --onefile \
-            --name CraftBot \
-            --collect-submodules app \
-            --collect-submodules agent_core \
-            --collect-submodules agents \
-            --collect-submodules decorators \
-            --collect-submodules chromadb \
-            --hidden-import onnxruntime \
-            --hidden-import tokenizers \
-            --collect-data tiktoken_ext \
-            --collect-submodules tiktoken \
-            --exclude-module torch \
-            --exclude-module torchvision \
-            --exclude-module torchaudio \
-            --exclude-module triton \
-            --exclude-module nvidia \
-            --exclude-module transformers \
-            --exclude-module cv2 \
-            --exclude-module matplotlib \
-            --exclude-module tensorflow \
-            --additional-hooks-dir hooks \
-            --runtime-hook rthooks/rthook-rich-unicode.py \
-            --add-data "assets${{ matrix.data_sep }}assets" \
-            --add-data "main.py${{ matrix.data_sep }}." \
-            --add-data "config.json${{ matrix.data_sep }}." \
-            --add-data ".env.example${{ matrix.data_sep }}." \
-            --add-data "requirements.txt${{ matrix.data_sep }}." \
-            --add-data "environment.yml${{ matrix.data_sep }}." \
-            --add-data "app/config/mcp_config.json${{ matrix.data_sep }}app/config" \
-            --add-data "app/config/connection_test_models.json${{ matrix.data_sep }}app/config" \
-            --add-data "app/config/scheduler_config.json${{ matrix.data_sep }}app/config" \
-            --add-data "app/config/skills_config.json${{ matrix.data_sep }}app/config" \
-            --add-data "app/config/external_comms_config.json${{ matrix.data_sep }}app/config" \
-            --add-data "app/data${{ matrix.data_sep }}app/data" \
-            --add-data "app/ui_layer/browser/frontend/dist${{ matrix.data_sep }}app/ui_layer/browser/frontend/dist" \
-            --add-data "app/gui/docker-compose.yaml${{ matrix.data_sep }}app/gui" \
-            --add-data "app/gui/Dockerfile${{ matrix.data_sep }}app/gui" \
-            --add-data "app/gui/custom-cont-init.d${{ matrix.data_sep }}app/gui/custom-cont-init.d" \
-            --add-data "agents${{ matrix.data_sep }}agents" \
-            --add-data "skills${{ matrix.data_sep }}skills" \
-            run.py
+          # github.ref_name is "v1.3.0" for tag pushes; strip the leading 'v'.
+          # The installer's _read_bundled_version() reads this to pin the
+          # download URL to the matching agent release.
+          REF="${{ github.ref_name }}"
+          VERSION="${REF#v}"
+          echo "$VERSION" > VERSION
+          echo "VERSION file content: $(cat VERSION)"
 
-      - name: Rename artifact
+      - name: Build agent (CraftBotAgent) with PyInstaller
+        shell: bash
+        run: pyinstaller --noconfirm --clean packaging/CraftBotAgent.spec
+
+      - name: Zip agent payload
         shell: bash
         run: |
-          mv "dist/CraftBot${{ matrix.ext }}" \
-             "dist/CraftBot-${{ matrix.os_label }}${{ matrix.ext }}"
+          # CraftBotAgent.spec produces dist/CraftBotAgent/ (folder).
+          # Zip it into the asset name the installer downloads at runtime.
+          cd dist
+          if [ "${{ matrix.os_label }}" = "windows" ]; then
+            7z a -tzip "CraftBot-agent-${{ matrix.os_label }}.zip" CraftBotAgent
+          else
+            zip -r "CraftBot-agent-${{ matrix.os_label }}.zip" CraftBotAgent
+          fi
+          ls -lh "CraftBot-agent-${{ matrix.os_label }}.zip"
 
-      - name: Upload artifact
+      - name: Build installer (CraftBotInstaller) with PyInstaller
+        shell: bash
+        run: pyinstaller --noconfirm --clean packaging/CraftBotInstaller.spec
+
+      - name: Rename installer artifact
+        shell: bash
+        run: |
+          mv "dist/CraftBotInstaller${{ matrix.ext }}" \
+             "dist/CraftBotInstaller-${{ matrix.os_label }}${{ matrix.ext }}"
+
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.os_label }}
-          path: dist/CraftBot-${{ matrix.os_label }}${{ matrix.ext }}
+          name: release-installer-${{ matrix.os_label }}
+          path: dist/CraftBotInstaller-${{ matrix.os_label }}${{ matrix.ext }}
+
+      - name: Upload agent zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-agent-${{ matrix.os_label }}
+          path: dist/CraftBot-agent-${{ matrix.os_label }}.zip
 
   # ──────────────────────────────────────────────
   # Create GitHub Release with all artifacts
@@ -206,21 +216,14 @@ jobs:
           files: release/**
           generate_release_notes: true
           body: |
-            ## Installation
+            ### Installer (Recommended)
+            Download `CraftBotInstaller-<platform>` from the assets below and
+            run it. The installer wizard will let you choose an install
+            location and will download the matching agent payload
+            (`CraftBot-agent-<platform>.zip`) from this same release.
 
-            ### Docker Compose (Recommended)
-            Includes the agent, OmniParser, and GUI desktop VM — all in one.
-            ```bash
-            git clone https://github.com/zfoong/CraftBot.git
-            cd CraftBot
-            cp .env.example .env   # Edit with your API keys
-            docker compose up
-            ```
-            For GPU acceleration on OmniParser:
-            ```bash
-            docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
-            ```
-
-            ### Standalone Binary
-            Download the binary for your platform from the assets below.
-            Requires Docker for GUI mode and Omniparser. Run with `--no-omniparser` to skip OmniParser setup. Run with `--no-conda` to skip conda setup and use system Python instead.
+            ### Manual install
+            If you'd rather skip the wizard, download both
+            `CraftBotInstaller-<platform>` and `CraftBot-agent-<platform>.zip`,
+            place them in the same folder, and run the installer — it'll find
+            the local zip instead of fetching from GitHub.
