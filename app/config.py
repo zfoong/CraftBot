@@ -75,7 +75,13 @@ def invalidate_settings_cache() -> None:
 
 
 def _get_default_settings() -> Dict[str, Any]:
-    """Return default settings structure."""
+    """Return default settings structure.
+
+    The "version" field here is dead data — get_app_version() reads the
+    bundled VERSION file instead. Kept in the defaults for backwards-
+    compatibility with any downstream code that reads settings["version"]
+    directly. Don't rely on it for anything that matters.
+    """
     return {
         "version": "0.0.0",
         "general": {"agent_name": "CraftBot"},
@@ -140,9 +146,30 @@ def get_settings(reload: bool = False) -> Dict[str, Any]:
 
 
 def get_app_version() -> str:
-    """Get the application version from settings."""
-    settings = get_settings()
-    return settings.get("version", "0.0.0")
+    """Get the application version.
+
+    Reads the VERSION file bundled by the release workflow (which echoes
+    the git tag, minus the leading 'v', into VERSION before PyInstaller
+    runs). Source mode falls back to looking at the repo root in case a
+    dev wrote a VERSION file locally; otherwise returns "0.0.0" so the
+    updater check fails gracefully (it'll show "no update info" rather
+    than spamming the user with a bogus update prompt).
+    """
+    candidates = []
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "VERSION")
+    # Source mode / fallback — repo root.
+    candidates.append(Path(__file__).resolve().parent.parent / "VERSION")
+    for path in candidates:
+        try:
+            v = path.read_text(encoding="utf-8").strip()
+            if v:
+                return v
+        except OSError:
+            continue
+    return "0.0.0"
 
 
 def get_llm_provider() -> str:
