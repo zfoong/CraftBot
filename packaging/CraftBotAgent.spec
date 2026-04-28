@@ -1,0 +1,124 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""
+PyInstaller spec for CraftBotAgent — the actual agent runtime.
+
+Built as --onedir (a folder containing CraftBotAgent.exe + _internal/) so it
+launches fast (no per-run extraction) and so the installer can copy/extract
+it anywhere. Console=False so it runs detached without a terminal window.
+
+Output: dist/CraftBotAgent/CraftBotAgent(.exe) + dist/CraftBotAgent/_internal/.
+The release workflow zips this folder into CraftBot-agent-{platform}.zip.
+
+Build from the repo root: `python -m PyInstaller packaging/CraftBotAgent.spec`.
+All paths below are derived from SPECPATH (the absolute directory of this
+spec file), so the build works regardless of the current working directory.
+"""
+import os as _os
+
+from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all
+
+# SPECPATH is set by PyInstaller to this spec file's directory
+# (<repo>/packaging/). ROOT walks one level up so all data/source paths
+# resolve relative to the project root.
+ROOT = _os.path.dirname(SPECPATH)
+
+
+def _root(*parts: str) -> str:
+    return _os.path.join(ROOT, *parts)
+
+
+datas = [
+    (_root('assets'), 'assets'),
+    (_root('main.py'), '.'),
+    (_root('config.json'), '.'),
+    (_root('.env.example'), '.'),
+    (_root('requirements.txt'), '.'),
+    (_root('environment.yml'), '.'),
+    (_root('app/config/mcp_config.json'), 'app/config'),
+    (_root('app/config/connection_test_models.json'), 'app/config'),
+    (_root('app/config/scheduler_config.json'), 'app/config'),
+    (_root('app/config/skills_config.json'), 'app/config'),
+    (_root('app/config/external_comms_config.json'), 'app/config'),
+    (_root('app/data'), 'app/data'),
+    (_root('app/ui_layer/browser/frontend/dist'), 'app/ui_layer/browser/frontend/dist'),
+    (_root('app/gui/docker-compose.yaml'), 'app/gui'),
+    (_root('app/gui/Dockerfile'), 'app/gui'),
+    (_root('app/gui/custom-cont-init.d'), 'app/gui/custom-cont-init.d'),
+    (_root('agents'), 'agents'),
+    (_root('skills'), 'skills'),
+]
+
+hiddenimports = ['onnxruntime', 'tokenizers']
+datas += collect_data_files('tiktoken_ext')
+hiddenimports += collect_submodules('app')
+hiddenimports += collect_submodules('agent_core')
+hiddenimports += collect_submodules('agents')
+hiddenimports += collect_submodules('decorators')
+hiddenimports += collect_submodules('chromadb')
+hiddenimports += collect_submodules('tiktoken')
+
+# Third-party SDKs the agent loads at runtime via factories. Required: if
+# any of these are missing the resulting EXE will crash at runtime with
+# ModuleNotFoundError. Fail the build loudly instead.
+binaries = []
+for _pkg in ('openai', 'anthropic'):
+    _datas, _binaries, _hidden = collect_all(_pkg)
+    if not _hidden:
+        raise RuntimeError(
+            f"Required package {_pkg!r} not installed in the build env. "
+            f"Run `pip install -r requirements.txt` before building."
+        )
+    datas += _datas
+    binaries += _binaries
+    hiddenimports += _hidden
+
+
+a = Analysis(
+    [_root('run.py')],
+    pathex=[ROOT],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[_root('hooks')],
+    hooksconfig={},
+    runtime_hooks=[
+        _root('rthooks/rthook-utf8-stdio.py'),  # Must run first — UTF-8 stdout
+        _root('rthooks/rthook-windows-noflash.py'),  # Suppress per-subprocess console windows
+        _root('rthooks/rthook-rich-unicode.py'),
+    ],
+    excludes=['torch', 'torchvision', 'torchaudio', 'triton', 'nvidia', 'transformers', 'cv2', 'matplotlib', 'tensorflow'],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,  # onedir: COLLECT() places binaries alongside the EXE
+    name='CraftBotAgent',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,  # No terminal when launched by the installer / auto-start
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=_root('craftbot_logo_1.ico'),
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='CraftBotAgent',
+)

@@ -161,6 +161,7 @@ from agent_core.core.impl.memory import (
 )
 from agent_core.core.impl.llm import LLMCallType
 from agent_core.core.impl.trigger import TriggerQueue
+from agent_core.core.impl.workflow_lock import WorkflowLockManager
 from agent_core.core.impl.event_stream import (
     EventStream,
     EventStreamManager,
@@ -369,6 +370,7 @@ __all__ = [
     "create_memory_processing_task",
     "LLMCallType",
     "TriggerQueue",
+    "WorkflowLockManager",
     "EventStream",
     "EventStreamManager",
     # Prompts - Registry

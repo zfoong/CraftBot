@@ -300,6 +300,7 @@ class TriggerQueue:
                 conversation_id=trig.payload.get("conversation_id", "N/A"),
                 existing_sessions=existing_sessions,
                 recent_conversation=recent_conversation,
+                current_living_ui_id=trig.payload.get("living_ui_id") or "(not on a Living UI page)",
             )
 
             logger.debug(f"[UNIFIED ROUTING PROMPT]:\n{usr_msg}")
@@ -454,6 +455,7 @@ class TriggerQueue:
         *,
         message: str | None = None,
         platform: str | None = None,
+        living_ui_id: str | None = None,
     ) -> bool:
         """
         Mark a trigger for a given session as ready to fire immediately.
@@ -469,6 +471,7 @@ class TriggerQueue:
                 description so the reasoning step sees it.
             platform: Optional platform identifier (e.g., "Telegram", "WhatsApp")
                 to preserve message source information.
+            living_ui_id: Optional Living UI project ID if user is on a Living UI page.
 
         Returns:
             ``True`` if a trigger was found (queued or active), otherwise ``False``.
@@ -485,6 +488,8 @@ class TriggerQueue:
                         t.payload["pending_user_message"] = message
                         if platform:
                             t.payload["pending_platform"] = platform
+                    if living_ui_id:
+                        t.payload["living_ui_id"] = living_ui_id
                     found = True
 
             if found:
@@ -500,6 +505,8 @@ class TriggerQueue:
                     t.payload["pending_user_message"] = message
                     if platform:
                         t.payload["pending_platform"] = platform
+                if living_ui_id:
+                    t.payload["living_ui_id"] = living_ui_id
                 logger.debug(f"[FIRE] Attached message to active trigger for session {session_id}")
                 return True
 

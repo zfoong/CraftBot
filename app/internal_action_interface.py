@@ -100,6 +100,69 @@ class InternalActionInterface:
             raise RuntimeError("InternalActionInterface not initialized with VLMInterface.")
         return cls.vlm_interface.describe_image(image_path, user_prompt=prompt)
 
+    @classmethod
+    def perform_ocr(cls, image_path: str, user_prompt: Optional[str] = None) -> dict:
+        """
+        Run OCR on an image and persist the extracted text to workspace.
+        Returns a concise status dict + saved file path to avoid TUI flooding.
+        """
+        if cls.vlm_interface is None:
+            raise RuntimeError("InternalActionInterface not initialized with VLMInterface.")
+
+        import os
+        from datetime import datetime
+
+        raw_text = cls.vlm_interface.describe_image_ocr(image_path, user_prompt=user_prompt)
+
+        # Persist to workspace to prevent token ballooning in the agent context
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join(AGENT_WORKSPACE_ROOT, f"ocr_result_{ts}.txt")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(raw_text)
+
+        line_count = raw_text.count("\n") + 1
+        char_count = len(raw_text)
+        return {
+            "status": "success",
+            "summary": f"OCR complete: {line_count} lines, {char_count} characters extracted.",
+            "text": raw_text,
+            "file_path": out_path,
+            "file_saved": True,
+        }
+
+    @classmethod
+    def understand_video(
+        cls,
+        video_path: str,
+        query: Optional[str] = None,
+        max_frames: int = 8,
+    ) -> dict:
+        """
+        Analyse a video by extracting keyframes and querying the VLM.
+        Persists the summary to workspace to avoid TUI/context flooding.
+        """
+        if cls.vlm_interface is None:
+            raise RuntimeError("InternalActionInterface not initialized with VLMInterface.")
+
+        import os
+        from datetime import datetime
+
+        summary = cls.vlm_interface.describe_video_frames(
+            video_path, query=query, max_frames=max_frames
+        )
+
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join(AGENT_WORKSPACE_ROOT, f"video_summary_{ts}.txt")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(summary)
+
+        return {
+            "status": "success",
+            "summary": summary[:500] + ("..." if len(summary) > 500 else ""),
+            "file_path": out_path,
+            "file_saved": True,
+        }
+
    # ───────────────── Memory Search ─────────────────
 
     @classmethod

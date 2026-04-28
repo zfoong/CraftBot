@@ -230,9 +230,23 @@ export function ModelSettings() {
           setPullPhase('idle')
           setPullBytes(null)
           setPullStatus('')
+          const pulledModel = d.model || selectedPullModel
+          // Refresh model list in UI
           setOllamaModelsLoading(true)
-          send('ollama_models_get', { baseUrl: baseUrls['remote'] || undefined })
-          showToast('success', `Model ${d.model} downloaded successfully`)
+          send('ollama_models_get', { baseUrl: newBaseUrl || baseUrls['remote'] || undefined })
+          // Auto-switch to remote provider with the pulled model and save immediately
+          // so chat/tasks start using the local model without requiring manual save
+          setProvider('remote')
+          setNewLlmModel(pulledModel)
+          setIsSaving(true)
+          send('model_settings_update', {
+            llmProvider: 'remote',
+            vlmProvider: 'remote',
+            llmModel: pulledModel,
+            vlmModel: pulledModel,
+            ...(newBaseUrl ? { baseUrl: newBaseUrl, providerForUrl: 'remote' } : {}),
+          })
+          showToast('success', `Model ${pulledModel} downloaded — switching to local model`)
         } else {
           setPullPhase('idle')
           showToast('error', d.error || 'Model download failed')
@@ -275,7 +289,7 @@ export function ModelSettings() {
     ]
 
     return () => cleanups.forEach(cleanup => cleanup())
-  }, [isConnected, onMessage, send, testBeforeSave, provider, newApiKey, newBaseUrl, baseUrls])
+  }, [isConnected, onMessage, send, testBeforeSave, provider, newApiKey, newBaseUrl, baseUrls, selectedPullModel])
 
   // Load initial data only once when connected
   useEffect(() => {

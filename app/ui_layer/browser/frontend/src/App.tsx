@@ -8,12 +8,49 @@ import { ScreenPage } from './pages/Screen'
 import { WorkspacePage } from './pages/Workspace'
 import { SettingsPage } from './pages/Settings'
 import { OnboardingPage } from './pages/Onboarding'
+import { LivingUIPage } from './pages/LivingUI'
 import { useWebSocket } from './contexts/WebSocketContext'
 
 function App() {
-  const { needsHardOnboarding } = useWebSocket()
+  const { initReceived, needsHardOnboarding } = useWebSocket()
 
-  // Show onboarding page if hard onboarding is needed
+  // Block rendering until the backend sends the initial state.
+  // Without this guard, needsHardOnboarding defaults to false and the chat
+  // flashes briefly before the onboarding page appears on first install.
+  if (!initReceived) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: '#131313',
+        flexDirection: 'column',
+        gap: '48px',
+        userSelect: 'none',
+      }}>
+        <style>{`
+          @keyframes cb-dot {
+            0%, 80%, 100% { transform: scale(0.45); opacity: 0.25; }
+            40%            { transform: scale(1);    opacity: 1;    }
+          }
+        `}</style>
+
+        <img
+          src="/craftbot_logo_text_no_border_dark.png"
+          alt="CraftBot"
+          style={{ width: '210px', pointerEvents: 'none' }}
+        />
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f04a00', animation: 'cb-dot 1.4s ease-in-out infinite 0s' }} />
+          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f04a00', animation: 'cb-dot 1.4s ease-in-out infinite 0.18s' }} />
+          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f04a00', animation: 'cb-dot 1.4s ease-in-out infinite 0.36s' }} />
+        </div>
+      </div>
+    )
+  }
+
   if (needsHardOnboarding) {
     return <OnboardingPage />
   }
@@ -27,6 +64,7 @@ function App() {
         <Route path="/screen" element={<ScreenPage />} />
         <Route path="/workspace" element={<WorkspacePage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/living-ui/:projectId" element={<LivingUIPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

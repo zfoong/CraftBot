@@ -45,19 +45,40 @@ else:
 
 
 def _bootstrap_frozen():
-    """Copy bundled config/data from _MEIPASS to CWD on first run.
+    """Copy bundled config/data from _MEIPASS to the user data dir on first run.
 
     PyInstaller extracts bundled files into a temp directory (sys._MEIPASS)
     which is read-only and deleted on exit. The app expects mutable config
-    and data directories under CWD so they persist between runs.
+    and data directories that persist between runs. We target a per-user
+    data dir (NOT the install dir, NOT cwd) so:
+      - User data lives outside Program Files / install location
+      - Uninstall + reinstall preserves history
+      - Direct double-click of CraftBotAgent.exe doesn't dump runtime files
+        next to the binary
     """
     if not getattr(sys, 'frozen', False):
         return
 
     import shutil as _shutil
 
+    # Per-user data root — same convention as the installer wizard
+    # (craftbot._user_data_dir() / app.config._frozen_user_data_root()).
+    if sys.platform == "win32":
+        _root = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
+        user_data = os.path.join(_root, "CraftBot")
+    elif sys.platform == "darwin":
+        user_data = os.path.expanduser("~/Library/Application Support/CraftBot")
+    else:
+        _root = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        user_data = os.path.join(_root, "craftbot")
+    os.makedirs(user_data, exist_ok=True)
+
+    # Switch CWD so any code that still uses os.getcwd() / relative paths
+    # ends up writing into user_data instead of the install dir.
+    os.chdir(user_data)
+
     meipass = sys._MEIPASS
-    cwd = os.getcwd()
+    cwd = user_data
 
     # Directories to bootstrap (source relative to _MEIPASS)
     dirs_to_copy = [
@@ -98,6 +119,36 @@ YML_FILE = os.path.join(BASE_DIR, "environment.yml")
 
 OMNIPARSER_ENV_NAME = "omni"
 OMNIPARSER_SERVER_URL = os.getenv("OMNIPARSER_BASE_URL", "http://localhost:7861")
+
+# ==========================================
+# TERMINAL COLORS  (orange/white brand palette)
+# ==========================================
+def _enable_windows_vtp() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.GetStdHandle(-11)
+        m = ctypes.c_ulong()
+        k32.GetConsoleMode(h, ctypes.byref(m))
+        k32.SetConsoleMode(h, m.value | 0x0004)
+    except Exception:
+        pass
+
+_enable_windows_vtp()
+_USE_COLOR = sys.stdout.isatty()
+
+def _c(code: str) -> str:
+    return code if _USE_COLOR else ""
+
+ORANGE = _c("\033[38;2;255;79;24m")   # #FF4F18
+WHITE  = _c("\033[38;2;255;255;255m") # #FFFFFF
+BOLD   = _c("\033[1m")
+DIM    = _c("\033[38;2;80;80;80m")
+GREEN  = _c("\033[38;2;80;220;100m")
+RED    = _c("\033[91m")
+RESET  = _c("\033[0m")
 
 # ==========================================
 # HELPER FUNCTIONS
@@ -254,6 +305,7 @@ def cleanup_background_processes():
                     proc.kill()
                 except:
                     pass
+
 
 # Register cleanup on exit
 atexit.register(cleanup_background_processes)
@@ -615,37 +667,59 @@ BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
 STEP_WIDTH = 45  # Width for step text alignment
 
 def print_browser_header():
-    """Print the browser mode startup header."""
-    print("\n🤖 CraftBot")
-    print("━" * 52)
-    print("\nMode: Browser\n")
+    """Print the retro browser mode startup header."""
+    _ART = [
+        " ██████╗ ██████╗  █████╗  ███████╗ ████████╗██████╗   ██████╗ ████████╗",
+        "██╔════╝ ██╔══██╗ ██╔══██╗ ██╔════╝ ╚══██╔══╝██╔══██╗ ██╔═══██╗╚══██╔══╝",
+        "██║      ██████╔╝ ███████║ █████╗      ██║   ██████╔╝ ██║   ██║   ██║   ",
+        "██║      ██╔══██╗ ██╔══██║ ██╔══╝      ██║   ██╔══██╗ ██║   ██║   ██║   ",
+        "╚██████╗ ██║  ██║ ██║  ██║ ██║         ██║   ██████╔╝ ╚██████╔╝   ██║   ",
+        " ╚═════╝ ╚═╝  ╚═╝ ╚═╝  ╚═╝ ╚═╝         ╚═╝   ╚═════╝   ╚═════╝    ╚═╝   ",
+    ]
+    _BW = 76
+    _BT = f"{ORANGE}╔{'═' * _BW}╗{RESET}"
+    _BB = f"{ORANGE}╚{'═' * _BW}╝{RESET}"
+    _BE = f"{ORANGE}║{' ' * _BW}║{RESET}"
+    print(f"\n{_BT}")
+    print(_BE)
+    for _row in _ART:
+        print(f"{ORANGE}║{RESET}  {WHITE}{_row}{RESET}  {ORANGE}║{RESET}")
+    print(_BE)
+    _sub = "░░░  BROWSER MODE  ░░░"
+    print(f"{ORANGE}║{RESET}{DIM}{_sub.center(_BW)}{RESET}{ORANGE}║{RESET}")
+    print(_BE)
+    print(f"{_BB}\n")
 
 def print_step(step_num: int, total: int, message: str, done: bool = False):
-    """Print a formatted step line."""
-    prefix = f"  [{step_num:>2}/{total}]"
-    # Pad message to align checkmarks
-    padded_msg = f"{message}...".ljust(STEP_WIDTH - len(prefix))
+    """Print a retro formatted step line."""
+    line = f"  {ORANGE}▸ [{step_num:>1}/{total}]{RESET}  {DIM}░{RESET}  {WHITE}{message.upper()}{RESET}"
     if done:
-        print(f"{prefix} {padded_msg}✓", flush=True)
+        print(f"{line}  {GREEN}[ OK ]{RESET}", flush=True)
     else:
-        print(f"{prefix} {padded_msg}", end="", flush=True)
+        print(line, end="", flush=True)
 
 def print_step_done():
-    """Print checkmark for current step."""
-    print("✓", flush=True)
+    """Print retro done marker for current step."""
+    print(f"  {GREEN}[ OK ]{RESET}", flush=True)
 
 def print_progress_bar(percent: int, width: int = 40):
-    """Print a progress bar from 0-100%."""
+    """Print a retro progress bar from 0-100%."""
     filled = int(width * percent / 100)
-    bar = "█" * filled + "░" * (width - filled)
-    sys.stdout.write(f"\r  [{bar}] {percent:3d}%")
+    bar = f"{ORANGE}{'▓' * filled}{DIM}{'░' * (width - filled)}{RESET}"
+    sys.stdout.write(f"\r  {bar}  {ORANGE}[ {percent:3d}% ]{RESET}")
     sys.stdout.flush()
 
 def print_ready_banner(url: str):
-    """Print the final ready banner."""
-    print("\n" + "━" * 52)
-    print(f"✓ Ready → CraftBot Browser Interface running at {url}")
-    print("━" * 52 + "\n")
+    """Print the retro ready banner."""
+    W = 62
+    print(f"\n{ORANGE}╔{'═' * W}╗{RESET}")
+    print(f"{ORANGE}║{' ' * W}║{RESET}")
+    _r1 = f"  ▸  CRAFTBOT IS READY"
+    _r2 = f"  ░░ {url}"
+    print(f"{ORANGE}║{RESET}{GREEN}{_r1.ljust(W)}{RESET}{ORANGE}║{RESET}")
+    print(f"{ORANGE}║{RESET}{ORANGE}{_r2.ljust(W)}{RESET}{ORANGE}║{RESET}")
+    print(f"{ORANGE}║{' ' * W}║{RESET}")
+    print(f"{ORANGE}╚{'═' * W}╝{RESET}\n")
 
 def wait_for_backend_silent(timeout: int = 60) -> bool:
     """Wait for the agent backend WebSocket server to be ready (silent)."""
@@ -950,10 +1024,6 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
             sys.argv = [sys.argv[0]] + pass_args
             from main import main as main_entry
             main_entry()
-        except SystemExit as e:
-            if getattr(e, 'code', None) == 42:
-                print("\n🔄 Restarting CraftBot after update...")
-                os.execv(sys.executable, sys.argv)
         except KeyboardInterrupt:
             print("\nInterrupted.")
             sys.exit(0)
@@ -971,15 +1041,9 @@ def launch_agent(env_name: Optional[str], conda_base: Optional[str], use_conda: 
         cmd = [sys.executable, "-u", main_script] + pass_args
 
     # Run in current terminal with all environment variables.
-    # If the process exits with code 42, an update was applied — restart.
     try:
-        while True:
-            result = subprocess.run(cmd, cwd=os.path.dirname(main_script), env=os.environ.copy())
-            if result.returncode == 42:
-                print("\n🔄 Restarting CraftBot after update...")
-                time.sleep(2)
-                continue
-            sys.exit(result.returncode)
+        result = subprocess.run(cmd, cwd=os.path.dirname(main_script), env=os.environ.copy())
+        sys.exit(result.returncode)
     except KeyboardInterrupt:
         print("\nInterrupted.")
         sys.exit(0)
@@ -1182,16 +1246,11 @@ if __name__ == "__main__":
         # Wait for agent to finish (keeps script running)
         # If the agent exits with code 42, it means an update was applied
         # and we need to restart the entire stack (frontend + backend).
+        # Wait for agent to finish. Updates are handled by the external
+        # updater script (scripts/updater.bat) which spawns in its own window
+        # and relaunches us — no exit-code magic, no in-process restart.
         try:
-            while True:
-                agent_process.wait()
-                if agent_process.returncode == 42:
-                    print("\n🔄 Restarting CraftBot after update...")
-                    cleanup_background_processes()
-                    time.sleep(2)
-                    # Re-exec run.py so it relaunches frontend + backend
-                    os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
-                break
+            agent_process.wait()
         except KeyboardInterrupt:
             print("\nShutting down...")
             cleanup_background_processes()

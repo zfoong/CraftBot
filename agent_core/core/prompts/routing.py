@@ -6,17 +6,25 @@ This module contains prompt templates for routing messages to sessions.
 """
 
 # --- Unified Session Routing ---
-# This prompt handles BOTH incoming messages AND triggers in a single LLM call.
-# Provides rich context including task details, progress, and platform info.
+# This prompt is the LAST-RESORT routing decision. The chat handler short-circuits
+# the easy cases deterministically (explicit UI reply target, third-party
+# notifications, single waiting task, reply markers) BEFORE this prompt runs.
+# By the time the LLM sees the message, those cases are already handled.
+#
+# The prompt's job: decide if a message in main chat with active task(s) is
+# CLEARLY a continuation/modification of one of those tasks, or a new request.
+# Default to NEW SESSION when in doubt.
 ROUTE_TO_SESSION_PROMPT = """
 <objective>
-You are a session routing system. Determine which task session an incoming message belongs to.
+You are a session router. Decide whether an incoming message is a clear continuation
+of an existing task, or a new request that should open a new session.
 </objective>
 
 <incoming_item>
 Type: {item_type}
 Content: {item_content}
 Source Platform: {source_platform}
+User's current Living UI page: {current_living_ui_id}
 </incoming_item>
 
 <existing_sessions>
@@ -24,31 +32,62 @@ Source Platform: {source_platform}
 </existing_sessions>
 
 <recent_conversation>
+Recent messages across all sessions (oldest first, may include completed tasks
+that are no longer in <existing_sessions>):
 {recent_conversation}
 </recent_conversation>
 
 <rules>
-1. ROUTE TO EXISTING SESSION when:
-   - The message is a response to a question the agent asked (check Recent Activity)
-   - Short replies like "yes", "no", "ok", numbers → route to related session waiting for reply
-   - The message is related to an existing task's topic or instruction
-   - The message references files, outputs, or artifacts created by an existing task (check Recent Activity for file paths)
+DEFAULT: create a new session. When in doubt, choose "new".
 
-2. SINGLE ACTIVE SESSION BIAS:
-   - When there is ONLY ONE active session, strongly prefer routing to it unless the message is clearly about a completely different topic
-   - This is because follow-up requests often relate to the current task's outputs (e.g., "convert to PDF" after a report was generated)
+Route to an existing session ONLY IF the message clearly fits ONE of these:
+  - References a specific file, output, or artifact created by that task
+    (e.g. "the PDF you made", "the translated report", a filename produced by that task)
+  - Is a clear modification of that task's original instruction
+    (e.g. "translate to Spanish instead", "also include X", "skip page 5", "make it shorter")
+  - Cancels or pauses that task explicitly
+    (e.g. "stop the translation", "pause the report", "cancel that task")
+  - Is a context-dependent message ("fix this", "it's broken", "add a feature")
+    AND there is an active task whose Living UI ID matches the user's current
+    Living UI page (see <incoming_item> above)
+  - Explicitly names a Living UI app/project that matches one of the active
+    tasks' Living UI bindings — even if the user is currently viewing a
+    different Living UI page. Chat is global; the user can talk about any
+    Living UI from anywhere.
 
-3. CREATE NEW SESSION when:
-   - The message is a NEW topic clearly unrelated to any existing task
-   - The message doesn't match any existing task's context AND there are multiple active sessions
-   - The message appears to be a follow-up to a COMPLETED task visible in recent conversation history but NOT in existing sessions
+DO NOT route based on:
+  - "There's only one active task" — single active task is NOT a reason to route
+    a generic message to it. This bias previously caused multiple wrong-routing bugs.
+  - Generic acknowledgments ("thanks", "ok", "got it", "yes", "no") — these are
+    conversational. Create a new session.
+  - Topic resemblance alone — "I want to translate something" while a translate
+    task is running is a NEW request, not a modification of the active task,
+    unless the user explicitly says so.
+  - "[REPLYING TO PREVIOUS AGENT MESSAGE]:" markers — those are handled before
+    this prompt runs and won't reach you.
 
-IMPORTANT NOTES:
-- If the message has no context, it is very LIKELY it is meant for another task, DO NOT CREATE a new session
-- If there is on-going task waiting for user reply, it is very LIKELY the incoming item is meant for the session
-- However, if recent conversation history shows a completed task matching the message topic, prefer creating a new session over routing to an unrelated active task
-- When the incoming message is ambiguous and could match any session, slightly prefer the most recent conversation topic (latest messages in recent conversation history)
-- People naturally respond to the most recent thing discussed, so an out-of-context reply like "is it good?" most likely refers to the latest topic, not an older one
+Living UI specifics:
+  - The user's current Living UI page is a CONTEXT hint, not a hard binding.
+  - For context-dependent messages with no explicit reference, prefer the task
+    bound to the user's current Living UI.
+  - For messages that explicitly name a different Living UI (by app name, project
+    path, or feature description that clearly belongs to that other Living UI),
+    route to THAT Living UI's task instead.
+  - If no active task matches the referenced Living UI, choose new session.
+
+Using <recent_conversation>:
+  - It tells you what was just discussed across the whole agent (not just one
+    task). Use it to disambiguate context-dependent messages — e.g., "and
+    Spanish" makes sense if the previous message was about translation.
+  - If the recent conversation shows a task topic that has already COMPLETED
+    (no longer in <existing_sessions>), prefer creating a new session over
+    routing to an unrelated active task. The completed task can't be resumed.
+  - If the recent conversation contains nothing relevant, treat the message
+    purely on its own merits per the rules above.
+
+The "agent asked a question, user is answering" case is handled
+deterministically before this prompt runs (via the waiting_for_user_reply flag).
+You do NOT need to consider it.
 </rules>
 
 <output_format>

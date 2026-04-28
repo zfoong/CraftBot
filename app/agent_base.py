@@ -10,7 +10,6 @@ or extend the protected hooks.
 CraftBot is an open-source, light version of AI agent developed by CraftOS.
 Here are the core features:
 - Todo-based task tracking
-- Can switch between CLI/GUI mode
 
 Main agent cycle:
 - Receive query from user
@@ -55,7 +54,13 @@ from agent_core.core.impl.llm.errors import classify_llm_error, LLMConsecutiveFa
 from app.vlm_interface import VLMInterface
 from app.database_interface import DatabaseInterface
 from app.logger import logger
-from agent_core import MemoryManager, MemoryPointer, MemoryFileWatcher, create_memory_processing_task
+from agent_core import (
+    MemoryManager,
+    MemoryPointer,
+    MemoryFileWatcher,
+    create_memory_processing_task,
+    WorkflowLockManager,
+)
 from app.context_engine import ContextEngine
 from app.state.state_manager import StateManager
 from app.state.agent_state import STATE
@@ -69,7 +74,12 @@ from app.gui.gui_module import GUIModule
 from app.gui.handler import GUIHandler
 from app.scheduler import SchedulerManager
 from app.proactive import initialize_proactive_manager, get_proactive_manager
-from app.ui_layer.settings.memory_settings import is_memory_enabled
+from app.ui_layer.settings.memory_settings import (
+    is_memory_enabled,
+    _parse_memory_items,
+    get_memory_max_items,
+    get_memory_prune_target,
+)
 from agent_core import profile, profile_loop, OperationCategory
 from agent_core import (
     # Registries for dependency injection
@@ -106,6 +116,7 @@ class TriggerData:
     contact_id: str | None = None  # Sender/chat ID from external platform
     channel_id: str | None = None  # Channel/group ID from external platform
     payload: dict | None = None  # Full trigger payload for passing extra data
+    living_ui_id: str | None = None  # Living UI project ID if user is on a Living UI page
 
 class AgentBase:
     """
@@ -143,7 +154,7 @@ class AgentBase:
             llm_api_key: API key for the LLM provider.
             llm_base_url: Base URL for the LLM provider (optional).
             llm_model: Model name override (None = use registry default).
-            vlm_provider: Provider name for VLM (defaults to llm_provider).
+            vlm_provider: Provider name for VLM (defaults to llm_provider if None).
             vlm_model: VLM model name override (None = use registry default).
             deferred_init: If True, allow LLM/VLM initialization to be deferred
                 until API key is configured (useful for first-time setup).
@@ -154,6 +165,9 @@ class AgentBase:
             data_dir = data_dir, chroma_path=chroma_path
         )
 
+        # Stores original task instructions keyed by session_id for LLM retry after failure
+        self._llm_retry_instructions: dict[str, str] = {}
+
         # LLM + prompt plumbing (may be deferred if API key not yet configured)
         self.llm = LLMInterface(
             provider=llm_provider,
@@ -162,11 +176,11 @@ class AgentBase:
             base_url=llm_base_url,
             deferred=deferred_init,
         )
-
         # VLM uses its own provider/model settings, falling back to LLM values
-        _vlm_provider = vlm_provider or llm_provider
-        _vlm_api_key = get_api_key(_vlm_provider) if vlm_provider else llm_api_key
-        _vlm_base_url = get_base_url(_vlm_provider) if vlm_provider else llm_base_url
+        _vlm_provider  = vlm_provider or llm_provider
+        _vlm_api_key   = get_api_key(_vlm_provider)   if vlm_provider else llm_api_key
+        _vlm_base_url  = get_base_url(_vlm_provider)  if vlm_provider else llm_base_url
+
         self.vlm = VLMInterface(
             provider=_vlm_provider,
             model=vlm_model,
@@ -200,6 +214,11 @@ class AgentBase:
         )
         self.action_router = ActionRouter(self.action_library, self.llm, self.context_engine)
 
+        # Workflow lock registry — prevents overlapping runs of named background
+        # workflows (e.g. memory processing, proactive cycle). Locks are released
+        # automatically when the owning task ends.
+        self.workflow_lock_manager = WorkflowLockManager()
+
         self.task_manager = TaskManager(
             db_interface=self.db_interface,
             event_stream_manager=self.event_stream_manager,
@@ -207,6 +226,7 @@ class AgentBase:
             llm_interface=self.llm,
             context_engine=self.context_engine,
             on_task_end_callback=self._cleanup_session_triggers,
+            workflow_lock_manager=self.workflow_lock_manager,
         )
 
         # Bind task_manager so state_manager can look up tasks by session_id
@@ -441,7 +461,11 @@ class AgentBase:
     # Memory Processing
     # =====================================
 
-    def create_process_memory_task(self) -> Optional[str]:
+    def create_process_memory_task(
+        self,
+        needs_pruning: bool = False,
+        prune_target: int = 0,
+    ) -> Optional[str]:
         """
         Create a task to process unprocessed events and move them to memory.
 
@@ -452,6 +476,7 @@ class AgentBase:
         3. Check for duplicate memories using memory_search
         4. Write important, unique events to MEMORY.md
         5. Clear processed events from EVENT_UNPROCESSED.md
+        6. If needs_pruning, run the pruning phase on MEMORY.md afterwards
 
         Returns:
             The task ID of the created task, or None if memory is disabled.
@@ -461,7 +486,10 @@ class AgentBase:
             logger.info("[MEMORY] Memory is disabled, skipping process memory task")
             return None
 
-        logger.info("[MEMORY] Creating process memory task")
+        logger.info(
+            "[MEMORY] Creating process memory task"
+            + (" with pruning phase" if needs_pruning else "")
+        )
 
         # Enable skip_unprocessed_logging to prevent infinite loops
         # (events generated during memory processing won't be added to EVENT_UNPROCESSED.md)
@@ -469,7 +497,11 @@ class AgentBase:
         self.event_stream_manager.set_skip_unprocessed_logging(True)
 
         # Create task using the memory-processor skill
-        task_id = create_memory_processing_task(self.task_manager)
+        task_id = create_memory_processing_task(
+            self.task_manager,
+            needs_pruning=needs_pruning,
+            prune_target=prune_target,
+        )
         logger.info(f"[MEMORY] Process memory task created: {task_id}")
 
         return task_id
@@ -546,41 +578,85 @@ class AgentBase:
             logger.info("[MEMORY] Memory is disabled, skipping memory processing trigger")
             return False
 
-        task_created = False
+        # Early-exit if there's nothing to process (avoid touching the lock for a no-op).
+        unprocessed_file = AGENT_FILE_SYSTEM_PATH / "EVENT_UNPROCESSED.md"
+        if not unprocessed_file.exists():
+            logger.debug("[MEMORY] EVENT_UNPROCESSED.md not found")
+            return False
 
         try:
-            # Check if there are events to process
-            unprocessed_file = AGENT_FILE_SYSTEM_PATH / "EVENT_UNPROCESSED.md"
-            if unprocessed_file.exists():
-                content = unprocessed_file.read_text(encoding="utf-8")
-                lines = content.strip().split("\n")
-                event_lines = [l for l in lines if l.strip() and l.strip().startswith("[")]
+            content = unprocessed_file.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"[MEMORY] Failed to read EVENT_UNPROCESSED.md: {e}")
+            return False
 
-                if event_lines:
-                    logger.info(f"[MEMORY] Processing {len(event_lines)} unprocessed events")
-                    task_id = self.create_process_memory_task()
+        event_lines = [
+            l for l in content.strip().split("\n")
+            if l.strip() and l.strip().startswith("[")
+        ]
+        if not event_lines:
+            logger.info("[MEMORY] No unprocessed events to process")
+            return False
 
-                    if task_id:
-                        # Queue trigger to start the task
-                        trigger = Trigger(
-                            fire_at=time.time(),
-                            priority=60,
-                            next_action_description="Process unprocessed events into long-term memory",
-                            session_id=task_id,
-                            payload={},
+        # Acquire the exclusive workflow lock. If another memory-processing task
+        # is still running (e.g. a slow prior run when 3am fires), skip this
+        # trigger — the lock is released automatically by TaskManager._end_task.
+        if not await self.workflow_lock_manager.try_acquire("memory_processing"):
+            logger.info(
+                "[MEMORY] memory_processing workflow already active; skipping trigger"
+            )
+            return False
+
+        try:
+            # Count items in MEMORY.md to decide whether the pruning phase
+            # should run alongside event processing.
+            max_items = get_memory_max_items()
+            needs_pruning = False
+            memory_file = AGENT_FILE_SYSTEM_PATH / "MEMORY.md"
+            if memory_file.exists():
+                try:
+                    memory_items = _parse_memory_items(
+                        memory_file.read_text(encoding="utf-8")
+                    )
+                    if len(memory_items) >= max_items:
+                        needs_pruning = True
+                        logger.info(
+                            f"[MEMORY] MEMORY.md has {len(memory_items)} items "
+                            f"(>= {max_items}); pruning phase will run"
                         )
-                        await self.triggers.put(trigger)
-                        logger.info(f"[MEMORY] Queued trigger for memory processing task: {task_id}")
-                        task_created = True
-                else:
-                    logger.info("[MEMORY] No unprocessed events to process")
-            else:
-                logger.debug("[MEMORY] EVENT_UNPROCESSED.md not found")
+                except Exception as e:
+                    logger.warning(f"[MEMORY] Failed to count MEMORY.md items: {e}")
+
+            logger.info(f"[MEMORY] Processing {len(event_lines)} unprocessed events")
+            task_id = self.create_process_memory_task(
+                needs_pruning=needs_pruning,
+                prune_target=get_memory_prune_target(),
+            )
+
+            if not task_id:
+                # Task was not created (e.g. memory disabled mid-trigger). Release
+                # the lock so the next trigger can try again.
+                await self.workflow_lock_manager.release("memory_processing")
+                return False
+
+            # Queue trigger to start the task. Lock is now owned by the task and
+            # will be released by TaskManager when the task ends.
+            trigger = Trigger(
+                fire_at=time.time(),
+                priority=60,
+                next_action_description="Process unprocessed events into long-term memory",
+                session_id=task_id,
+                payload={},
+            )
+            await self.triggers.put(trigger)
+            logger.info(f"[MEMORY] Queued trigger for memory processing task: {task_id}")
+            return True
 
         except Exception as e:
+            # Anything went wrong before the task took ownership — release the lock.
             logger.warning(f"[MEMORY] Failed to process memory: {e}")
-
-        return task_created
+            await self.workflow_lock_manager.release("memory_processing")
+            return False
 
     # =====================================
     # Workflow Routing
@@ -605,6 +681,7 @@ class AgentBase:
             contact_id=payload.get("contact_id", ""),
             channel_id=payload.get("channel_id", ""),
             payload=payload,
+            living_ui_id=payload.get("living_ui_id"),
         )
 
     def _extract_user_message_from_trigger(self, trigger: Trigger) -> Optional[str]:
@@ -1250,9 +1327,22 @@ class AgentBase:
                     f"[REACT ERROR] LLMConsecutiveFailureError detected - cancelling task {session_to_use} "
                     "to prevent infinite retry loop."
                 )
+                # Cache instruction BEFORE cancellation removes task from tasks dict
+                failed_task = self.task_manager.tasks.get(session_to_use) if self.task_manager else None
+                if failed_task:
+                    self._llm_retry_instructions[session_to_use] = failed_task.instruction
                 if self.task_manager:
                     await self.task_manager.mark_task_cancel(
                         reason="LLM calls failed too many consecutive times. Task aborted."
+                    )
+                if self.ui_controller:
+                    from app.ui_layer.events import UIEvent, UIEventType
+                    self.ui_controller.event_bus.emit(
+                        UIEvent(
+                            type=UIEventType.LLM_FATAL_ERROR,
+                            data={"session_id": session_to_use},
+                            task_id=session_to_use,
+                        )
                     )
             else:
                 await self._create_new_trigger(session_to_use, action_output, STATE)
@@ -1508,6 +1598,21 @@ class AgentBase:
                 task_id=session_id,
             )
 
+    async def handle_llm_retry(self, session_id: str) -> None:
+        """Retry the original task after a fatal LLM failure. Resets the failure counter and re-submits."""
+        instruction = self._llm_retry_instructions.pop(session_id, None)
+        if not instruction:
+            logger.warning(f"[LLM_RETRY] Cannot retry: no cached instruction for session {session_id}")
+            return
+
+        try:
+            self.llm.reset_failure_counter()
+        except Exception as e:
+            logger.debug(f"[LLM_RETRY] Could not reset failure counter: {e}")
+
+        if self.ui_controller:
+            await self.ui_controller.submit_message(instruction)
+
     # ----- Trigger Management -----
 
     async def _cleanup_session_triggers(self, session_id: str) -> None:
@@ -1691,6 +1796,25 @@ class AgentBase:
 
             lines.append(f"Platform: {platform}")
 
+            # Add Living UI context if the user is on a Living UI page
+            living_ui_id = trigger.payload.get("living_ui_id") if trigger else None
+            if living_ui_id:
+                lines.append(f"Living UI ID: {living_ui_id}")
+                try:
+                    from app.living_ui import get_living_ui_manager
+                    mgr = get_living_ui_manager()
+                    if mgr:
+                        proj = mgr.get_project(living_ui_id)
+                        if proj:
+                            lines.append(f"Living UI Name: {proj.name}")
+                            lines.append(f"Living UI Path: {proj.path}")
+                            lines.append(f"  Read {proj.path}/LIVING_UI.md for app context")
+                            lines.append(f"  If debugging issues, FIRST read these logs:")
+                            lines.append(f"    - {proj.path}/backend/logs/subprocess_output.log (crashes, stack traces)")
+                            lines.append(f"    - {proj.path}/backend/logs/frontend_console.log (frontend errors, network failures)")
+                except Exception:
+                    pass
+
             sections.append("\n".join(lines))
 
         return "\n\n".join(sections)
@@ -1764,7 +1888,8 @@ class AgentBase:
         item_content: str,
         existing_sessions: str,
         source_platform: str = "default",
-        recent_conversation: str = "No recent conversation history.",
+        current_living_ui_id: Optional[str] = None,
+        recent_conversation: str = "(no recent conversation)",
     ) -> Dict[str, Any]:
         """Route incoming item to appropriate session using unified prompt.
 
@@ -1773,7 +1898,13 @@ class AgentBase:
             item_content: The content of the message or trigger description
             existing_sessions: Formatted string of existing sessions
             source_platform: The platform the message came from (e.g., "cli", "gui")
-            recent_conversation: Formatted string of recent conversation messages
+            current_living_ui_id: The Living UI page the user is currently viewing,
+                if any. Used by the prompt to default context-dependent messages
+                ("fix this", "it's broken") to that Living UI's task while still
+                allowing explicit cross-Living-UI references to override.
+            recent_conversation: Formatted recent messages across sessions for
+                cross-session context (helps disambiguate "and Spanish" style
+                continuations and references to completed tasks).
 
         Returns:
             Dict with routing decision containing:
@@ -1786,6 +1917,7 @@ class AgentBase:
             item_content=item_content,
             source_platform=source_platform,
             existing_sessions=existing_sessions,
+            current_living_ui_id=current_living_ui_id or "(not on a Living UI page)",
             recent_conversation=recent_conversation,
         )
 
@@ -1806,229 +1938,288 @@ class AgentBase:
             logger.error("[ROUTING] Failed to parse routing response JSON")
             return {"action": "new", "session_id": "new", "reason": "Failed to parse routing response"}
 
-    async def _handle_chat_message(self, payload: Dict):
+    # ─────────────────────────────────────────────────────────────────────
+    # Chat routing helpers
+    # ─────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_living_ui_prefix(living_ui_id: str) -> str:
+        """Build the Living UI context prefix string prepended to a new session's
+        first message. Falls back to a minimal `[Living UI: {id}]` tag if the
+        Living UI manager / project lookup is unavailable."""
         try:
-            user_input: str = payload.get("text", "")
-            if not user_input:
+            from app.living_ui import get_living_ui_manager
+            mgr = get_living_ui_manager()
+            if mgr:
+                proj = mgr.get_project(living_ui_id)
+                if proj:
+                    return (
+                        f"[Living UI: {proj.name} ({living_ui_id}) | "
+                        f"Path: {proj.path} | "
+                        f"Read {proj.path}/LIVING_UI.md for app context]"
+                        f"  If debugging issues, FIRST read these logs:"
+                        f"    - {proj.path}/backend/logs/subprocess_output.log (crashes, stack traces)"
+                        f"    - {proj.path}/backend/logs/frontend_console.log (frontend errors, network failures)"
+                    )
+        except Exception:
+            pass
+        return f"[Living UI: {living_ui_id}]"
+
+    def _post_third_party_notification(self, payload: Dict, platform: str) -> None:
+        """Post a deterministic notification about a third-party external message
+        to the main event stream. No session, no trigger, no LLM."""
+        source = payload.get("source") or platform
+        contact_name = payload.get("contact_name") or payload.get("contact_id") or "unknown sender"
+        message_body = payload.get("message_body") or ""
+        preview = message_body.strip()
+        if len(preview) > 500:
+            preview = preview[:500] + "…"
+        notification = (
+            f"📧 New {source} message from {contact_name}"
+            f"{(': ' + preview) if preview else ''}\n\n"
+            f"Reply here if you'd like me to do anything with it."
+        )
+        self.event_stream_manager.get_main_stream().log(
+            "agent message to platform: CraftBot Interface",
+            notification,
+            display_message=notification,
+        )
+        self.state_manager._append_to_conversation_history("agent", notification)
+        self.state_manager.bump_event_stream()
+
+    async def _fire_session(
+        self,
+        session_id: str,
+        chat_content: str,
+        platform: str,
+        living_ui_id: Optional[str],
+    ) -> bool:
+        """Fire a trigger on an existing session and update task/UI state.
+
+        Returns True if the trigger was found and fired, False otherwise.
+        """
+        fired = await self.triggers.fire(
+            session_id, message=chat_content, platform=platform,
+            living_ui_id=living_ui_id,
+        )
+        if not fired:
+            return False
+
+        # Reset waiting-for-reply flag and update source platform
+        if self.task_manager:
+            task = self.task_manager.tasks.get(session_id)
+            if task:
+                if task.waiting_for_user_reply:
+                    task.waiting_for_user_reply = False
+                    logger.info(f"[TASK] Task {session_id} no longer waiting for user reply")
+                if platform and task.source_platform != platform:
+                    logger.info(
+                        f"[TASK] Task {session_id} source_platform switched "
+                        f"from {task.source_platform!r} to {platform!r}"
+                    )
+                    task.source_platform = platform
+
+        # UI status: this task back to running, agent state to working if
+        # nothing else is waiting.
+        if self.ui_controller:
+            from app.ui_layer.events import UIEvent, UIEventType
+            self.ui_controller.event_bus.emit(
+                UIEvent(
+                    type=UIEventType.TASK_UPDATE,
+                    data={"task_id": session_id, "status": "running"},
+                )
+            )
+            triggers = await self.triggers.list_triggers()
+            has_waiting_tasks = any(
+                getattr(t, "waiting_for_reply", False)
+                for t in triggers
+                if t.session_id != session_id
+            )
+            if not has_waiting_tasks:
+                self.ui_controller.event_bus.emit(
+                    UIEvent(
+                        type=UIEventType.AGENT_STATE_CHANGED,
+                        data={
+                            "state": "working",
+                            "status_message": "Agent is working...",
+                        },
+                    )
+                )
+        return True
+
+    async def _create_new_session_trigger(
+        self,
+        chat_content: str,
+        payload: Dict,
+        platform: str,
+        gui_mode: Optional[bool],
+    ) -> None:
+        """Start a new session and queue a trigger to handle this message."""
+        await self.state_manager.start_session(gui_mode)
+
+        # Prepend Living UI context to the message if the user is on a Living UI page.
+        living_ui_id = payload.get("living_ui_id")
+        if living_ui_id:
+            chat_content = f"{self._build_living_ui_prefix(living_ui_id)}\n{chat_content}"
+
+        # Log the user message to MAIN stream (not the active task's stream) and skip
+        # record_conversation_message. state_manager.record_user_message would fall
+        # back to self.task.id (the currently-running task) when no session_id is
+        # passed and would also push the message into the global _conversation_history,
+        # which gets re-injected into every active task's <conversation_history>
+        # prompt block — causing the active task to see and act on a message that
+        # was meant for a brand-new session. The trigger description below already
+        # carries the message into the new session, so nothing is lost.
+        event_label = f"user message from platform: {platform}" if platform else "user message"
+        self.event_stream_manager.get_main_stream().log(
+            event_label, chat_content, display_message=chat_content,
+        )
+        self.state_manager._append_to_conversation_history("user", chat_content)
+        self.state_manager.bump_event_stream()
+
+        trigger_payload = {
+            "gui_mode": gui_mode,
+            "platform": platform,
+            "user_message": chat_content,
+        }
+        if payload.get("living_ui_id"):
+            trigger_payload["living_ui_id"] = payload["living_ui_id"]
+        if payload.get("external_event"):
+            trigger_payload["is_self_message"] = payload.get("is_self_message", False)
+            trigger_payload["contact_id"] = payload.get("contact_id", "")
+            trigger_payload["channel_id"] = payload.get("channel_id", "")
+        if payload.get("pre_selected_skills"):
+            trigger_payload["pre_selected_skills"] = payload["pre_selected_skills"]
+
+        # Steer the action-selection LLM to use the right platform-specific
+        # send action when replying.
+        platform_hint = ""
+        if platform and platform.lower() != "craftbot interface":
+            platform_hint = f" from {platform} (reply on {platform}, NOT send_message)"
+
+        await self.triggers.put(
+            Trigger(
+                fire_at=time.time(),
+                priority=3,
+                next_action_description=(
+                    "Please perform action that best suit this user chat "
+                    f"you just received{platform_hint}: {chat_content}"
+                ),
+                session_id=await self._generate_unique_session_id(),
+                payload=trigger_payload,
+            ),
+            skip_merge=True,
+        )
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Chat message entry point
+    # ─────────────────────────────────────────────────────────────────────
+
+    async def _handle_chat_message(self, payload: Dict):
+        """Decide where an incoming chat message goes.
+
+        Layered routing rules (deterministic first, LLM only as last resort):
+          1. Third-party external (no is_self_message): post notification, done.
+          2. UI reply with valid target_session_id: fire that session.
+          3. UI reply marker without valid target: new session, reply context
+             stays embedded in the message text.
+          4. Exactly one task is waiting_for_user_reply: fire that one.
+          5. Active tasks exist and message is genuinely ambiguous: routing LLM
+             with conservative prompt (defaults to new session). Handles Living
+             UI cross-references — chat is global, so a message about Living UI
+             B while viewing Living UI A should still route to B's task.
+          6. Default: new session.
+
+        Routing only decides *where* the message goes. The new session's first
+        action-selection LLM still picks send_message / task_start(simple) /
+        task_start(complex) as appropriate.
+        """
+        try:
+            chat_content = payload.get("text", "")
+            if not chat_content:
                 logger.warning("Received empty message.")
                 return
 
-            chat_content = user_input
             logger.info(f"[CHAT RECEIVED] {chat_content}")
 
-            # clear any stuck consecutive-failure state from a prior aborted task so the next
-            # LLM call actually hits the provider instead of short-circuiting.
+            # Clear any stuck consecutive-failure state from a prior aborted task.
             try:
                 self.llm.reset_failure_counter()
             except Exception as e:
                 logger.debug(f"[CHAT] Could not reset LLM failure counter: {e}")
 
             gui_mode = payload.get("gui_mode")
-
-            # Determine platform - use payload's platform if available, otherwise default
-            # External messages (WhatsApp, Telegram, etc.) have platform set by _handle_external_event
-            # Interface/CLI messages don't have platform in payload, so use "CraftBot Interface"
-            if payload.get("platform"):
-                # External message - capitalize for display (e.g., "whatsapp" -> "Whatsapp")
-                platform = payload["platform"].capitalize()
-            else:
-                # Local Interface/CLI message
-                platform = "CraftBot Interface"
-
-            # Direct reply bypass - skip routing LLM when target_session_id is provided
+            platform = payload["platform"].capitalize() if payload.get("platform") else "CraftBot Interface"
             target_session_id = payload.get("target_session_id")
-            if target_session_id:
-                logger.info(f"[CHAT] Direct reply to session {target_session_id}")
+            living_ui_id = payload.get("living_ui_id")
 
-                # Fire the target trigger directly, bypassing routing LLM
-                fired = await self.triggers.fire(
-                    target_session_id, message=chat_content, platform=platform
-                )
+            # ── Rule 1: Third-party external message → notification only.
+            if payload.get("external_event") is True and not payload.get("is_self_message", False):
+                logger.info(f"[CHAT] Third-party external from {platform} — posting notification, no session")
+                self._post_third_party_notification(payload, platform)
+                return
 
-                if fired:
-                    logger.info(f"[CHAT] Successfully resumed session {target_session_id}")
-
-                    # Reset task's waiting_for_user_reply flag
-                    if self.task_manager:
-                        task = self.task_manager.tasks.get(target_session_id)
-                        if task and task.waiting_for_user_reply:
-                            task.waiting_for_user_reply = False
-                            logger.info(f"[TASK] Task {target_session_id} no longer waiting for user reply")
-
-                    # Reset task status from "waiting" to "running" when user replies
-                    if self.ui_controller:
-                        from app.ui_layer.events import UIEvent, UIEventType
-
-                        self.ui_controller.event_bus.emit(
-                            UIEvent(
-                                type=UIEventType.TASK_UPDATE,
-                                data={
-                                    "task_id": target_session_id,
-                                    "status": "running",
-                                },
-                            )
-                        )
-
-                        # Check if there are still other tasks waiting
-                        triggers = await self.triggers.list_triggers()
-                        has_waiting_tasks = any(
-                            getattr(t, 'waiting_for_reply', False)
-                            for t in triggers
-                            if t.session_id != target_session_id
-                        )
-                        if not has_waiting_tasks:
-                            self.ui_controller.event_bus.emit(
-                                UIEvent(
-                                    type=UIEventType.AGENT_STATE_CHANGED,
-                                    data={
-                                        "state": "working",
-                                        "status_message": "Agent is working...",
-                                    },
-                                )
-                            )
-
-                    return  # Task will resume with user message in event stream
-
-                # If fire() returns False, no waiting trigger found for this session
-                # Fall through to normal routing (conversation mode)
-                logger.warning(
-                    f"[CHAT] Session {target_session_id} not found or expired, falling through to normal routing"
-                )
-
-            # Check active tasks — route message to matching session if possible
-            # Use active_task_ids from state_manager (not just triggers in queue) to ensure
-            # all running tasks are visible for routing, not just those waiting in queue
             active_task_ids = self.state_manager.get_main_state().active_task_ids
-            triggers = await self.triggers.list_triggers()  # Still get triggers for waiting_for_reply status
 
+            # ── Rule 2: Explicit UI reply with valid target_session_id.
+            if target_session_id:
+                logger.info(f"[CHAT] UI reply targeting session {target_session_id}")
+                if await self._fire_session(target_session_id, chat_content, platform, living_ui_id):
+                    return
+                logger.warning(
+                    f"[CHAT] target_session_id {target_session_id} not found — falling through to next rule"
+                )
+
+            # ── Rule 3: UI reply marker present but no valid target → new session.
+            # User replied to a main-stream message (notification, conversation reply, etc).
+            # The reply context stays embedded in chat_content via the marker block.
+            if "[REPLYING TO PREVIOUS AGENT MESSAGE]:" in chat_content:
+                logger.info("[CHAT] UI reply marker without valid target — creating new session")
+                await self._create_new_session_trigger(chat_content, payload, platform, gui_mode)
+                return
+
+            # ── Rule 4: Exactly one task is waiting_for_user_reply.
+            waiting_session_ids = []
+            if self.task_manager:
+                for tid in active_task_ids:
+                    task = self.task_manager.tasks.get(tid)
+                    if task and getattr(task, "waiting_for_user_reply", False):
+                        waiting_session_ids.append(tid)
+            if len(waiting_session_ids) == 1:
+                sid = waiting_session_ids[0]
+                logger.info(f"[CHAT] Routing to single waiting session {sid}")
+                if await self._fire_session(sid, chat_content, platform, living_ui_id):
+                    return
+
+            # ── Rule 5: Active tasks exist and signal is ambiguous → conservative routing LLM.
+            # Also handles Living UI cross-references: chat is global, so a message
+            # explicitly about Living UI B while viewing Living UI A should still
+            # route to B's task. The LLM sees each session's Living UI binding and
+            # the user's current Living UI to decide.
             if active_task_ids:
-                # Use unified routing prompt with rich task context
-                existing_sessions = self._format_sessions_for_routing(active_task_ids, triggers)
+                active_triggers = await self.triggers.list_triggers()
+                existing_sessions = self._format_sessions_for_routing(active_task_ids, active_triggers)
                 recent_conversation = self._format_recent_conversation(limit=10)
                 routing_result = await self._route_to_session(
                     item_type="message",
                     item_content=chat_content,
                     existing_sessions=existing_sessions,
                     source_platform=platform,
+                    current_living_ui_id=living_ui_id,
                     recent_conversation=recent_conversation,
                 )
-
-                action = routing_result.get("action", "new")
-
-                if action == "route":
-                    matched_session_id = routing_result.get("session_id", "new")
-                    if matched_session_id != "new":
-                        # Fire the matched trigger so it gets priority,
-                        # and attach the new user message so react() sees it.
-                        # This also works for active triggers (being processed).
-                        fired = await self.triggers.fire(
-                            matched_session_id, message=chat_content, platform=platform
-                        )
+                if routing_result.get("action") == "route":
+                    matched = routing_result.get("session_id", "new")
+                    if matched != "new":
                         logger.info(
-                            f"[CHAT] Routed message to existing session {matched_session_id} "
-                            f"(fired={fired}, reason: {routing_result.get('reason', 'N/A')})"
+                            f"[CHAT] LLM routed to {matched}: {routing_result.get('reason', 'N/A')}"
                         )
+                        if await self._fire_session(matched, chat_content, platform, living_ui_id):
+                            return
+                        logger.warning(f"[CHAT] LLM routed to {matched} but trigger not found — creating new session")
 
-                        # Reset task's waiting_for_user_reply flag and switch source_platform
-                        # so subsequent outbound messages route to the platform the user is now on.
-                        if self.task_manager:
-                            task = self.task_manager.tasks.get(matched_session_id)
-                            if task:
-                                if task.waiting_for_user_reply:
-                                    task.waiting_for_user_reply = False
-                                    logger.info(f"[TASK] Task {matched_session_id} no longer waiting for user reply")
-                                if platform and task.source_platform != platform:
-                                    logger.info(
-                                        f"[TASK] Task {matched_session_id} source_platform switched "
-                                        f"from {task.source_platform!r} to {platform!r}"
-                                    )
-                                    task.source_platform = platform
-
-                        # Reset task status from "waiting" to "running" when user replies
-                        # Update UI regardless of fire() result - user has replied so we should
-                        # acknowledge it. If fire() failed, the task may be stale but we still
-                        # want to reset the waiting indicator.
-                        if self.ui_controller:
-                            from app.ui_layer.events import UIEvent, UIEventType
-
-                            self.ui_controller.event_bus.emit(
-                                UIEvent(
-                                    type=UIEventType.TASK_UPDATE,
-                                    data={
-                                        "task_id": matched_session_id,
-                                        "status": "running",
-                                    },
-                                )
-                            )
-
-                            # Check if there are still other tasks waiting
-                            # If not, update global agent state back to working
-                            triggers = await self.triggers.list_triggers()
-                            has_waiting_tasks = any(
-                                getattr(t, 'waiting_for_reply', False)
-                                for t in triggers
-                                if t.session_id != matched_session_id
-                            )
-                            if not has_waiting_tasks:
-                                self.ui_controller.event_bus.emit(
-                                    UIEvent(
-                                        type=UIEventType.AGENT_STATE_CHANGED,
-                                        data={
-                                            "state": "working",
-                                            "status_message": "Agent is working...",
-                                        },
-                                    )
-                                )
-
-                        if not fired:
-                            logger.warning(
-                                f"[CHAT] Trigger not found for session {matched_session_id} - "
-                                "message may not be delivered to task"
-                            )
-
-                        # Always trust routing decision - don't create new session
-                        return
-
-            # No existing triggers matched or action == "new" — create a fresh session
-            await self.state_manager.start_session(gui_mode)
-            self.state_manager.record_user_message(chat_content, platform=platform)
-
-            # skip_merge=True because we already did routing above
-            trigger_payload = {
-                "gui_mode": gui_mode,
-                "platform": platform,
-                "user_message": chat_content,  # Original user message for task event stream
-            }
-            # Carry external message context for platform-aware routing
-            if payload.get("external_event"):
-                trigger_payload["is_self_message"] = payload.get("is_self_message", False)
-                trigger_payload["contact_id"] = payload.get("contact_id", "")
-                trigger_payload["channel_id"] = payload.get("channel_id", "")
-
-            # Carry pre-selected skills from skill slash commands (e.g., /pdf, /docx)
-            if payload.get("pre_selected_skills"):
-                trigger_payload["pre_selected_skills"] = payload["pre_selected_skills"]
-
-            # Include platform in the action description so the LLM picks
-            # the correct platform-specific send action for replies.
-            # Must be directive (not just informational) for weaker LLMs.
-            platform_hint = ""
-            if platform and platform.lower() != "craftbot interface":
-                platform_hint = f" from {platform} (reply on {platform}, NOT send_message)"
-
-            await self.triggers.put(
-                Trigger(
-                    fire_at=time.time(),
-                    priority=3,
-                    next_action_description=(
-                        "Please perform action that best suit this user chat "
-                        f"you just received{platform_hint}: {chat_content}"
-                    ),
-                    session_id=await self._generate_unique_session_id(),
-                    payload=trigger_payload,
-                ),
-                skip_merge=True,
-            )
+            # ── Rule 6: Default — create a new session.
+            await self._create_new_session_trigger(chat_content, payload, platform, gui_mode)
 
         except Exception as e:
             logger.error(f"Error handling incoming message: {e}", exc_info=True)
@@ -2140,6 +2331,10 @@ class AgentBase:
                 "channel_id": channel_id,
                 "channel_name": channel_name,
                 "message_context": message_context,
+                # Raw fields for the third-party direct-notification path so it can
+                # build a clean user-facing message without parsing the LLM wrapper.
+                "source": source,
+                "message_body": message_body,
             })
 
         except Exception as e:
@@ -2177,7 +2372,7 @@ class AgentBase:
         Note: Call `self._get_interface_capabilities_prompt()` and append it to include
         interface-specific capabilities (e.g., file attachment support in browser mode).
         """
-        base_prompt = "You are a general computer-use AI agent that can switch between CLI/GUI mode."
+        base_prompt = "You are a general computer-use AI agent."
         return base_prompt + self._get_interface_capabilities_prompt()
 
     def _build_db_interface(self, *, data_dir: str, chroma_path: str):
@@ -3035,6 +3230,14 @@ class AgentBase:
             # Shutdown scheduler (handles all periodic tasks including memory processing)
             self.is_running = False
             await self.scheduler.shutdown()
+            # Stop all Living UI projects (kill backend/frontend processes)
+            try:
+                from app.living_ui import get_living_ui_manager
+                lui_mgr = get_living_ui_manager()
+                if lui_mgr:
+                    await lui_mgr.stop_all_projects()
+            except Exception as e:
+                logger.warning(f"[SHUTDOWN] Living UI cleanup error: {e}")
             # Gracefully shutdown MCP connections
             await self._shutdown_mcp()
             # Stop external communications

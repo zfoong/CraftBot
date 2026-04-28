@@ -1,6 +1,28 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
+import { broadcastThemeToIframes } from '../pages/LivingUI/iframePool'
 
 type Theme = 'dark' | 'light'
+
+// Collect resolved CSS variable values from the main document
+function collectCSSVars(): Record<string, string> {
+  const style = getComputedStyle(document.documentElement)
+  const names = [
+    '--bg-primary', '--bg-secondary', '--bg-tertiary', '--bg-elevated', '--bg-hover',
+    '--text-primary', '--text-secondary', '--text-tertiary', '--text-muted',
+    '--border-primary', '--border-secondary', '--border-hover',
+    '--color-primary', '--color-primary-hover', '--color-primary-light', '--color-primary-subtle',
+    '--color-success', '--color-warning', '--color-error', '--color-info',
+    '--shadow-sm', '--shadow-md', '--shadow-lg',
+    '--font-sans', '--font-mono',
+    '--radius-sm', '--radius-md', '--radius-lg', '--radius-xl',
+  ]
+  const vars: Record<string, string> = {}
+  names.forEach(n => {
+    const v = style.getPropertyValue(n).trim()
+    if (v) vars[n] = v
+  })
+  return vars
+}
 
 interface ThemeContextType {
   theme: Theme
@@ -24,6 +46,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem(STORAGE_KEY, theme)
+    // Give browser one frame to resolve CSS variables, then broadcast to iframes
+    requestAnimationFrame(() => {
+      broadcastThemeToIframes(theme, collectCSSVars())
+    })
   }, [theme])
 
   // Listen for localStorage changes from Settings page
@@ -43,6 +69,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     window.addEventListener('storage', handleStorageChange)
     return () => window.removeEventListener('storage', handleStorageChange)
   }, [])
+
+  // Respond to theme-request messages from iframe children on load
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data?.type === 'craftbot-theme-request' && e.source) {
+        try {
+          ;(e.source as WindowProxy).postMessage(
+            { type: 'craftbot-theme', theme, cssVars: collectCSSVars() },
+            '*'
+          )
+        } catch (_) {}
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [theme])
 
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme)

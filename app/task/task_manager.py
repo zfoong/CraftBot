@@ -6,8 +6,14 @@ Thin wrapper around the shared agent_core TaskManager. CraftBot uses the
 STATE singleton for state access and per-task event streams for multi-tasking.
 """
 
-from typing import Awaitable, Callable, List, Optional, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING
 from pathlib import Path
+
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 from agent_core.core.impl.task import TaskManager as _TaskManager
 from agent_core.core.task import Task
@@ -21,6 +27,13 @@ from app.logger import logger
 if TYPE_CHECKING:
     from app.llm import LLMInterface
     from app.context_engine import ContextEngine
+    from agent_core.core.impl.workflow_lock import WorkflowLockManager
+
+
+# Hook signature: (active_task, updated_todos_as_dicts) -> None.
+# Fires after every update_todos call, regardless of transitions, so
+# subscribers see the initial all-pending plan as well as later updates.
+PostUpdateTodosHook = Callable[[Task, List[Dict[str, Any]]], None]
 
 
 def _get_gui_mode() -> bool:
@@ -91,7 +104,10 @@ class TaskManager(_TaskManager):
         llm_interface: Optional["LLMInterface"] = None,
         context_engine: Optional["ContextEngine"] = None,
         on_task_end_callback: Optional[Callable[[str], Awaitable[None]]] = None,
+        workflow_lock_manager: Optional["WorkflowLockManager"] = None,
     ):
+        self._post_update_todos_hooks: List[PostUpdateTodosHook] = []
+
         super().__init__(
             db_interface=db_interface,
             event_stream_manager=event_stream_manager,
@@ -114,11 +130,40 @@ class TaskManager(_TaskManager):
             on_task_persist=_on_task_persist,
             on_task_remove_persist=_on_task_remove_persist,
             # No chatserver hooks for CraftBot (local only)
+            # No chatserver hooks for CraftBot (local only).
             on_task_created_chatserver=None,
             on_todo_transition=None,
             on_task_ended_chatserver=None,
             finalize_todos_chatserver=None,
+            # Workflow lock registry for auto-release on task end
+            workflow_lock_manager=workflow_lock_manager,
         )
 
+    def add_post_update_todos_hook(self, hook: PostUpdateTodosHook) -> None:
+        """Register a hook that fires after every update_todos call.
 
-__all__ = ["TaskManager"]
+        Use this to observe todo changes without coupling domain-specific
+        logic into TaskManager. Each hook receives the active Task and the
+        updated todo list (as dicts).
+        """
+        self._post_update_todos_hooks.append(hook)
+
+    def update_todos(self, todos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Update todos, then notify registered post-update hooks.
+
+        We override (rather than using the parent's on_todo_transition) because
+        that hook fires only on status changes — the initial plan where every
+        item is 'pending' produces zero transitions and subscribers would miss
+        the first snapshot.
+        """
+        result = super().update_todos(todos)
+        if self.active and self._post_update_todos_hooks:
+            for hook in self._post_update_todos_hooks:
+                try:
+                    hook(self.active, result)
+                except Exception as e:
+                    logger.warning(f"[TaskManager] post_update_todos hook failed: {e}")
+        return result
+
+
+__all__ = ["TaskManager", "PostUpdateTodosHook"]

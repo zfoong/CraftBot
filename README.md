@@ -6,13 +6,14 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/OS-Windows-blue?logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/OS-macOS-lightgrey?logo=apple&logoColor=white" alt="macOS">
   <img src="https://img.shields.io/badge/OS-Linux-yellow?logo=linux&logoColor=black" alt="Linux">
-  
-  <a href="https://github.com/zfoong/CraftBot">
-    <img src="https://img.shields.io/github/stars/zfoong/CraftBot?style=social" alt="GitHub Repo stars">
+
+  <a href="https://github.com/CraftOS-dev/CraftBot">
+    <img src="https://img.shields.io/github/stars/CraftOS-dev/CraftBot?style=social" alt="GitHub Repo stars">
   </a>
 
-  <img src="https://img.shields.io/github/license/zfoong/CraftBot" alt="License">
+  <img src="https://img.shields.io/github/license/CraftOS-dev/CraftBot" alt="License">
 
   <a href="https://discord.gg/ZN9YHc37HG">
     <img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Discord">
@@ -21,10 +22,12 @@
 <br/>
 
 [![SPONSORED BY E2B FOR STARTUPS](https://img.shields.io/badge/SPONSORED%20BY-E2B%20FOR%20STARTUPS-ff8800?style=for-the-badge)](https://e2b.dev/startups)
+
+<a href="https://www.producthunt.com/products/craftbot?embed=true&amp;utm_source=badge-top-post-badge&amp;utm_medium=badge&amp;utm_campaign=badge-craftbot" target="_blank" rel="noopener noreferrer"><img alt="CraftBot - Self-hosted proactive AI assistant that lives locally | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/top-post-badge.svg?post_id=1110300&amp;theme=dark&amp;period=daily&amp;t=1776679679509"></a>
 </div>
 
 <p align="center">
-  <a href="README.ja.md"> 日本語版はこちら</a> | <a href="README.cn.md"> 中文版README </a>
+  <a href="README.ja.md">日本語</a> | <a href="README.cn.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a> | <a href="README.pt-BR.md">Português</a> | <a href="README.fr.md">Français</a> | <a href="README.de.md">Deutsch</a>
 </p>
 
 ## 🚀 Overview
@@ -49,13 +52,14 @@ CraftBot awaits your orders. Set up your own CraftBot now.
 - **Bring Your Own Key (BYOK)** — Flexible LLM provider system supporting OpenAI, Google Gemini, Anthropic Claude, BytePlus, and local Ollama models. Easily switch between providers.
 - **Memory System** — Distill and consolidate events that happened through the day at midnight.
 - **Proactive Agent** — Learn your preferences, habits, and life goals. Then, perform planning and initiate tasks (with approval, of course) to help you improve in life.
+- **Living UI** — Build, import, or evolve custom apps that live inside CraftBot. The agent stays aware of the UI's state and can read, write, and act on its data directly.
 - **External Tools Integration** — Connect to Google Workspace, Slack, Notion, Zoom, LinkedIn, Discord, and Telegram (more to come!) with embedded credentials and OAuth support.
 - **MCP** — Model Context Protocol integration for extending agent capabilities with external tools and services.
 - **Skills** — Extensible skill framework with built-in skills for task planning, research, code review, git operations, and more.
-- **Cross-Platform** — Full support for Windows and Linux with platform-specific code variants and Docker containerization.
+- **Cross-Platform** — Full support for Windows, macOS, and Linux with platform-specific code variants and Docker containerization.
 
 > [!IMPORTANT]
-> **Note for GUI mode:** The GUI mode is still in experimental phase. This means you may encounter issues when the agent switches to GUI mode. We are actively improving this feature.
+> **GUI mode is deprecated.** CraftBot no longer supports GUI (desktop automation) mode. Please use Browser, TUI, or CLI mode instead.
 
 <div align="center">
     <img src="assets/craftbot_readme_features.png" alt="CraftBot Banner" width="1280"/>
@@ -71,26 +75,107 @@ CraftBot awaits your orders. Set up your own CraftBot now.
 - Python **3.10+**
 - `git` (required to clone the repository)
 - An API key for your chosen LLM provider (OpenAI, Gemini, or Anthropic)
-- `Node.js` **18+** (optional - only required for browser interface)
-- `conda` (optional - if not found, installer offers to auto-install Miniconda)
+- `Node.js` **18+** (optional — only required for browser interface)
+- `conda` (optional — only required for the conda setup path)
 
-### Quick Install
+---
+
+### Which setup should I use?
+
+> **Not sure? Use Option 1.** It handles everything for you.
+
+| | Option 1 — Service | Option 2 — Conda | Option 3 — Manual |
+|---|---|---|---|
+| **Who it's for** | Most users, first-timers, testing | Conda users who want isolated envs | Power users, custom Python, full control |
+| **Manages Python & env?** | ✅ Automatic | ✅ Automatic | ❌ You manage it |
+| **Runs in background?** | ✅ Yes, as a service | ❌ No | ❌ No |
+| **How to start** | `python craftbot.py install` | `python install.py --conda` | `python install.py` |
+
+---
+
+### ⭐ Option 1 — Service Install (Recommended)
+
+**Use this if:** you want CraftBot to just work — background service, auto-start on login, desktop shortcut, no manual steps.
+
+`craftbot.py` handles everything: Python environment, dependencies, background process management, and auto-start registration.
 
 ```bash
-# Clone the repository
-git clone https://github.com/zfoong/CraftBot.git
+# 1. Clone the repository
+git clone https://github.com/CraftOS-dev/CraftBot.git
 cd CraftBot
 
-# Install dependencies
+# 2. Install, register auto-start, and launch CraftBot
+python craftbot.py install
+```
+
+That's it. The terminal closes itself, CraftBot runs in the background, and the browser opens automatically. A **desktop shortcut** is created so you can reopen the browser anytime.
+
+**Managing the service after install:**
+
+```bash
+python craftbot.py start      # Start CraftBot in the background
+python craftbot.py stop       # Stop CraftBot
+python craftbot.py restart    # Restart CraftBot
+python craftbot.py status     # Check if it's running and if auto-start is enabled
+python craftbot.py logs       # See recent log output
+python craftbot.py uninstall  # Stop, remove auto-start, and uninstall packages
+```
+
+> [!TIP]
+> After `install` or `start`, a **CraftBot desktop shortcut** is created automatically. If you close the browser, just double-click the shortcut to reopen it.
+
+---
+
+### Option 2 — Conda Install
+
+**Use this if:** you already use conda and want CraftBot in an isolated conda environment.
+
+`install.py --conda` sets up a dedicated `craftbot` conda environment. If Miniconda is not found on your system, it will be installed automatically.
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. Install into a conda environment
+python install.py --conda
+
+# 3. Run CraftBot
+conda run -n craftbot python run.py
+
+# If conda is not in PATH (Windows only):
+&"$env:USERPROFILE\miniconda3\Scripts\conda.exe" run -n craftbot python run.py
+```
+
+> [!NOTE]
+> Each time you want to run CraftBot, use `conda run -n craftbot python run.py`. There is no background service — you start and stop it yourself.
+
+---
+
+### Option 3 — Manual Install (pip)
+
+**Use this if:** you want full control over your Python environment and prefer managing CraftBot yourself with no automatic service or background process.
+
+`install.py` (no flags) does a standard pip install into whichever Python environment is currently active. You start and stop CraftBot manually using `run.py`.
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/CraftOS-dev/CraftBot.git
+cd CraftBot
+
+# 2. Install dependencies into your active Python environment
 python install.py
 
-# Run the agent
+# 3. Run CraftBot
 python run.py
 ```
 
-That's it! The first run will guide you through setting up your API keys.
+The first run will guide you through setting up your API keys and preferences.
 
-**Note:** If you don't have Node.js installed, the installer will guide you with step-by-step instructions. You can also skip browser mode and use TUI instead (see modes below).
+> [!NOTE]
+> If Node.js is not installed, the installer will provide step-by-step instructions. You can also skip browser mode entirely and use TUI mode — no Node.js required: `python run.py --tui`
+
+---
 
 ### What you can do right after?
 - Talk to the agent naturally
@@ -111,9 +196,54 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 | **Browser** | `python run.py` | Node.js 18+ | Modern web interface, easiest to use |
 | **TUI** | `python run.py --tui` | None | Terminal UI, no dependencies needed |
 | **CLI** | `python run.py --cli` | None | Command-line, lightweight |
-| **GUI** | `python run.py --gui` | `install.py --gui` | Desktop automation with visual feedback |
 
 **Browser mode** is the default and recommended. If you don't have Node.js, the installer will provide installation instructions or you can use **TUI mode** instead.
+
+---
+
+## 🧬 Living UI
+
+**Living UI is a system/app/dashboard that evolve with your needs.**
+
+Need a kanban board with an AI co-pilot built in? A custom CRM shaped exactly
+like your workflow? A company dashboard that CraftBot can read and drive on
+your behalf? Spin it up as a Living UI that runs alongside CraftBot and grows as your needs change.
+
+<div align="center">
+    <img src="assets/living-ui-example.png" alt="Living UI example" width="1280"/>
+</div>
+
+### Three ways to create a Living UI
+
+1. **Build from scratch.** Describe what you want in plain language. CraftBot
+   scaffolds the data model, backend API, and React UI, then iterates with
+   you through a structured design process.
+
+<div align="center">
+    <img src="assets/living-ui-custom-build.png" alt="Building a Living UI from scratch" width="448"/>
+</div>
+
+2. **Install from the marketplace.** Browse community-built Living UIs from [living-ui-marketplace](https://github.com/CraftOS-dev/living-ui-marketplace).
+
+<div align="center">
+    <img src="assets/living-ui-marketplace.png" alt="Living UI marketplace" width="448"/>
+</div>
+
+3. **Import an existing project.** Point CraftBot at a Go, Node.js, Python,
+   Rust, or static source code or github repo. It detects the runtime, configures health checks, and wraps it as a Living UI.
+
+<div align="center">
+    <img src="assets/living-ui-import.png" alt="Importing an existing project as a Living UI" width="448"/>
+</div>
+
+### Keeps evolving with CraftBot inside the loop
+
+A Living UI is never "finished." Ask the agent to add features, redesign
+a view, or hook it into new data as your needs grow.
+
+CraftBot is embedded in every Living UI and **context-aware of its state**:
+it can read the current DOM and form values, query app data through the
+REST API, and trigger actions on your behalf.
 
 ---
 
@@ -133,7 +263,6 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 | **Skill Manager** | Loads and injects pluggable skills into the agent context. |
 | **MCP Adapter** | Model Context Protocol integration that converts MCP tools into native actions. |
 | **TUI Interface** | Terminal user interface built with Textual framework for interactive command-line operation. |
-| **GUI Module** | Experimental GUI automation using Docker containers, OmniParser for UI element detection, and Gradio client. |
 
 ---
 
@@ -143,84 +272,54 @@ CraftBot supports multiple UI modes. Choose based on your preference:
 - [ ] **External Tool integration** — Still adding more!
 - [X] **MCP Layer** — Done.
 - [X] **Skill Layer** — Done.
-- [X] **Proactive Behaviour** — Pending
-
----
-
-## 🖥️ GUI Mode (Optional)
-
-GUI mode enables screen automation - the agent can see and interact with a desktop environment. This is optional and requires additional setup.
-
-```bash
-# Install with GUI support (using pip, no conda required)
-python install.py --gui
-
-# Install with GUI support and conda
-python install.py --gui --conda
-
-# Run with GUI mode
-python run.py --gui
-```
-
-> [!NOTE]
-> GUI mode is experimental and requires additional dependencies (~4GB for model weights). If you don't need desktop automation, skip this and use Browser/TUI mode instead which has no additional dependencies.
+- [ ] **Proactive Behaviour** — Pending
 
 ---
 
 ## 📋 Command Reference
 
-### install.py
+### craftbot.py — Automatic Setup (Recommended)
+
+| Command | Description |
+|---------|-------------|
+| `python craftbot.py install` | Install dependencies, register auto-start on login, start CraftBot, open browser, and close the terminal automatically |
+| `python craftbot.py start` | Start CraftBot in the background — auto-restarts if already running (terminal closes automatically) |
+| `python craftbot.py stop` | Stop CraftBot |
+| `python craftbot.py restart` | Stop and start CraftBot |
+| `python craftbot.py status` | Check if CraftBot is running and if auto-start is enabled |
+| `python craftbot.py logs` | Show recent log output (`-n 100` for more lines) |
+| `python craftbot.py uninstall` | Stop CraftBot, remove auto-start registration, uninstall pip packages, and purge pip cache |
+
+---
+
+### install.py — Manual Setup
 
 | Flag | Description |
 |------|-------------|
-| `--gui` | Install GUI components (OmniParser) |
-| `--conda` | Use conda environment (optional) |
-| `--cpu-only` | Install CPU-only PyTorch (with --gui) |
+| (none) | Standard pip install — uses your active Python environment |
+| `--conda` | Install into a conda environment (auto-installs Miniconda if not found) |
 
-### run.py
+```bash
+# Standard pip install
+python install.py
+
+# With conda environment
+python install.py --conda
+```
+
+---
+
+### run.py — Running CraftBot (Manual Setup Only)
+
+> If you used `craftbot.py install`, CraftBot starts automatically. Use `run.py` only when running manually.
 
 | Flag | Description |
 |------|-------------|
 | (none) | Run in **Browser** mode (recommended, requires Node.js) |
 | `--tui` | Run in **Terminal UI** mode (no dependencies needed) |
 | `--cli` | Run in **CLI** mode (lightweight) |
-| `--gui` | Enable GUI automation mode (requires `install.py --gui` first) |
 
-### service.py
-
-| Command | Description |
-|---------|-------------|
-| `install` | Install deps, register auto-start, and start CraftBot |
-| `start` | Start CraftBot in the background |
-| `stop` | Stop CraftBot |
-| `restart` | Stop then start |
-| `status` | Show running status and auto-start state |
-| `logs [-n N]` | Show last N log lines (default: 50) |
-| `uninstall` | Remove auto-start registration |
-
-**Installation Examples:**
-```bash
-# Simple pip installation (no conda)
-python install.py
-
-# With GUI support (using pip, no conda)
-python install.py --gui
-
-# With GUI on CPU-only systems (using pip, no conda)
-python install.py --gui --cpu-only
-
-# With conda environment (recommended for conda users)
-python install.py --conda
-
-# With GUI support and conda
-python install.py --gui --conda
-
-# With GUI on CPU-only systems with conda
-python install.py --gui --conda --cpu-only
-```
-
-**Running CraftBot:**
-
+**Windows (PowerShell):**
 ```powershell
 # Browser mode (default, requires Node.js)
 python run.py
@@ -231,9 +330,6 @@ python run.py --tui
 # CLI mode (lightweight)
 python run.py --cli
 
-# With GPU/GUI mode
-python run.py --gui
-
 # With conda environment
 conda run -n craftbot python run.py
 
@@ -243,54 +339,13 @@ conda run -n craftbot python run.py
 
 **Linux/macOS (Bash):**
 ```bash
-# Browser mode (default, requires Node.js)
-python run.py
-
-# TUI mode (no Node.js required)
-python run.py --tui
-
-# CLI mode (lightweight)
-python run.py --cli
-
-# With GPU/GUI mode
-python run.py --gui
+python run.py          # Browser mode
+python run.py --tui    # TUI mode
+python run.py --cli    # CLI mode
 
 # With conda environment
 conda run -n craftbot python run.py
 ```
-
-### 🔧 Background Service (Recommended)
-
-Run CraftBot as a background service so it stays running even after you close the terminal. A desktop shortcut is created automatically so you can reopen the browser anytime.
-
-```bash
-# Install dependencies, register auto-start on login, and start CraftBot
-python service.py install
-```
-
-That's it. The terminal closes itself, CraftBot runs in the background, and the browser opens automatically.
-
-```bash
-# Other service commands:
-python service.py start    # Start CraftBot in background
-python service.py status   # Check if it's running
-python service.py stop     # Stop CraftBot
-python service.py restart  # Restart CraftBot
-python service.py logs     # See recent log output
-```
-
-| Command | Description |
-|---------|-------------|
-| `python service.py install` | Install dependencies, register auto-start on login, start CraftBot, open browser, and close the terminal automatically |
-| `python service.py start` | Start CraftBot in the background — auto-restarts if already running (terminal closes automatically) |
-| `python service.py stop` | Stop CraftBot |
-| `python service.py restart` | Stop and start CraftBot |
-| `python service.py status` | Check if CraftBot is running and if auto-start is enabled |
-| `python service.py logs` | Show recent log output (`-n 100` for more lines) |
-| `python service.py uninstall` | Stop CraftBot, remove auto-start registration, uninstall pip packages, and purge pip cache |
-
-> [!TIP]
-> After `service.py start` or `service.py install`, a **CraftBot desktop shortcut** is created automatically. If you accidentally close the browser, just double-click the shortcut to reopen it.
 
 > [!NOTE]
 > **Installation:** The installer now provides clear guidance if dependencies are missing. If Node.js is not found, you'll be prompted to install it or can switch to TUI mode. Installation automatically detects GPU availability and falls back to CPU-only mode if needed.
@@ -303,7 +358,7 @@ python service.py logs     # See recent log output
 
 ---
 
-## � Troubleshooting & Common Issues
+## 🔧 Troubleshooting & Common Issues
 
 ### Missing Node.js (for Browser Mode)
 If you see **"npm not found in PATH"** when running `python run.py`:
@@ -328,14 +383,11 @@ Playwright chromium installation is optional. If it fails:
 - You can skip it or install later: `playwright install chromium`
 - Only needed for WhatsApp Web integration
 
-### GPU/CUDA Issues
-The installer automatically detects GPU availability:
-- If CUDA installation fails, it falls back to CPU mode automatically
-- For manual CPU setup: `python install.py --gui --cpu-only`
-
 For detailed troubleshooting, see [INSTALLATION_FIX.md](INSTALLATION_FIX.md).
 
 ---
+
+## 🔌 External Service Integration
 
 The agent can connect to various services using OAuth. Release builds come with embedded credentials, but you can also use your own.
 
@@ -411,7 +463,7 @@ LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
 4. Copy Client ID and Client Secret
 
 ---
-## Run with container
+## 🐳 Run with Container
 
 The repository root included a Docker configuration with Python 3.10, key system packages (including Tesseract for OCR), and all Python dependencies defined in `environment.yml`/`requirements.txt` so the agent can run consistently in isolated environments. 
 
@@ -439,29 +491,7 @@ If you need to supply environment variables, pass an env file (for example, base
 docker run --rm -it --env-file .env craftbot
 ```
 
-Mount any directories that should persist outside the container (such as data or cache folders) using `-v`, and adjust ports or additional flags as needed for your deployment. The container ships with system dependencies for OCR (`tesseract`), screen automation (`pyautogui`, `mss`, X11 utilities, and a virtual framebuffer), and common HTTP clients so the agent can work with files, network APIs, and GUI automation inside the container.
-
-### Enabling GUI/screen automation
-
-GUI actions (mouse/keyboard events, screenshots) require an X11 server. You can either attach to your host display or run headless with `xvfb`:
-
-* Use the host display (requires Linux with X11):
-
-  ```bash
-  docker run --rm -it 
-    -e DISPLAY=$DISPLAY \
-    -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -v $(pwd)/data:/app/app/data \
-    craftbot
-  ```
-
-  Add extra `-v` mounts for any folders the agent should read/write.
-
-* Run headlessly with a virtual display:
-
-  ```bash
-	docker run --rm -it --env-file .env craftbot bash -lc "Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99 && exec python -m app.main"
-  ```
+Mount any directories that should persist outside the container (such as data or cache folders) using `-v`, and adjust ports or additional flags as needed for your deployment. The container ships with system dependencies for OCR (`tesseract`) and common HTTP clients so the agent can work with files and network APIs inside the container.
 
 By default the image uses Python 3.10 and bundles the Python dependencies from `environment.yml`/`requirements.txt`, so `python -m app.main` works out of the box.
 
@@ -469,7 +499,7 @@ By default the image uses Python 3.10 and bundles the Python dependencies from `
 
 ## 🤝 How to Contribute
 
-Contributions and suggestions are welcome! You can contact [@zfoong](https://github.com/zfoong) @ thamyikfoong(at)craftos.net. We currently don't have checks set up, so we can't allow direct contributions but we appreciate any suggestions and feedback.
+PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (fork → branch from `dev` → PR). All pull requests run through lint + smoke-test CI automatically. For questions or a faster conversation, join us on [Discord](https://discord.gg/ZN9YHc37HG) or email thamyikfoong(at)craftos.net.
 
 ## 🧾 License
 
@@ -481,3 +511,15 @@ This project is licensed under the [MIT License](LICENSE). You are free to use, 
 
 Developed and maintained by [CraftOS](https://craftos.net/) and contributors [@zfoong](https://github.com/zfoong) and [@ahmad-ajmal](https://github.com/ahmad-ajmal).  
 If you find **CraftBot** useful, please ⭐ the repository and share it with others!
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=CraftOS-dev%2FCraftBot&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=CraftOS-dev/CraftBot&type=date&legend=top-left" />
+ </picture>
+</a>

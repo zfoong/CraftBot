@@ -264,10 +264,16 @@ def main():
             )
             final_exit_code = result.returncode
 
-    except (subprocess.CalledProcessError, TimeoutError, FileNotFoundError):
+    except (subprocess.CalledProcessError, TimeoutError, FileNotFoundError) as e:
+        import traceback
+        print(f"\n[main] {type(e).__name__}: {e}")
+        traceback.print_exc()
         final_exit_code = 1
 
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"\n[main] Unhandled {type(e).__name__}: {e}")
+        traceback.print_exc()
         final_exit_code = 1
 
 

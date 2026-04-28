@@ -22,6 +22,7 @@ from agent_core.core.impl.event_stream.event_stream import EventStream
 from agent_core.core.event_stream.event import Event
 from agent_core.core.protocols.llm import LLMInterfaceProtocol
 from agent_core.utils.logger import logger
+from agent_core.utils.file_utils import rotate_md_file_if_needed
 from agent_core.core.state.base import get_state_or_none
 
 # Import memory mode check (deferred to avoid circular imports)
@@ -298,6 +299,7 @@ class EventStreamManager:
             # Always write to EVENT.md (create if doesn't exist)
             try:
                 event_file = self._agent_file_system_path / "EVENT.md"
+                rotate_md_file_if_needed(event_file)
                 with open(event_file, "a", encoding="utf-8") as f:
                     f.write(event_line)
             except Exception as e:
@@ -309,6 +311,7 @@ class EventStreamManager:
             if not self._should_skip_unprocessed() and not self._should_skip_event_type(kind):
                 try:
                     unprocessed_file = self._agent_file_system_path / "EVENT_UNPROCESSED.md"
+                    rotate_md_file_if_needed(unprocessed_file)
                     with open(unprocessed_file, "a", encoding="utf-8") as f:
                         f.write(event_line)
                 except Exception as e:
@@ -353,13 +356,16 @@ class EventStreamManager:
         if task_id is not None and task_id in self._task_streams:
             stream = self._task_streams[task_id]
         elif task_id is not None and task_id not in self._task_streams:
-            # Task ID provided but stream not found - fall back to global stream
-            # Only warn if other streams exist (indicates a bug/race condition).
-            # If no streams exist, this is expected (conversation mode, before task creation).
+            # Task ID provided but stream not found — fall back to the MAIN stream,
+            # not get_stream(). get_stream() resolves via global STATE.current_task_id
+            # which is the *currently running* task; that path leaks events from a
+            # parallel conversation reaction (e.g. third-party email notification in
+            # session 0489cf) into whatever task happens to be active (e.g. translate
+            # task 15a11d). Only warn if other streams exist (indicates a bug/race).
             if self._task_streams:
-                logger.warning(f"[EVENT_STREAM] Task stream not found for task_id={task_id!r}, falling back to global stream. "
+                logger.warning(f"[EVENT_STREAM] Task stream not found for task_id={task_id!r}, falling back to main stream. "
                               f"Available streams: {list(self._task_streams.keys())}")
-            stream = self.get_stream()
+            stream = self._main_stream
         else:
             stream = self.get_stream()
         idx = stream.log(

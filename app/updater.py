@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Awaitable, Callable, Optional, Tuple
@@ -96,58 +97,59 @@ RESTART_EXIT_CODE = 42
 async def perform_update(
     progress_callback: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> None:
-    """Pull the latest code from GitHub, run install, and trigger a restart.
+    """Launch the external updater script in a new window, then shut down.
 
-    Args:
-        progress_callback: An async callable invoked with human-readable
-            progress messages.  Each interface (browser, TUI, CLI) supplies
-            its own implementation so the user sees live feedback.
+    The updater script (scripts/updater.bat on Windows) runs in its own
+    visible terminal and handles: waiting for us to exit, git pull, install,
+    and relaunch. This keeps the update logic out of the running Python
+    process — no in-process git mutation, no exit-code signalling, no
+    console-visibility hacks. If the updater fails, its window stays open
+    showing the error.
     """
 
     async def emit(msg: str) -> None:
         if progress_callback:
             await progress_callback(msg)
 
-    project_root = str(Path(__file__).resolve().parent.parent)
+    project_root = Path(__file__).resolve().parent.parent
 
-    # 1. Stash local changes if the working tree is dirty
-    proc = await asyncio.create_subprocess_exec(
-        "git", "status", "--porcelain",
-        cwd=project_root,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await proc.communicate()
-    if stdout.strip():
-        await emit("Stashing local changes...")
-        await _run_git(["git", "stash"], project_root)
+    target_branch = "main"
 
-    # 2. Fetch and pull latest from main
-    await emit("Fetching latest version...")
-    await _run_git(["git", "fetch", "origin", "main"], project_root)
+    if sys.platform == "win32":
+        updater_script = project_root / "scripts" / "updater.bat"
+    else:
+        updater_script = project_root / "scripts" / "updater.sh"
 
-    await emit("Pulling latest code...")
-    await _run_git(["git", "checkout", "main"], project_root)
-    await _run_git(["git", "pull", "origin", "main"], project_root)
+    if not updater_script.exists():
+        raise RuntimeError(f"Updater script not found: {updater_script}")
 
-    # 3. Re-run install.py for dependency updates
-    await emit("Installing dependencies...")
-    install_script = os.path.join(project_root, "install.py")
-    if os.path.exists(install_script):
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable, install_script,
-            cwd=project_root,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+    await emit(f"Launching updater in a new window (pulling {target_branch})...")
+    await asyncio.sleep(0.5)  # let the UI show the message
+
+    if sys.platform == "win32":
+        # CREATE_NO_WINDOW hides the updater console. The current CraftBot
+        # process will close, the updater runs git/install silently, then
+        # relaunches CraftBot — which reopens the browser UI automatically.
+        CREATE_NO_WINDOW = 0x08000000
+        DETACHED_PROCESS = 0x00000008
+        subprocess.Popen(
+            [str(updater_script), target_branch],
+            cwd=str(project_root),
+            creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+            close_fds=True,
         )
-        await proc.communicate()
+    else:
+        subprocess.Popen(
+            ["sh", str(updater_script), target_branch],
+            cwd=str(project_root),
+            start_new_session=True,
+        )
 
-    # 4. Signal restart
-    await emit("Update complete! Restarting CraftBot...")
-    await asyncio.sleep(1)  # allow the message to reach the UI
+    await emit("Shutting down — the updater will relaunch CraftBot shortly.")
+    await asyncio.sleep(1)
 
-    # Force-exit with a special code so run.py can re-launch everything
-    os._exit(RESTART_EXIT_CODE)
+    # Exit cleanly. The updater handles everything from here.
+    os._exit(0)
 
 
 # ---------------------------------------------------------------------------
@@ -155,11 +157,15 @@ async def perform_update(
 # ---------------------------------------------------------------------------
 
 async def _run_git(cmd: list, cwd: str) -> Tuple[bytes, bytes]:
-    """Run a git command asynchronously and return (stdout, stderr)."""
+    """Run a git command asynchronously; raise on non-zero exit."""
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=cwd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    return await proc.communicate()
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        err = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"{' '.join(cmd)} failed (exit {proc.returncode}): {err[:500]}")
+    return stdout, stderr
