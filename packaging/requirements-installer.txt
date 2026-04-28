@@ -10,7 +10,10 @@
 # installed:
 #   - Windows: WebView2 runtime (pre-installed on Win10 22H2+ / Win11)
 #   - macOS:   WKWebView (always present, macOS 10.10+)
-#   - Linux:   libwebkit2gtk-4.0-37 + gir1.2-webkit2-4.0 (apt/dnf)
+#   - Linux:   libwebkit2gtk-4.1-0 + gir1.2-webkit2-4.1 (apt/dnf)
+#              On older distros (Ubuntu 22.04 etc.) the 4.0 versions
+#              (libwebkit2gtk-4.0-37 + gir1.2-webkit2-4.0) work too —
+#              pywebview's WebKit2 namespace is identical across both.
 pywebview>=5.0
 
 # Windows backend: WebView2 via .NET interop. pywebview's metadata is

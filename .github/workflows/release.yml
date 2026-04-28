@@ -104,14 +104,18 @@ jobs:
         if: matrix.os_label == 'linux'
         shell: bash
         run: |
-          # PyGObject builds against these headers. WebKitGTK + the
-          # webkit2-4.0 GObject introspection bindings are what pywebview's
-          # GTK backend talks to at runtime. End users need the runtime
-          # halves of these too (libwebkit2gtk-4.0-37, gir1.2-webkit2-4.0).
+          # PyGObject builds against these headers. WebKitGTK 4.1 + the
+          # webkit2-4.1 GObject introspection bindings are what pywebview's
+          # GTK backend talks to at runtime — the WebKit2 namespace is
+          # identical across 4.0 and 4.1, so pywebview needs no change.
+          # Ubuntu 24.04 (noble) on ubuntu-latest dropped the 4.0 packages;
+          # earlier 22.04 runners had only 4.0. Pin to 4.1 to match noble.
+          # End users need the runtime halves of these (libwebkit2gtk-4.1-0,
+          # gir1.2-webkit2-4.1) installed via their distro's package manager.
           sudo apt-get update
           sudo apt-get install -y \
-            libwebkit2gtk-4.0-37 \
-            gir1.2-webkit2-4.0 \
+            libwebkit2gtk-4.1-0 \
+            gir1.2-webkit2-4.1 \
             libgirepository1.0-dev \
             libcairo2-dev \
             python3-gi \
