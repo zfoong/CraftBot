@@ -546,16 +546,19 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
         <IconButton icon={<Paperclip size={18} />} variant="ghost" tooltip="Attach file" onClick={handleAttachClick} />
 
         <div className={styles.micGroup} ref={langDropdownRef}>
-          <IconButton
-            icon={isListening ? <MicOff size={18} /> : <Mic size={18} />}
-            variant="ghost"
-            active={isListening}
-            tooltip={isListening ? 'Stop listening' : 'Voice input'}
-            onClick={toggleListening}
-            className={isListening ? styles.micListening : undefined}
-          />
           <button
-            className={styles.langBtn}
+            type="button"
+            className={`${styles.micCombo}${isListening ? ` ${styles.micComboActive}` : ''}`}
+            title={isListening ? 'Stop listening' : 'Voice input'}
+            onClick={toggleListening}
+          >
+            <span className={styles.micIconWrap}>
+              {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+              {isListening && <span className={styles.micPulseRing} />}
+            </span>
+          </button>
+          <button
+            className={`${styles.langBtn}${isListening ? ` ${styles.langBtnActive}` : ''}`}
             onClick={() => !isListening && setLangOpen(o => !o)}
             title="Speech language"
             disabled={isListening}
@@ -630,12 +633,6 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
                   </button>
                 </div>
               ))}
-            </div>
-          )}
-
-          {isListening && (
-            <div className={styles.listeningDots}>
-              <span /><span /><span />
             </div>
           )}
 
