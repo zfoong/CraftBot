@@ -148,19 +148,20 @@ def get_settings(reload: bool = False) -> Dict[str, Any]:
 def get_app_version() -> str:
     """Get the application version.
 
-    Reads the VERSION file bundled by the release workflow (which echoes
-    the git tag, minus the leading 'v', into VERSION before PyInstaller
-    runs). Source mode falls back to looking at the repo root in case a
-    dev wrote a VERSION file locally; otherwise returns "0.0.0" so the
-    updater check fails gracefully (it'll show "no update info" rather
-    than spamming the user with a bogus update prompt).
+    Lookup order:
+      1. _MEIPASS/VERSION — bundled by the release workflow (git tag w/o 'v')
+      2. <repo>/VERSION — source mode if a dev wrote one locally
+      3. settings.json["version"] — legacy fallback so existing installs
+         and dev environments without a VERSION file still report something
+         meaningful instead of "0.0.0"
+      4. "0.0.0" — final fallback so the updater check fails gracefully
+         (no bogus "update available" prompt).
     """
     candidates = []
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             candidates.append(Path(meipass) / "VERSION")
-    # Source mode / fallback — repo root.
     candidates.append(Path(__file__).resolve().parent.parent / "VERSION")
     for path in candidates:
         try:
@@ -169,7 +170,11 @@ def get_app_version() -> str:
                 return v
         except OSError:
             continue
-    return "0.0.0"
+    # Settings.json legacy fallback — was the source of truth before
+    # the VERSION-file scheme.
+    settings = get_settings()
+    v = settings.get("version", "").strip() if isinstance(settings.get("version"), str) else ""
+    return v or "0.0.0"
 
 
 def get_llm_provider() -> str:
