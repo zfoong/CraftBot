@@ -115,6 +115,15 @@ else
     fi
 fi
 
+# Background watcher: patches every Living UI project's vite.config.ts to
+# allow E2B's port-prefixed subdomain Host header (Vite 5 rejects unknown
+# hosts with 403 by default). Marketplace apps download at runtime so a
+# build-time patch alone wouldn't catch them. See e2b/vite_host_watcher.py.
+echo "[e2b-start] Launching vite_host_watcher.py ..." | tee -a "$LOG_FILE"
+nohup python3 /home/user/agent/e2b/vite_host_watcher.py >> "$LOG_FILE" 2>&1 &
+WATCHER_PID=$!
+echo "[e2b-start] vite_host_watcher started with PID ${WATCHER_PID}" | tee -a "$LOG_FILE"
+
 echo "[e2b-start] Launching python3 run.py ..." | tee -a "$LOG_FILE"
 nohup python3 run.py >> "$LOG_FILE" 2>&1 &
 AGENT_PID=$!

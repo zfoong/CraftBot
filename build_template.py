@@ -145,7 +145,7 @@ def build_template(template_name: str) -> str:
     # .git, logs, node_modules, chroma_db_memory, .credentials, agent_logs.txt, etc.)
     _copy_dirs = [
         "agent_core", "agents", "app", "assets", "decorators",
-        "diagnostic", "docker", "hooks", "rthooks", "scripts", "skills",
+        "diagnostic", "docker", "e2b", "hooks", "rthooks", "scripts", "skills",
     ]
     _copy_files = [
         "main.py", "run.py", "install.py", "config.json",
@@ -166,6 +166,12 @@ def build_template(template_name: str) -> str:
         .run_cmd("rm -rf /home/user/agent/.credentials /home/user/agent/agent_file_system /home/user/agent/chroma_db_memory /home/user/agent/app/data/agent_logs.txt")
         # Override config.json to disable conda (not available in the sandbox)
         .run_cmd('echo \'{"use_conda": false, "gui_mode_enabled": false}\' > /home/user/agent/config.json')
+        # E2B-only patches: rewrite Living UI iframe URLs and project
+        # backend URLs so they work behind E2B's per-port subdomain proxy.
+        # Runs BEFORE `npm run build` so the injected <script> ends up in
+        # the bundled dist/index.html. See e2b/patch_for_e2b.py for the
+        # rationale and what gets patched.
+        .run_cmd("python3 /home/user/agent/e2b/patch_for_e2b.py || echo 'WARN: E2B patch step failed (non-fatal)'")
         .run_cmd(
             "cd /home/user/agent/app/ui_layer/browser/frontend"
             " && npm install --legacy-peer-deps"
