@@ -308,11 +308,18 @@ class OnboardingFlowController:
         # persisted via the immediate-upload websocket handler; the
         # authoritative value is onboarding_manager.state.agent_profile_picture.
         user_name = user_profile.get("user_name") if user_profile else None
-        onboarding_manager.mark_hard_complete(
+        success = onboarding_manager.mark_hard_complete(
             user_name=user_name,
             agent_name=agent_name,
             agent_profile_picture=onboarding_manager.state.agent_profile_picture,
         )
+        if not success:
+            from agent_core.utils.logger import logger
+            logger.error(
+                "[ONBOARDING] Failed to persist hard onboarding state — "
+                "onboarding will re-trigger on next launch. "
+                "Check disk space or file permissions."
+            )
 
         # Trigger soft onboarding now that hard onboarding is done
         # This is needed because the soft onboarding check in agent.run() happens

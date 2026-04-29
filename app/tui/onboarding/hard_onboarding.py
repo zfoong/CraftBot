@@ -133,9 +133,15 @@ class TUIHardOnboarding(OnboardingInterface):
         # Mark hard onboarding as complete
         agent_name = self._collected_data.get("agent_name", "Agent")
         user_name = profile_data.get("user_name") if profile_data else None
-        onboarding_manager.mark_hard_complete(user_name=user_name, agent_name=agent_name)
-
-        logger.info("[ONBOARDING] Hard onboarding completed successfully")
+        success = onboarding_manager.mark_hard_complete(user_name=user_name, agent_name=agent_name)
+        if success:
+            logger.info("[ONBOARDING] Hard onboarding completed successfully")
+        else:
+            logger.error(
+                "[ONBOARDING] Hard onboarding state could not be persisted — "
+                "onboarding will re-trigger on next launch. "
+                "Check disk space or file permissions."
+            )
 
         # Trigger soft onboarding now that hard onboarding is done
         # This is needed because the soft onboarding check in agent.run() happens
