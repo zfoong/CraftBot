@@ -33,9 +33,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse
 
-import httpx
-
 from .config import ConfigStore
+from .helpers import request as http_request
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -377,21 +376,20 @@ class OAuthFlow:
             if client_secret:
                 token_data["client_secret"] = client_secret
 
-        try:
-            if self.token_request_json:
-                headers.setdefault("Content-Type", "application/json")
-                r = httpx.post(self.token_url, json=token_data, headers=headers, timeout=30.0)
-            else:
-                r = httpx.post(self.token_url, data=token_data, headers=headers, timeout=30.0)
-        except Exception as e:
-            return {"error": f"Token exchange request failed: {e}"}
-
-        if r.status_code != 200:
-            return {"error": f"Token exchange failed: {r.text}"}
-        try:
-            return r.json()
-        except Exception as e:
-            return {"error": f"Token exchange returned non-JSON: {e}"}
+        if self.token_request_json:
+            headers.setdefault("Content-Type", "application/json")
+            result = http_request(
+                "POST", self.token_url, json=token_data, headers=headers,
+                timeout=30.0, expected=(200,),
+            )
+        else:
+            result = http_request(
+                "POST", self.token_url, data=token_data, headers=headers,
+                timeout=30.0, expected=(200,),
+            )
+        if "error" in result:
+            return {"error": f"Token exchange failed: {result.get('details') or result['error']}"}
+        return result["result"] or {}
 
     def _fetch_userinfo_sync(self, access_token: str) -> Dict[str, Any]:
         """Sync userinfo fetch — runs in a worker thread."""
@@ -399,17 +397,14 @@ class OAuthFlow:
             return {}
         headers = {"Authorization": f"Bearer {access_token}"}
         headers.update(self.userinfo_extra_headers)
-        try:
-            r = httpx.get(self.userinfo_url, headers=headers, timeout=30.0)
-        except Exception as e:
-            logger.warning(f"[OAUTH] userinfo fetch failed: {e}")
+        result = http_request(
+            "GET", self.userinfo_url, headers=headers,
+            timeout=30.0, expected=(200,),
+        )
+        if "error" in result:
+            logger.warning(f"[OAUTH] userinfo fetch failed: {result['error']}")
             return {}
-        if r.status_code != 200:
-            return {}
-        try:
-            return r.json()
-        except Exception:
-            return {}
+        return result["result"] or {}
 
     async def run(self) -> Dict[str, Any]:
         """Run the full OAuth flow.
