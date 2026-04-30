@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import * as LucideIcons from 'lucide-react'
 import {
   Globe,
   Package,
@@ -37,10 +38,14 @@ interface Integration {
   connected: boolean
   accounts: IntegrationAccount[]
   fields: IntegrationField[]
+  icon?: string  // Lucide icon name supplied by the backend handler
 }
 
-// Integration icon component using inline SVGs for brand logos
-const IntegrationIcon = ({ id, size = 20 }: { id: string; size?: number }) => {
+// Integration icon component. Lookup order:
+//   1. Hand-crafted brand SVG keyed by integration id (defined below)
+//   2. Lucide icon by name from the backend's ``icon`` field
+//   3. Generic globe fallback
+const IntegrationIcon = ({ id, icon, size = 20 }: { id: string; icon?: string; size?: number }) => {
   const icons: Record<string, React.ReactNode> = {
     google: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -118,7 +123,26 @@ const IntegrationIcon = ({ id, size = 20 }: { id: string; size?: number }) => {
       </svg>
     ),
   }
-  return <span className={styles.integrationIconSvg}>{icons[id] || <Globe size={size} />}</span>
+  // 1. Brand SVG keyed by the backend's ``icon`` name (e.g. "github",
+  //    "google", "notion") — the integration file owns this declaration.
+  if (icon && icons[icon]) {
+    return <span className={styles.integrationIconSvg}>{icons[icon]}</span>
+  }
+  // 2. Backwards-compat: legacy lookup by integration id, in case any
+  //    integration hasn't declared ``icon`` yet.
+  if (icons[id]) {
+    return <span className={styles.integrationIconSvg}>{icons[id]}</span>
+  }
+  // 3. Lucide fallback for non-brand icons (e.g. "Inbox", "Send").
+  if (icon) {
+    const lucideMap = LucideIcons as unknown as Record<string, React.ComponentType<{ size?: number }>>
+    const LucideIcon = lucideMap[icon]
+    if (LucideIcon) {
+      return <span className={styles.integrationIconSvg}><LucideIcon size={size} /></span>
+    }
+  }
+  // 4. Generic fallback
+  return <span className={styles.integrationIconSvg}><Globe size={size} /></span>
 }
 
 export function IntegrationsSettings() {
@@ -434,7 +458,7 @@ export function IntegrationsSettings() {
               className={`${styles.integrationItem} ${!integration.connected ? styles.integrationItemDisabled : ''}`}
             >
               <div className={styles.integrationItemIcon}>
-                <IntegrationIcon id={integration.id} size={24} />
+                <IntegrationIcon id={integration.id} icon={integration.icon} size={24} />
               </div>
               <div className={styles.integrationItemMain}>
                 <div className={styles.integrationItemHeader}>

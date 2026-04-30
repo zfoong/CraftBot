@@ -90,6 +90,7 @@ class TelegramBotHandler(IntegrationHandler):
     display_name = "Telegram Bot"
     description = "Bot API messaging"
     auth_type = "token"
+    icon = "telegram"
     fields = [
         {"key": "bot_token", "label": "Bot Token", "placeholder": "From @BotFather", "password": True},
     ]
@@ -276,20 +277,21 @@ class TelegramBotClient(BasePlatformClient):
                 logger.error(f"[TELEGRAM_BOT] Poll error: {e}")
                 await asyncio.sleep(RETRY_DELAY)
 
-    async def _poll_updates(self) -> Dict[str, Any]:
+    def _poll_updates_sync(self) -> Dict[str, Any]:
+        """Sync long-poll — runs in a worker thread to bypass anyio."""
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(POLL_TIMEOUT + 10)) as client:
-                resp = await client.get(self._api_url("getUpdates"), params={
-                    "offset": self._poll_offset,
-                    "timeout": POLL_TIMEOUT,
-                    "allowed_updates": ["message"],
-                })
-                data = resp.json()
-                return data if data.get("ok") else {"result": []}
+            resp = httpx.get(self._api_url("getUpdates"), params={
+                "offset": self._poll_offset,
+                "timeout": POLL_TIMEOUT,
+                "allowed_updates": ["message"],
+            }, timeout=POLL_TIMEOUT + 10)
+            data = resp.json()
+            return data if data.get("ok") else {"result": []}
         except httpx.TimeoutException:
             return {"result": []}
-        except Exception:
-            raise
+
+    async def _poll_updates(self) -> Dict[str, Any]:
+        return await asyncio.to_thread(self._poll_updates_sync)
 
     async def _process_update(self, update: Dict[str, Any]) -> None:
         self._poll_offset = update.get("update_id", 0) + 1

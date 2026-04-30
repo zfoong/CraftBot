@@ -57,6 +57,7 @@ class DiscordHandler(IntegrationHandler):
     display_name = "Discord"
     description = "Community chat"
     auth_type = "token"
+    icon = "discord"
     fields = [
         {"key": "bot_token", "label": "Bot Token", "placeholder": "Enter bot token", "password": True},
     ]
@@ -208,13 +209,18 @@ class DiscordClient(BasePlatformClient):
         self._ws_task = None
 
     async def _gateway_loop(self) -> None:
-        import aiohttp
+        import websockets
         while self._listening:
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.ws_connect(DISCORD_GATEWAY_URL) as ws:
-                        self._ws = ws
-                        await self._handle_gateway(ws)
+                async with websockets.connect(
+                    DISCORD_GATEWAY_URL,
+                    open_timeout=None,
+                    ping_interval=None,
+                    ping_timeout=None,
+                    close_timeout=None,
+                ) as ws:
+                    self._ws = ws
+                    await self._handle_gateway(ws)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -223,18 +229,17 @@ class DiscordClient(BasePlatformClient):
                     await asyncio.sleep(5)
 
     async def _handle_gateway(self, ws) -> None:
-        import aiohttp as _aiohttp
-        async for msg in ws:
-            if not self._listening:
-                break
-            if msg.type == _aiohttp.WSMsgType.TEXT:
+        try:
+            async for raw in ws:
+                if not self._listening:
+                    break
                 try:
-                    data = json.loads(msg.data)
+                    data = json.loads(raw)
                     await self._process_gateway_event(ws, data)
                 except Exception as e:
                     logger.error(f"[DISCORD] Error processing Gateway event: {e}")
-            elif msg.type in (_aiohttp.WSMsgType.ERROR, _aiohttp.WSMsgType.CLOSED):
-                break
+        except Exception as e:
+            logger.debug(f"[DISCORD] Gateway socket closed: {e}")
 
     async def _process_gateway_event(self, ws, data: dict) -> None:
         op = data.get("op")
@@ -247,21 +252,21 @@ class DiscordClient(BasePlatformClient):
         if op == 10:
             self._heartbeat_interval = d["heartbeat_interval"] / 1000.0
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(ws))
-            await ws.send_json({
+            await ws.send(json.dumps({
                 "op": 2,
                 "d": {
                     "token": self._bot_token(),
                     "intents": GATEWAY_INTENTS,
                     "properties": {"os": "windows", "browser": "craftosbot", "device": "craftosbot"},
                 },
-            })
+            }))
         elif op == 0:
             if t == "READY":
                 asyncio.get_running_loop().call_later(2.0, self._mark_catchup_done)
             elif t == "MESSAGE_CREATE" and d:
                 await self._handle_message_create(d)
         elif op == 1:
-            await ws.send_json({"op": 1, "d": self._last_sequence})
+            await ws.send(json.dumps({"op": 1, "d": self._last_sequence}))
         elif op in (7, 9):
             # 7 = reconnect requested, 9 = invalid session — both close the socket
             await ws.close()
@@ -272,7 +277,7 @@ class DiscordClient(BasePlatformClient):
     async def _heartbeat_loop(self, ws) -> None:
         try:
             while self._listening:
-                await ws.send_json({"op": 1, "d": self._last_sequence})
+                await ws.send(json.dumps({"op": 1, "d": self._last_sequence}))
                 await asyncio.sleep(self._heartbeat_interval)
         except asyncio.CancelledError:
             pass

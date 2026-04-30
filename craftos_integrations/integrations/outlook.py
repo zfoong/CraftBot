@@ -62,6 +62,7 @@ class OutlookHandler(IntegrationHandler):
     display_name = "Outlook"
     description = "Microsoft email and calendar"
     auth_type = "oauth"
+    icon = "Inbox"
     fields: List = []
 
     oauth = OAuthFlow(

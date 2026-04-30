@@ -60,6 +60,7 @@ class WhatsAppWebHandler(IntegrationHandler):
     display_name = "WhatsApp"
     description = "Messaging via Web (QR code)"
     auth_type = "interactive"
+    icon = "whatsapp"
     fields: List = []
 
     @property
@@ -286,25 +287,42 @@ class WhatsAppWebClient(BasePlatformClient):
         self._cred = None
         bridge = self._get_bridge()
 
+        # Register the callback up-front so any event the bridge emits during
+        # startup (incl. a late "ready" after we return) flows through to us.
+        self._message_callback = callback
+        bridge.set_event_callback(self._on_bridge_event)
+
         if bridge.is_running and bridge.is_ready:
-            bridge.set_event_callback(self._on_bridge_event)
             event_type = "ready"
         else:
             if bridge.is_running:
                 await bridge.stop()
                 await asyncio.sleep(2)
             await bridge.start()
-            bridge.set_event_callback(self._on_bridge_event)
-            event_type, _ = await bridge.wait_for_qr_or_ready(timeout=90.0)
+            # 180s gives whatsapp-web.js room to finish post-auth chat sync;
+            # on slower restarts the "ready" event can lag well behind the
+            # "authenticated" event.
+            event_type, _ = await bridge.wait_for_qr_or_ready(timeout=180.0)
 
         if event_type == "qr":
+            # Need a fresh QR scan — credentials are stale, tear down.
             bridge.set_event_callback(None)
             await bridge.stop()
+            self._message_callback = None
             return
 
+        # If wwebjs hasn't fired "ready" yet (timeout), don't fail —
+        # leave the bridge running with our callback wired. The "ready"
+        # event will arrive eventually (or won't, but the user will see
+        # status="waiting" rather than us tearing the session down).
         if event_type != "ready":
-            bridge.set_event_callback(None)
-            raise RuntimeError("WhatsApp bridge did not become ready — timed out")
+            logger.warning(
+                "[WHATSAPP_WEB] Bridge authenticated but 'ready' event not "
+                "received within 180s — leaving bridge running, listener will "
+                "activate when wwebjs finishes syncing."
+            )
+            self._listening = True
+            return
 
         if bridge.owner_phone or bridge.owner_name:
             cred = self._load()
@@ -317,7 +335,6 @@ class WhatsAppWebClient(BasePlatformClient):
                 save_credential(self.spec.cred_file, updated)
                 self._cred = updated
 
-        self._message_callback = callback
         self._listening = True
         self._connected = True
 
@@ -327,6 +344,16 @@ class WhatsAppWebClient(BasePlatformClient):
         self._listening = False
         bridge = self._get_bridge()
         bridge.set_event_callback(None)
+        # Send the bridge a clean ``shutdown`` command so wwebjs runs
+        # ``client.destroy()`` before the Node subprocess exits. Without this,
+        # the agent's Python process dies and Node gets killed by OS cleanup
+        # — WhatsApp's server treats that as a crash and invalidates the
+        # session faster than it would for a clean disconnect (which is what
+        # the desktop app sends on quit).
+        try:
+            await bridge.stop()
+        except Exception as e:
+            logger.warning(f"[WHATSAPP_WEB] Bridge stop error: {e}")
 
     async def _on_bridge_event(self, event: str, data: Dict[str, Any]) -> None:
         if event == "message":

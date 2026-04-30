@@ -98,6 +98,30 @@ client.on("qr", async (qr) => {
 client.on("authenticated", () => {
   log("Authenticated");
   emitEvent("authenticated");
+
+  // Fallback: wwebjs occasionally stalls between "authenticated" and "ready"
+  // (especially on session restore). Give the real "ready" handler 60s to
+  // fire; if it doesn't, synthesize a "ready" event from client.info so the
+  // Python bridge gets unblocked. Sends/receives work fine without the
+  // chat-catchup step.
+  setTimeout(async () => {
+    if (isReady) return;
+    log("ready event not received within 60s of authenticated — synthesizing");
+    try {
+      if (client.info && client.info.wid) {
+        ownerPhone = client.info.wid.user || ownerPhone;
+        ownerName = client.info.pushname || ownerName;
+      }
+    } catch (_) { /* best-effort */ }
+    isReady = true;
+    readyTimestamp = Math.floor(Date.now() / 1000);
+    emitEvent("ready", {
+      owner_phone: ownerPhone,
+      owner_name: ownerName,
+      wid: client.info?.wid?._serialized || "",
+      synthetic: true,
+    });
+  }, 60_000);
 });
 
 client.on("auth_failure", (msg) => {

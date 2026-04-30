@@ -50,6 +50,7 @@ class WhatsAppBusinessHandler(IntegrationHandler):
     display_name = "WhatsApp Business"
     description = "WhatsApp Cloud API"
     auth_type = "token"
+    icon = "whatsapp_business"
     fields = [
         {"key": "access_token", "label": "Access Token", "placeholder": "Enter access token", "password": True},
         {"key": "phone_number_id", "label": "Phone Number ID", "placeholder": "Enter phone number ID", "password": False},

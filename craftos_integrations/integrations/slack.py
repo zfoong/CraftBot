@@ -84,6 +84,7 @@ class SlackHandler(IntegrationHandler):
     display_name = "Slack"
     description = "Team messaging"
     auth_type = "both"  # OAuth invite + raw bot token
+    icon = "slack"
     fields = [
         {"key": "bot_token", "label": "Bot Token", "placeholder": "xoxb-...", "password": True},
         {"key": "workspace_name", "label": "Workspace Name (optional)", "placeholder": "My Workspace", "password": False, "optional": True},

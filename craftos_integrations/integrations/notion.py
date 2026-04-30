@@ -71,6 +71,7 @@ class NotionHandler(IntegrationHandler):
     display_name = "Notion"
     description = "Notes and databases"
     auth_type = "both"  # OAuth invite + raw integration token
+    icon = "notion"
     fields = [
         {"key": "token", "label": "Integration Token", "placeholder": "secret_...", "password": True},
     ]

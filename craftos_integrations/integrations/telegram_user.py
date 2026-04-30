@@ -59,6 +59,7 @@ class TelegramUserHandler(IntegrationHandler):
     display_name = "Telegram (User)"
     description = "MTProto user account"
     auth_type = "interactive"
+    icon = "telegram"
     fields: List = []
 
     @property

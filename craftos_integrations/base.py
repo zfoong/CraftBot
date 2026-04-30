@@ -88,6 +88,11 @@ class IntegrationHandler(ABC):
     # auth_type: "token" | "oauth" | "both" | "interactive" | "token_with_interactive"
     auth_type: str = "token"
     fields: List[Dict[str, Any]] = []
+    # Lucide icon name (PascalCase) shown on the integration card when the
+    # frontend doesn't have a hand-crafted SVG override. See lucide.dev for
+    # the full set — examples: "Github", "Linkedin", "Send", "MessageCircle",
+    # "Mail", "FileText". Empty string falls back to a generic icon.
+    icon: str = ""
 
     @abstractmethod
     async def login(self, args: List[str]) -> Tuple[bool, str]: ...

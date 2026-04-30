@@ -23,9 +23,17 @@ Usage in an integration::
             params={"limit": limit},
             transform=lambda data: {"users": data, "count": len(data)},
         )
+
+Note: ``arequest`` is implemented as ``asyncio.to_thread(<sync request>)`` rather
+than ``httpx.AsyncClient`` to bypass anyio/sniffio entirely. On Python 3.14
+conda-forge builds inside this host, ``asyncio.current_task()`` can return
+``None`` even inside a running task — anyio then fails with
+``TypeError: cannot create weak reference to 'NoneType' object``. Sync httpx
++ a worker thread sidesteps anyio's task-tracking entirely.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Callable, Dict, Iterable, Optional
 
 import httpx
@@ -86,14 +94,17 @@ async def arequest(
     transform: Optional[Callable[[Any], Any]] = None,
     timeout: float = 15.0,
 ) -> Result:
-    """Async REST helper. Returns ``{ok, result}`` or ``{error, details}``."""
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.request(
-                method, url,
-                headers=headers, json=json, params=params,
-                data=data, files=files,
-            )
-        return _shape(r, expected, transform)
-    except Exception as e:
-        return {"error": str(e)}
+    """Async REST helper. Runs sync httpx in a worker thread to avoid anyio.
+
+    Identical contract to ``request`` — returns ``{ok, result}`` or
+    ``{error, details}``. Awaitable from any coroutine; non-blocking for the
+    event loop because the actual HTTP work happens in the default thread
+    executor via ``asyncio.to_thread``.
+    """
+    return await asyncio.to_thread(
+        request,
+        method, url,
+        headers=headers, json=json, params=params,
+        data=data, files=files,
+        expected=expected, transform=transform, timeout=timeout,
+    )

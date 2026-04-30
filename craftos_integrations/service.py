@@ -112,6 +112,7 @@ def get_metadata(integration: str) -> Optional[Dict[str, Any]]:
         "description": handler.description,
         "auth_type": handler.auth_type,
         "fields": [dict(f) for f in handler.fields],
+        "icon": getattr(handler, "icon", "") or "",
     }
 
 

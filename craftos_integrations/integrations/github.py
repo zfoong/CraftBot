@@ -66,6 +66,7 @@ class GitHubHandler(IntegrationHandler):
     display_name = "GitHub"
     description = "Repositories, issues, and pull requests"
     auth_type = "token"
+    icon = "github"
     fields = [
         {"key": "access_token", "label": "Personal Access Token", "placeholder": "ghp_...", "password": True},
     ]
@@ -246,52 +247,74 @@ class GitHubClient(BasePlatformClient):
                 continue
             await asyncio.sleep(POLL_INTERVAL)
 
-    async def _check_notifications(self) -> None:
+    def _check_notifications_sync(self) -> Optional[Dict[str, Any]]:
+        """Sync notification poll — returns ``{notifications, last_modified}`` or
+        ``None`` if 304/401/other status. Wrapped in ``asyncio.to_thread`` from
+        ``_check_notifications`` to avoid anyio's task-tracking issues on
+        Python 3.14 conda-forge.
+        """
         headers = self._headers()
         if self._last_modified:
             headers["If-Modified-Since"] = self._last_modified
-
-        cred = self._load()
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
+        try:
+            resp = httpx.get(
                 f"{GITHUB_API}/notifications",
                 headers=headers,
                 params={"all": "false", "participating": "true"},
-                timeout=30,
+                timeout=30.0,
             )
+        except Exception as e:
+            logger.warning(f"[GITHUB] Notifications request failed: {e}")
+            return None
+        if resp.status_code == 304:
+            return None
+        if resp.status_code == 401:
+            logger.warning("[GITHUB] Authentication expired (401)")
+            return None
+        if resp.status_code != 200:
+            logger.warning(f"[GITHUB] Notifications API error: {resp.status_code}")
+            return None
+        return {
+            "notifications": resp.json(),
+            "last_modified": resp.headers.get("Last-Modified"),
+        }
 
-            if resp.status_code == 304:
-                return
-            if resp.status_code == 401:
-                logger.warning("[GITHUB] Authentication expired (401)")
-                return
-            if resp.status_code != 200:
-                logger.warning(f"[GITHUB] Notifications API error: {resp.status_code}")
-                return
+    async def _check_notifications(self) -> None:
+        cred = self._load()
+        result = await asyncio.to_thread(self._check_notifications_sync)
+        if result is None:
+            return
 
-            lm = resp.headers.get("Last-Modified")
-            if lm:
-                self._last_modified = lm
+        if result["last_modified"]:
+            self._last_modified = result["last_modified"]
 
-            notifications = resp.json()
+        for notif in result["notifications"]:
+            notif_id = notif.get("id", "")
+            if notif_id in self._seen_ids:
+                continue
+            self._seen_ids.add(notif_id)
 
-            for notif in notifications:
-                notif_id = notif.get("id", "")
-                if notif_id in self._seen_ids:
-                    continue
-                self._seen_ids.add(notif_id)
+            repo_full = notif.get("repository", {}).get("full_name", "")
+            if cred.watch_repos and repo_full not in cred.watch_repos:
+                continue
 
-                repo_full = notif.get("repository", {}).get("full_name", "")
-                if cred.watch_repos and repo_full not in cred.watch_repos:
-                    continue
+            await self._dispatch_notification(notif)
 
-                await self._dispatch_notification(client, notif)
+        if len(self._seen_ids) > 500:
+            self._seen_ids = set(list(self._seen_ids)[-200:])
 
-            if len(self._seen_ids) > 500:
-                self._seen_ids = set(list(self._seen_ids)[-200:])
+    def _fetch_comment_sync(self, url: str) -> tuple[str, str]:
+        """Sync per-comment fetch — returns ``(body, author)`` or ``("", "")``."""
+        try:
+            cr = httpx.get(url, headers=self._headers(), timeout=15.0)
+            if cr.status_code != 200:
+                return "", ""
+            data = cr.json()
+            return data.get("body", ""), data.get("user", {}).get("login", "")
+        except Exception:
+            return "", ""
 
-    async def _dispatch_notification(self, client: httpx.AsyncClient, notif: Dict[str, Any]) -> None:
+    async def _dispatch_notification(self, notif: Dict[str, Any]) -> None:
         if not self._message_callback:
             return
 
@@ -307,14 +330,9 @@ class GitHubClient(BasePlatformClient):
         comment_body = ""
         comment_author = ""
         if latest_comment_url:
-            try:
-                cr = await client.get(latest_comment_url, headers=self._headers(), timeout=15)
-                if cr.status_code == 200:
-                    comment_data = cr.json()
-                    comment_body = comment_data.get("body", "")
-                    comment_author = comment_data.get("user", {}).get("login", "")
-            except Exception:
-                pass
+            comment_body, comment_author = await asyncio.to_thread(
+                self._fetch_comment_sync, latest_comment_url,
+            )
 
         watch_tag = cred.watch_tag
         if watch_tag:

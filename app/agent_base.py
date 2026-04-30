@@ -3099,6 +3099,7 @@ class AgentBase:
             agent_name = "CraftBot"
         _configure_integrations(
             project_root=Path(PROJECT_ROOT),
+            logger=logger,
             oauth={
                 # Google Workspace (Gmail / Calendar / Drive)
                 "GOOGLE_CLIENT_ID":            GOOGLE_CLIENT_ID,

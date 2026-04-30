@@ -99,6 +99,7 @@ class TwitterHandler(IntegrationHandler):
     display_name = "Twitter/X"
     description = "Tweets, mentions, and timeline"
     auth_type = "token"
+    icon = "twitter"
     fields = [
         {"key": "api_key", "label": "Consumer Key", "placeholder": "Enter Consumer key", "password": True},
         {"key": "api_secret", "label": "Consumer Secret", "placeholder": "Enter Consumer secret", "password": True},

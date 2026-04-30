@@ -82,6 +82,7 @@ class GoogleHandler(IntegrationHandler):
     display_name = "Google Workspace"
     description = "Gmail, Calendar, Drive"
     auth_type = "oauth"
+    icon = "google"
     fields: List = []
 
     oauth = OAuthFlow(

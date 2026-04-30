@@ -26,6 +26,12 @@ See integrations/github.py for the canonical shape.
 """
 from __future__ import annotations
 
+# Apply runtime compatibility shim before any submodule that uses asyncio.timeout
+# imports it (websockets, aiohttp, etc.). See _runtime_compat.py for details.
+from ._runtime_compat import apply_asyncio_timeout_shim as _apply_timeout_shim
+
+_apply_timeout_shim()
+
 from .base import (
     BasePlatformClient,
     IntegrationHandler,

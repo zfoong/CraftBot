@@ -64,6 +64,7 @@ class JiraHandler(IntegrationHandler):
     display_name = "Jira"
     description = "Issue tracking and project management"
     auth_type = "token"
+    icon = "jira"
     fields = [
         {"key": "domain", "label": "Jira Domain", "placeholder": "mycompany.atlassian.net", "password": False},
         {"key": "email", "label": "Email", "placeholder": "you@example.com", "password": False},

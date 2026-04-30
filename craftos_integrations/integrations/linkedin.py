@@ -62,6 +62,7 @@ class LinkedInHandler(IntegrationHandler):
     display_name = "LinkedIn"
     description = "Professional network"
     auth_type = "oauth"
+    icon = "linkedin"
     fields: List = []
 
     oauth = OAuthFlow(
