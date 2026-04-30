@@ -98,15 +98,12 @@ class ActionRouter:
         # Base conversation mode actions
         base_actions = ["send_message", "task_start", "ignore"]
 
-        # Dynamically add messaging actions for connected platforms
+        # Dynamically add messaging actions for connected platforms.
+        # Curation (which actions match which integration) lives in the host —
+        # the package only reports which platforms are currently connected.
         try:
-            from app.external_comms.integration_discovery import (
-                get_connected_messaging_platforms,
-                get_messaging_actions_for_platforms,
-            )
-            connected_platforms = get_connected_messaging_platforms()
-            messaging_actions = get_messaging_actions_for_platforms(connected_platforms)
-            conversation_mode_actions = base_actions + messaging_actions
+            from app.data.action.integrations._routing import get_messaging_actions_for_connected
+            conversation_mode_actions = base_actions + get_messaging_actions_for_connected()
         except Exception as e:
             logger.debug(f"[ACTION] Could not discover messaging actions: {e}")
             conversation_mode_actions = base_actions

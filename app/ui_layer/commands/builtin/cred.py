@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import List
 
 from app.ui_layer.commands.base import Command, CommandResult
-from app.credentials.handlers import INTEGRATION_HANDLERS
+from craftos_integrations import (
+    get_all_handlers,
+    is_connected,
+    parse_status_accounts,
+)
 
 
 class CredCommand(Command):
@@ -35,7 +39,7 @@ Subcommands:
 Use /<integration> commands to manage specific integrations:
   /google       - Google integration
   /slack        - Slack integration
-  /telegram     - Telegram integration
+  /telegram_bot - Telegram Bot integration
   etc.
 
 Examples:
@@ -74,40 +78,40 @@ Examples:
         """List all configured credentials."""
         lines = ["Configured credentials:", ""]
 
-        for name, handler in INTEGRATION_HANDLERS.items():
-            try:
-                status = handler.get_status() if hasattr(handler, "get_status") else {}
-                connected = status.get("connected", False)
-                status_text = "connected" if connected else "not connected"
-                lines.append(f"  {name}: {status_text}")
-            except Exception:
-                lines.append(f"  {name}: unknown")
+        for name in get_all_handlers():
+            connected = is_connected(name)
+            lines.append(f"  {name}: {'connected' if connected else 'not connected'}")
 
         return CommandResult(success=True, message="\n".join(lines))
 
     async def _show_status(self) -> CommandResult:
-        """Show integration status."""
+        """Show integration status with per-account info when connected."""
         lines = ["Integration status:", ""]
 
         connected_count = 0
-        total_count = len(INTEGRATION_HANDLERS)
+        all_handlers = get_all_handlers()
 
-        for name, handler in INTEGRATION_HANDLERS.items():
+        for name, handler in all_handlers.items():
+            display = handler.display_name or name
             try:
-                status = handler.get_status() if hasattr(handler, "get_status") else {}
-                connected = status.get("connected", False)
+                _, status_msg = await handler.status()
+                first = status_msg.split("\n", 1)[0]
+                connected = "Connected" in first and "Not connected" not in first
                 if connected:
                     connected_count += 1
-                    account = status.get("account", "")
-                    account_info = f" ({account})" if account else ""
-                    lines.append(f"  [+] {name}{account_info}")
+                    accounts = parse_status_accounts(status_msg)
+                    if accounts:
+                        account_label = ", ".join(a.get("display") or a.get("id", "") for a in accounts)
+                        lines.append(f"  [+] {display} ({account_label})")
+                    else:
+                        lines.append(f"  [+] {display}")
                 else:
-                    lines.append(f"  [ ] {name}")
+                    lines.append(f"  [ ] {display}")
             except Exception:
-                lines.append(f"  [?] {name}")
+                lines.append(f"  [?] {display}")
 
         lines.append("")
-        lines.append(f"{connected_count}/{total_count} integrations connected")
+        lines.append(f"{connected_count}/{len(all_handlers)} integrations connected")
         lines.append("")
         lines.append("Use /<integration> to manage a specific integration.")
 
@@ -117,11 +121,11 @@ Examples:
         """List available integrations."""
         lines = ["Available integrations:", ""]
 
-        for name, handler in INTEGRATION_HANDLERS.items():
-            desc = ""
-            if hasattr(handler, "description"):
-                desc = f" - {handler.description}"
-            lines.append(f"  /{name}{desc}")
+        for name, handler in get_all_handlers().items():
+            display = handler.display_name or name
+            description = handler.description
+            suffix = f" — {description}" if description else ""
+            lines.append(f"  /{name}  ({display}){suffix}")
 
         lines.append("")
         lines.append("Use /<integration> to see commands for that integration.")

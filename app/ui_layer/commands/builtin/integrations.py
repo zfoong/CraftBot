@@ -1,7 +1,7 @@
 """Integration-specific command implementation.
 
-All connect / disconnect / status operations go through the centralised
-``integration_settings`` module so that terminal, browser, and agent
+All connect / disconnect / status operations go through the
+``craftos_integrations`` package so that terminal, browser, and agent
 share the same logic and side-effects (e.g. platform-listener startup).
 """
 
@@ -10,16 +10,17 @@ from __future__ import annotations
 from typing import List
 
 from app.ui_layer.commands.base import Command, CommandResult
-from app.external_comms.integration_settings import (
-    INTEGRATION_REGISTRY,
-    get_integration_info,
+from craftos_integrations import (
+    connect_token as connect_integration_token,
+    connect_oauth as connect_integration_oauth,
+    connect_interactive as connect_integration_interactive,
+    disconnect as _disconnect_integration,
+    get_handler,
     get_integration_auth_type,
-    connect_integration_token,
-    connect_integration_oauth,
-    connect_integration_interactive,
-    disconnect_integration as _disconnect_integration,
+    get_integration_fields,
+    get_integration_info_sync as get_integration_info,
+    get_metadata,
 )
-from app.credentials.handlers import INTEGRATION_HANDLERS
 
 
 class IntegrationCommand(Command):
@@ -28,7 +29,6 @@ class IntegrationCommand(Command):
     def __init__(self, controller, integration_name: str) -> None:
         super().__init__(controller)
         self._integration_name = integration_name
-        self._handler = INTEGRATION_HANDLERS.get(integration_name)
 
     @property
     def name(self) -> str:
@@ -36,9 +36,9 @@ class IntegrationCommand(Command):
 
     @property
     def description(self) -> str:
-        info = INTEGRATION_REGISTRY.get(self._integration_name)
-        if info:
-            return f"{info['name']} — {info['description']}"
+        meta = get_metadata(self._integration_name)
+        if meta:
+            return f"{meta['name']} — {meta['description']}"
         return f"Manage {self._integration_name} integration"
 
     @property
@@ -48,20 +48,20 @@ class IntegrationCommand(Command):
     @property
     def help_text(self) -> str:
         lines = [f"Manage {self._integration_name} integration.", ""]
-
-        if self._handler:
-            if hasattr(self._handler, "get_commands"):
-                commands = self._handler.get_commands()
-                if commands:
-                    lines.append("Commands:")
-                    for cmd_name, cmd_desc in commands.items():
-                        lines.append(f"  {cmd_name} - {cmd_desc}")
-                    lines.append("")
-
         lines.append("Common commands:")
         lines.append("  connect    - Connect to integration")
         lines.append("  disconnect - Disconnect from integration")
         lines.append("  status     - Show connection status")
+
+        # Surface handler-specific subcommands (login-qr, invite, etc.)
+        handler = get_handler(self._integration_name)
+        if handler:
+            extras = [s for s in getattr(handler, "subcommands", []) if s not in {"login", "logout", "status"}]
+            if extras:
+                lines.append("")
+                lines.append("Integration-specific subcommands:")
+                for sub in extras:
+                    lines.append(f"  {sub}")
 
         return "\n".join(lines)
 
@@ -70,7 +70,7 @@ class IntegrationCommand(Command):
         args: List[str],
         adapter_id: str = "",
     ) -> CommandResult:
-        if self._integration_name not in INTEGRATION_REGISTRY:
+        if get_metadata(self._integration_name) is None:
             return CommandResult(
                 success=False,
                 message=f"Integration not available: {self._integration_name}",
@@ -90,9 +90,10 @@ class IntegrationCommand(Command):
             return await self._disconnect()
 
         # Delegate handler-specific subcommands (login-qr, invite, etc.)
-        if self._handler:
+        handler = get_handler(self._integration_name)
+        if handler:
             try:
-                success, message = await self._handler.handle(subcommand, sub_args)
+                success, message = await handler.handle(subcommand, sub_args)
                 return CommandResult(success=success, message=message)
             except Exception as e:
                 return CommandResult(success=False, message=f"Command error: {e}")
@@ -103,7 +104,7 @@ class IntegrationCommand(Command):
         )
 
     async def _show_status(self) -> CommandResult:
-        """Show integration status via the centralised integration_settings module."""
+        """Show integration status (metadata + live connection state)."""
         try:
             info = get_integration_info(self._integration_name)
             if not info:
@@ -125,15 +126,14 @@ class IntegrationCommand(Command):
             return CommandResult(success=False, message=f"Failed to get status: {e}")
 
     async def _connect(self, args: List[str]) -> CommandResult:
-        """Connect via the centralised integration_settings module.
+        """Dispatch to the right craftos_integrations connect_* helper.
 
-        Determines the correct auth flow (token / oauth / interactive)
-        based on the integration's auth_type and the arguments provided.
+        Picks the auth path (token / oauth / interactive) from the handler's
+        declared ``auth_type``.
         """
         try:
             auth_type = get_integration_auth_type(self._integration_name)
-            info = INTEGRATION_REGISTRY.get(self._integration_name, {})
-            fields = info.get("fields", [])
+            fields = get_integration_fields(self._integration_name)
 
             # Token-based: args should provide credential values in field order
             if auth_type in ("token", "both", "token_with_interactive") and (args or fields):
@@ -174,7 +174,6 @@ class IntegrationCommand(Command):
             return CommandResult(success=False, message=f"Connection failed: {e}")
 
     async def _disconnect(self) -> CommandResult:
-        """Disconnect via the centralised integration_settings module."""
         try:
             success, message = await _disconnect_integration(self._integration_name)
             return CommandResult(success=success, message=message)

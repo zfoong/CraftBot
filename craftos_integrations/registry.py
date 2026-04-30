@@ -1,0 +1,135 @@
+"""Registry for platform clients and integration handlers.
+
+Two parallel registries (clients and handlers) keep the runtime and auth
+lifecycles separate. Both are populated by decorators (@register_client,
+@register_handler) and resolved as singletons.
+
+autoload_integrations() walks the integrations/ subpackage and imports
+every module — that triggers the decorators. Adding a new integration
+is one file drop with no edits here.
+"""
+from __future__ import annotations
+
+import importlib
+import pkgutil
+from typing import Dict, List, Optional, Type
+
+from .base import BasePlatformClient, IntegrationHandler
+from .logger import get_logger
+
+logger = get_logger(__name__)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Platform clients (runtime side)
+# ════════════════════════════════════════════════════════════════════════
+
+_client_classes: Dict[str, Type[BasePlatformClient]] = {}
+_client_instances: Dict[str, BasePlatformClient] = {}
+
+
+def register_client(cls: Type[BasePlatformClient]) -> Type[BasePlatformClient]:
+    pid = cls.PLATFORM_ID
+    if not pid:
+        raise ValueError(f"{cls.__name__} has no PLATFORM_ID set")
+    _client_classes[pid] = cls
+    return cls
+
+
+def get_client(platform_id: str) -> Optional[BasePlatformClient]:
+    if platform_id in _client_instances:
+        return _client_instances[platform_id]
+    cls = _client_classes.get(platform_id)
+    if cls is None:
+        return None
+    instance = cls()
+    _client_instances[platform_id] = instance
+    return instance
+
+
+def get_all_clients() -> Dict[str, BasePlatformClient]:
+    for pid in _client_classes:
+        if pid not in _client_instances:
+            _client_instances[pid] = _client_classes[pid]()
+    return dict(_client_instances)
+
+
+def get_registered_platforms() -> List[str]:
+    return list(_client_classes.keys())
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Integration handlers (auth side)
+# ════════════════════════════════════════════════════════════════════════
+
+_handler_classes: Dict[str, Type[IntegrationHandler]] = {}
+_handler_instances: Dict[str, IntegrationHandler] = {}
+
+
+def register_handler(name: str):
+    """Decorator: @register_handler("slack")."""
+    def deco(cls: Type[IntegrationHandler]) -> Type[IntegrationHandler]:
+        _handler_classes[name] = cls
+        return cls
+    return deco
+
+
+def get_handler(name: str) -> Optional[IntegrationHandler]:
+    if name in _handler_instances:
+        return _handler_instances[name]
+    cls = _handler_classes.get(name)
+    if cls is None:
+        return None
+    instance = cls()
+    _handler_instances[name] = instance
+    return instance
+
+
+def get_all_handlers() -> Dict[str, IntegrationHandler]:
+    for name in _handler_classes:
+        if name not in _handler_instances:
+            _handler_instances[name] = _handler_classes[name]()
+    return dict(_handler_instances)
+
+
+def get_registered_handler_names() -> List[str]:
+    return list(_handler_classes.keys())
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Autoloader
+# ════════════════════════════════════════════════════════════════════════
+
+_autoloaded = False
+
+
+def autoload_integrations(force: bool = False) -> None:
+    """Import every module under craftos_integrations.integrations.
+
+    Triggers @register_client and @register_handler decorators on import.
+    Idempotent unless force=True.
+    """
+    global _autoloaded
+    if _autoloaded and not force:
+        return
+
+    from . import integrations as pkg
+
+    for _, modname, _ in pkgutil.iter_modules(pkg.__path__):
+        if modname.startswith("_"):
+            continue
+        full = f"{pkg.__name__}.{modname}"
+        try:
+            importlib.import_module(full)
+        except Exception as e:
+            logger.warning(f"[REGISTRY] Failed to autoload {full}: {e}")
+
+    _autoloaded = True
+
+
+def reset() -> None:
+    """Clear all instances (for testing)."""
+    global _autoloaded
+    _client_instances.clear()
+    _handler_instances.clear()
+    _autoloaded = False

@@ -567,11 +567,16 @@ class UIController:
         self._register_integration_commands()
 
     def _register_integration_commands(self) -> None:
-        """Register integration-specific commands."""
-        from app.credentials.handlers import INTEGRATION_HANDLERS
+        """Register integration-specific commands.
+
+        ``manager.start()`` (called during agent step 6) has already populated
+        the registry by the time the UI controller boots, so we just iterate
+        the registered handler names.
+        """
+        from craftos_integrations import get_registered_handler_names
         from app.ui_layer.commands.builtin.integrations import IntegrationCommand
 
-        for integration_name in INTEGRATION_HANDLERS:
+        for integration_name in get_registered_handler_names():
             cmd = IntegrationCommand(self, integration_name)
             self._command_registry.register(cmd)
 

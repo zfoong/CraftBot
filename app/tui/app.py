@@ -18,7 +18,7 @@ from app.models.model_registry import MODEL_REGISTRY
 from app.models.types import InterfaceType
 
 from app.tui.styles import TUI_CSS
-from app.tui.settings import save_settings_to_json, get_api_key_env_name, get_api_key_for_provider
+from app.tui.settings import save_settings_to_json, get_api_key_for_provider
 from app.tui.widgets import ConversationLog, PasteableInput, VMFootageWidget, TaskSelected
 from app.tui.mcp_settings import (
     list_mcp_servers,
@@ -38,17 +38,20 @@ from app.tui.skill_settings import (
     install_skill_from_path,
     install_skill_from_git,
 )
-from app.external_comms.integration_settings import (
-    list_integrations,
-    get_integration_info,
+from craftos_integrations import (
+    autoload_integrations as _autoload_integrations,
+    connect_token as connect_integration_token,
+    connect_oauth as connect_integration_oauth,
+    connect_interactive as connect_integration_interactive,
+    disconnect as disconnect_integration,
     get_integration_fields,
-    get_integration_auth_type,
-    connect_integration_token,
-    connect_integration_oauth,
-    connect_integration_interactive,
-    disconnect_integration,
-    INTEGRATION_REGISTRY,
+    get_integration_info_sync as get_integration_info,
+    integration_registry,
+    list_integrations_sync as list_integrations,
 )
+
+_autoload_integrations()
+INTEGRATION_REGISTRY = integration_registry()
 from app.onboarding import onboarding_manager
 from app.logger import logger
 

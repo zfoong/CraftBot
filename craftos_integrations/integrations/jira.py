@@ -1,0 +1,667 @@
+# -*- coding: utf-8 -*-
+"""Jira integration — handler + client + credential."""
+from __future__ import annotations
+
+import asyncio
+import base64
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
+
+from .. import (
+    BasePlatformClient,
+    IntegrationHandler,
+    IntegrationSpec,
+    PlatformMessage,
+    has_credential,
+    load_credential,
+    register_client,
+    register_handler,
+    remove_credential,
+    save_credential,
+)
+from ..helpers import Result, arequest, request as http_request
+from ..logger import get_logger
+
+logger = get_logger(__name__)
+
+JIRA_CLOUD_API = "https://api.atlassian.com/ex/jira"
+POLL_INTERVAL = 10
+RETRY_DELAY = 15
+
+
+@dataclass
+class JiraCredential:
+    domain: str = ""
+    email: str = ""
+    api_token: str = ""
+    cloud_id: str = ""
+    access_token: str = ""
+    refresh_token: str = ""
+    token_expiry: float = 0.0
+    site_url: str = ""
+    watch_labels: List[str] = field(default_factory=list)
+    watch_tag: str = ""
+
+
+JIRA = IntegrationSpec(
+    name="jira",
+    cred_class=JiraCredential,
+    cred_file="jira.json",
+    platform_id="jira",
+)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Handler
+# ════════════════════════════════════════════════════════════════════════
+
+@register_handler(JIRA.name)
+class JiraHandler(IntegrationHandler):
+    spec = JIRA
+    display_name = "Jira"
+    description = "Issue tracking and project management"
+    auth_type = "token"
+    fields = [
+        {"key": "domain", "label": "Jira Domain", "placeholder": "mycompany.atlassian.net", "password": False},
+        {"key": "email", "label": "Email", "placeholder": "you@example.com", "password": False},
+        {"key": "api_token", "label": "API Token", "placeholder": "Enter Jira API token", "password": True},
+    ]
+
+    async def login(self, args: List[str]) -> Tuple[bool, str]:
+        if len(args) < 3:
+            return False, (
+                "Usage: /jira login <domain> <email> <api_token>\n"
+                "Get an API token from https://id.atlassian.com/manage-profile/security/api-tokens"
+            )
+        domain, email, api_token = args[0], args[1], args[2]
+
+        clean_domain = domain.strip().rstrip("/")
+        if clean_domain.startswith("https://"):
+            clean_domain = clean_domain[len("https://"):]
+        if clean_domain.startswith("http://"):
+            clean_domain = clean_domain[len("http://"):]
+        if "." not in clean_domain:
+            clean_domain = f"{clean_domain}.atlassian.net"
+
+        email = email.strip()
+        api_token = api_token.strip()
+
+        raw_auth = base64.b64encode(f"{email}:{api_token}".encode()).decode()
+        auth_headers = {"Authorization": f"Basic {raw_auth}", "Accept": "application/json"}
+
+        data = None
+        last_status = 0
+        for api_ver in ("3", "2"):
+            url = f"https://{clean_domain}/rest/api/{api_ver}/myself"
+            logger.info(f"[Jira] Trying {url} with email={email}")
+            try:
+                r = httpx.get(url, headers=auth_headers, timeout=15, follow_redirects=True)
+            except httpx.ConnectError:
+                return False, f"Cannot connect to https://{clean_domain} — check the domain name."
+            except Exception as e:
+                return False, f"Jira connection error: {e}"
+            if r.status_code == 200:
+                data = r.json()
+                break
+            logger.warning(f"[Jira] API v{api_ver} returned HTTP {r.status_code}: {r.text[:300]}")
+            last_status = r.status_code
+
+        if data is None:
+            hints = [f"Tried: https://{clean_domain}/rest/api/3/myself"]
+            if last_status == 401:
+                hints.append("Ensure you are using an API token, not your account password.")
+                hints.append("The email must match your Atlassian account email exactly.")
+                hints.append("Generate a token at: https://id.atlassian.com/manage-profile/security/api-tokens")
+            elif last_status == 403:
+                hints.append("Your account may not have REST API access. Check Jira permissions.")
+            elif last_status == 404:
+                hints.append(f"Domain '{clean_domain}' not reachable or has no REST API.")
+            hint_str = "\n".join(f"  - {h}" for h in hints)
+            return False, f"Jira auth failed (HTTP {last_status}).\n{hint_str}"
+
+        save_credential(self.spec.cred_file, JiraCredential(
+            domain=clean_domain,
+            email=email,
+            api_token=api_token,
+        ))
+        display_name = data.get("displayName", email)
+        return True, f"Jira connected as {display_name} ({clean_domain})"
+
+    async def logout(self, args: List[str]) -> Tuple[bool, str]:
+        if not has_credential(self.spec.cred_file):
+            return False, "No Jira credentials found."
+        try:
+            from ..manager import get_external_comms_manager
+            manager = get_external_comms_manager()
+            if manager:
+                await manager.stop_platform(self.spec.platform_id)
+        except Exception:
+            pass
+        remove_credential(self.spec.cred_file)
+        return True, "Removed Jira credential."
+
+    async def status(self) -> Tuple[bool, str]:
+        if not has_credential(self.spec.cred_file):
+            return True, "Jira: Not connected"
+        cred = load_credential(self.spec.cred_file, JiraCredential)
+        if not cred:
+            return True, "Jira: Not connected"
+        domain = cred.domain or cred.site_url or "unknown"
+        email = cred.email or "OAuth"
+        labels = cred.watch_labels
+        label_info = f" [watching: {', '.join(labels)}]" if labels else ""
+        return True, f"Jira: Connected\n  - {email} ({domain}){label_info}"
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Client
+# ════════════════════════════════════════════════════════════════════════
+
+@register_client
+class JiraClient(BasePlatformClient):
+    spec = JIRA
+    PLATFORM_ID = JIRA.platform_id
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._cred: Optional[JiraCredential] = None
+        self._poll_task: Optional[asyncio.Task] = None
+        self._last_poll_time: Optional[str] = None
+        self._seen_issue_keys: set = set()
+        self._catchup_done: bool = False
+
+    def has_credentials(self) -> bool:
+        return has_credential(self.spec.cred_file)
+
+    def _load(self) -> JiraCredential:
+        if self._cred is None:
+            self._cred = load_credential(self.spec.cred_file, JiraCredential)
+        if self._cred is None:
+            raise RuntimeError("No Jira credentials. Use /jira login first.")
+        return self._cred
+
+    def _is_oauth(self) -> bool:
+        cred = self._load()
+        return bool(cred.cloud_id and cred.access_token)
+
+    def _base_url(self) -> str:
+        cred = self._load()
+        if cred.cloud_id:
+            return f"{JIRA_CLOUD_API}/{cred.cloud_id}/rest/api/3"
+        if cred.domain:
+            domain = cred.domain.rstrip("/")
+            if not domain.startswith("http"):
+                domain = f"https://{domain}"
+            return f"{domain}/rest/api/3"
+        raise RuntimeError("No Jira domain or cloud_id configured.")
+
+    def _headers(self) -> Dict[str, str]:
+        cred = self._load()
+        headers: Dict[str, str] = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if cred.cloud_id and cred.access_token:
+            headers["Authorization"] = f"Bearer {cred.access_token}"
+        elif cred.email and cred.api_token:
+            raw = f"{cred.email}:{cred.api_token}"
+            headers["Authorization"] = f"Basic {base64.b64encode(raw.encode()).decode()}"
+        else:
+            raise RuntimeError("Incomplete Jira credentials.")
+        return headers
+
+    async def connect(self) -> None:
+        self._load()
+        self._connected = True
+
+    async def send_message(self, recipient: str, text: str, **kwargs) -> Result:
+        return await self.add_comment(recipient, text)
+
+    # ----- Watch labels / tag -----
+
+    def get_watch_labels(self) -> List[str]:
+        return list(self._load().watch_labels)
+
+    def set_watch_labels(self, labels: List[str]) -> None:
+        cred = self._load()
+        cred.watch_labels = [lbl.strip() for lbl in labels if lbl.strip()]
+        save_credential(self.spec.cred_file, cred)
+        self._cred = cred
+        logger.info(f"[JIRA] Watch labels set to: {cred.watch_labels or '(all issues)'}")
+
+    def add_watch_label(self, label: str) -> None:
+        cred = self._load()
+        label = label.strip()
+        if label and label not in cred.watch_labels:
+            cred.watch_labels.append(label)
+            save_credential(self.spec.cred_file, cred)
+            self._cred = cred
+
+    def remove_watch_label(self, label: str) -> None:
+        cred = self._load()
+        label = label.strip()
+        if label in cred.watch_labels:
+            cred.watch_labels.remove(label)
+            save_credential(self.spec.cred_file, cred)
+            self._cred = cred
+
+    def get_watch_tag(self) -> str:
+        return self._load().watch_tag
+
+    def set_watch_tag(self, tag: str) -> None:
+        cred = self._load()
+        cred.watch_tag = tag.strip()
+        save_credential(self.spec.cred_file, cred)
+        self._cred = cred
+
+    # ----- Listening -----
+
+    @property
+    def supports_listening(self) -> bool:
+        return True
+
+    async def start_listening(self, callback) -> None:
+        if self._listening:
+            return
+        self._message_callback = callback
+        self._load()
+
+        me = await self.get_myself()
+        if "error" in me:
+            raise RuntimeError(f"Invalid Jira credentials: {me.get('error')}")
+        display = me.get("result", {}).get("displayName", "unknown")
+        logger.info(f"[JIRA] Authenticated as: {display}")
+
+        self._last_poll_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        self._catchup_done = True
+        self._listening = True
+        self._poll_task = asyncio.create_task(self._poll_loop())
+
+    async def stop_listening(self) -> None:
+        if not self._listening:
+            return
+        self._listening = False
+        if self._poll_task and not self._poll_task.done():
+            self._poll_task.cancel()
+            try:
+                await self._poll_task
+            except asyncio.CancelledError:
+                pass
+        self._poll_task = None
+
+    async def _poll_loop(self) -> None:
+        while self._listening:
+            try:
+                await self._check_updates()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[JIRA] Poll error: {e}")
+                await asyncio.sleep(RETRY_DELAY)
+                continue
+            await asyncio.sleep(POLL_INTERVAL)
+
+    async def _check_updates(self) -> None:
+        if not self._last_poll_time:
+            return
+
+        cred = self._load()
+        jql_parts = [f'updated >= "{self._last_poll_time}"']
+        if cred.watch_labels:
+            label_clauses = " OR ".join(f'labels = "{lbl}"' for lbl in cred.watch_labels)
+            jql_parts.append(f"({label_clauses})")
+        jql = " AND ".join(jql_parts) + " ORDER BY updated ASC"
+
+        result = await arequest(
+            "POST", f"{self._base_url()}/search/jql",
+            headers=self._headers(),
+            json={
+                "jql": jql,
+                "maxResults": 50,
+                "fields": ["summary", "status", "assignee", "reporter", "labels", "updated", "comment", "issuetype", "priority", "project"],
+            },
+            timeout=30.0,
+            expected=(200,),
+        )
+        if "error" in result:
+            if "401" in result["error"]:
+                logger.warning("[JIRA] Authentication expired (401)")
+            else:
+                logger.warning(f"[JIRA] Search API {result['error']}")
+            return
+
+        for issue in (result["result"] or {}).get("issues", []):
+            issue_key = issue.get("key", "")
+            updated = issue.get("fields", {}).get("updated", "")
+            dedup_key = f"{issue_key}:{updated}"
+            if dedup_key in self._seen_issue_keys:
+                continue
+            self._seen_issue_keys.add(dedup_key)
+            await self._dispatch_issue(issue)
+
+        self._last_poll_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        if len(self._seen_issue_keys) > 500:
+            self._seen_issue_keys = set(list(self._seen_issue_keys)[-200:])
+
+    async def _dispatch_issue(self, issue: Dict[str, Any]) -> None:
+        if not self._message_callback:
+            return
+
+        cred = self._load()
+        fields_data = issue.get("fields", {})
+        issue_key = issue.get("key", "")
+        summary = fields_data.get("summary", "")
+        status_name = (fields_data.get("status") or {}).get("name", "")
+        issue_type = (fields_data.get("issuetype") or {}).get("name", "")
+        priority = (fields_data.get("priority") or {}).get("name", "")
+        project_key = (fields_data.get("project") or {}).get("key", "")
+        labels = fields_data.get("labels", [])
+
+        assignee = fields_data.get("assignee") or {}
+        assignee_name = assignee.get("displayName", "Unassigned")
+        reporter = fields_data.get("reporter") or {}
+        reporter_name = reporter.get("displayName", "Unknown")
+        comments = (fields_data.get("comment") or {}).get("comments", [])
+
+        watch_tag = cred.watch_tag
+        if watch_tag:
+            matching_comment = None
+            tag_lower = watch_tag.lower()
+            for comment in reversed(comments):
+                comment_body = _extract_adf_text(comment.get("body", {}))
+                if tag_lower in comment_body.lower():
+                    comment_id = comment.get("id", "")
+                    comment_dedup = f"{issue_key}:comment:{comment_id}"
+                    if comment_dedup in self._seen_issue_keys:
+                        continue
+                    self._seen_issue_keys.add(comment_dedup)
+                    matching_comment = comment
+                    break
+
+            if matching_comment is None:
+                return
+
+            comment_author = (matching_comment.get("author") or {}).get("displayName", "Unknown")
+            comment_author_id = (matching_comment.get("author") or {}).get("accountId", "")
+            comment_body = _extract_adf_text(matching_comment.get("body", {}))
+            idx = comment_body.lower().find(tag_lower)
+            instruction = comment_body[idx + len(watch_tag):].strip() if idx >= 0 else comment_body
+
+            text_parts = [
+                f"[{issue_key}] {summary}",
+                f"Status: {status_name} | Assignee: {assignee_name}",
+                f"Comment by {comment_author}: {instruction or comment_body}",
+            ]
+
+            timestamp = None
+            try:
+                timestamp = datetime.fromisoformat(matching_comment.get("created", "").replace("Z", "+00:00"))
+            except Exception:
+                pass
+
+            await self._message_callback(PlatformMessage(
+                platform=self.spec.platform_id,
+                sender_id=comment_author_id,
+                sender_name=comment_author,
+                text="\n".join(text_parts),
+                channel_id=project_key,
+                channel_name=f"{project_key} ({issue_type})",
+                message_id=f"{issue_key}:{matching_comment.get('id', '')}",
+                timestamp=timestamp,
+                raw={
+                    "issue": issue,
+                    "trigger": "comment_tag",
+                    "tag": watch_tag,
+                    "instruction": instruction or comment_body,
+                    "comment": matching_comment,
+                },
+            ))
+            return
+
+        text_parts = [
+            f"[{issue_key}] {summary}",
+            f"Type: {issue_type} | Priority: {priority} | Status: {status_name}",
+            f"Project: {project_key} | Assignee: {assignee_name}",
+        ]
+        if labels:
+            text_parts.append(f"Labels: {', '.join(labels)}")
+        if comments:
+            latest = comments[-1]
+            cb = _extract_adf_text(latest.get("body", {}))
+            ca = (latest.get("author") or {}).get("displayName", "")
+            if cb:
+                text_parts.append(f"Latest comment by {ca}: {cb[:200]}")
+
+        timestamp = None
+        try:
+            timestamp = datetime.fromisoformat(fields_data.get("updated", "").replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+        await self._message_callback(PlatformMessage(
+            platform=self.spec.platform_id,
+            sender_id=reporter.get("accountId", ""),
+            sender_name=reporter_name,
+            text="\n".join(text_parts),
+            channel_id=project_key,
+            channel_name=f"{project_key} ({issue_type})",
+            message_id=issue_key,
+            timestamp=timestamp,
+            raw=issue,
+        ))
+
+    # ----- REST API -----
+
+    async def get_myself(self) -> Result:
+        return await arequest(
+            "GET", f"{self._base_url()}/myself",
+            headers=self._headers(),
+            expected=(200,),
+            transform=lambda d: {
+                "accountId": d.get("accountId"),
+                "displayName": d.get("displayName"),
+                "emailAddress": d.get("emailAddress", ""),
+                "active": d.get("active", True),
+            },
+        )
+
+    async def search_issues(self, jql: str, max_results: int = 50, fields_list: Optional[List[str]] = None) -> Result:
+        payload: Dict[str, Any] = {"jql": jql, "maxResults": min(max_results, 100)}
+        if fields_list:
+            payload["fields"] = fields_list
+        return await arequest(
+            "POST", f"{self._base_url()}/search/jql",
+            headers=self._headers(),
+            json=payload,
+            timeout=30.0,
+            expected=(200,),
+            transform=lambda d: {"total": d.get("total", 0), "issues": d.get("issues", [])},
+        )
+
+    async def get_issue(self, issue_key: str, fields_list: Optional[List[str]] = None) -> Result:
+        params: Dict[str, Any] = {}
+        if fields_list:
+            params["fields"] = ",".join(fields_list)
+        return await arequest(
+            "GET", f"{self._base_url()}/issue/{issue_key}",
+            headers=self._headers(),
+            params=params,
+            expected=(200,),
+        )
+
+    async def create_issue(self, project_key: str, summary: str, issue_type: str = "Task",
+                           description: Optional[str] = None, assignee_id: Optional[str] = None,
+                           labels: Optional[List[str]] = None, priority: Optional[str] = None,
+                           extra_fields: Optional[Dict[str, Any]] = None) -> Result:
+        fields_payload: Dict[str, Any] = {
+            "project": {"key": project_key},
+            "summary": summary,
+            "issuetype": {"name": issue_type},
+        }
+        if description:
+            fields_payload["description"] = _text_to_adf(description)
+        if assignee_id:
+            fields_payload["assignee"] = {"accountId": assignee_id}
+        if labels:
+            fields_payload["labels"] = labels
+        if priority:
+            fields_payload["priority"] = {"name": priority}
+        if extra_fields:
+            fields_payload.update(extra_fields)
+
+        return await arequest(
+            "POST", f"{self._base_url()}/issue",
+            headers=self._headers(),
+            json={"fields": fields_payload},
+            transform=lambda d: {"id": d.get("id"), "key": d.get("key"), "self": d.get("self")},
+        )
+
+    async def update_issue(self, issue_key: str, fields_update: Dict[str, Any]) -> Result:
+        return await arequest(
+            "PUT", f"{self._base_url()}/issue/{issue_key}",
+            headers=self._headers(),
+            json={"fields": fields_update},
+            expected=(204,),
+            transform=lambda _d: {"updated": True, "key": issue_key},
+        )
+
+    async def add_comment(self, issue_key: str, body: str) -> Result:
+        return await arequest(
+            "POST", f"{self._base_url()}/issue/{issue_key}/comment",
+            headers=self._headers(),
+            json={"body": _text_to_adf(body)},
+            transform=lambda d: {"id": d.get("id"), "created": d.get("created"), "author": (d.get("author") or {}).get("displayName", "")},
+        )
+
+    async def get_transitions(self, issue_key: str) -> Result:
+        return await arequest(
+            "GET", f"{self._base_url()}/issue/{issue_key}/transitions",
+            headers=self._headers(),
+            expected=(200,),
+            transform=lambda d: {"transitions": [
+                {"id": t.get("id"), "name": t.get("name"), "to": (t.get("to") or {}).get("name", "")}
+                for t in d.get("transitions", [])
+            ]},
+        )
+
+    async def transition_issue(self, issue_key: str, transition_id: str, comment: Optional[str] = None) -> Result:
+        payload: Dict[str, Any] = {"transition": {"id": transition_id}}
+        if comment:
+            payload["update"] = {"comment": [{"add": {"body": _text_to_adf(comment)}}]}
+        return await arequest(
+            "POST", f"{self._base_url()}/issue/{issue_key}/transitions",
+            headers=self._headers(),
+            json=payload,
+            expected=(204,),
+            transform=lambda _d: {"transitioned": True, "key": issue_key},
+        )
+
+    async def assign_issue(self, issue_key: str, account_id: Optional[str] = None) -> Result:
+        return await arequest(
+            "PUT", f"{self._base_url()}/issue/{issue_key}/assignee",
+            headers=self._headers(),
+            json={"accountId": account_id},
+            expected=(204,),
+            transform=lambda _d: {"assigned": True, "key": issue_key},
+        )
+
+    async def get_projects(self, max_results: int = 50) -> Result:
+        return await arequest(
+            "GET", f"{self._base_url()}/project/search",
+            headers=self._headers(),
+            params={"maxResults": max_results},
+            expected=(200,),
+            transform=lambda d: {"projects": [
+                {"id": p.get("id"), "key": p.get("key"), "name": p.get("name"), "style": p.get("style", "")}
+                for p in d.get("values", [])
+            ]},
+        )
+
+    async def search_users(self, query: str, max_results: int = 20) -> Result:
+        return await arequest(
+            "GET", f"{self._base_url()}/user/search",
+            headers=self._headers(),
+            params={"query": query, "maxResults": max_results},
+            expected=(200,),
+            transform=lambda d: {"users": [
+                {"accountId": u.get("accountId"), "displayName": u.get("displayName"), "emailAddress": u.get("emailAddress", ""), "active": u.get("active", True)}
+                for u in d
+            ]},
+        )
+
+    async def get_issue_comments(self, issue_key: str, max_results: int = 50) -> Result:
+        return await arequest(
+            "GET", f"{self._base_url()}/issue/{issue_key}/comment",
+            headers=self._headers(),
+            params={"maxResults": max_results, "orderBy": "-created"},
+            expected=(200,),
+            transform=lambda d: {
+                "comments": [
+                    {"id": c.get("id"), "author": (c.get("author") or {}).get("displayName", ""), "body": _extract_adf_text(c.get("body", {})), "created": c.get("created"), "updated": c.get("updated")}
+                    for c in d.get("comments", [])
+                ],
+                "total": d.get("total", 0),
+            },
+        )
+
+    async def get_statuses(self, project_key: str) -> Result:
+        return await arequest(
+            "GET", f"{self._base_url()}/project/{project_key}/statuses",
+            headers=self._headers(),
+            expected=(200,),
+        )
+
+    async def add_labels(self, issue_key: str, labels: List[str]) -> Result:
+        return await arequest(
+            "PUT", f"{self._base_url()}/issue/{issue_key}",
+            headers=self._headers(),
+            json={"update": {"labels": [{"add": label} for label in labels]}},
+            expected=(204,),
+            transform=lambda _d: {"labels_added": labels, "key": issue_key},
+        )
+
+    async def remove_labels(self, issue_key: str, labels: List[str]) -> Result:
+        return await arequest(
+            "PUT", f"{self._base_url()}/issue/{issue_key}",
+            headers=self._headers(),
+            json={"update": {"labels": [{"remove": label} for label in labels]}},
+            expected=(204,),
+            transform=lambda _d: {"labels_removed": labels, "key": issue_key},
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════
+# ADF helpers
+# ════════════════════════════════════════════════════════════════════════
+
+def _text_to_adf(text: str) -> Dict[str, Any]:
+    paragraphs = text.split("\n")
+    content = []
+    for para in paragraphs:
+        content.append({
+            "type": "paragraph",
+            "content": [{"type": "text", "text": para}] if para else [],
+        })
+    return {"version": 1, "type": "doc", "content": content}
+
+
+def _extract_adf_text(adf: Dict[str, Any]) -> str:
+    if not isinstance(adf, dict):
+        return str(adf) if adf else ""
+    parts: List[str] = []
+
+    def _walk(node):
+        if isinstance(node, dict):
+            if node.get("type") == "text":
+                parts.append(node.get("text", ""))
+            for child in node.get("content", []):
+                _walk(child)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(adf)
+    return " ".join(parts)

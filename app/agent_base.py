@@ -30,33 +30,46 @@ import time
 import uuid
 import json
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from agent_core import Action
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from agent_core import ActionLibrary, ActionManager, ActionRouter
 from agent_core import settings_manager, config_watcher
 
 from app.config import (
-    AGENT_WORKSPACE_ROOT,
     AGENT_FILE_SYSTEM_PATH,
     AGENT_FILE_SYSTEM_TEMPLATE_PATH,
     AGENT_MEMORY_CHROMA_PATH,
     PROCESS_MEMORY_AT_STARTUP,
+    PROJECT_ROOT,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    OUTLOOK_CLIENT_ID,
+    LINKEDIN_CLIENT_ID,
+    LINKEDIN_CLIENT_SECRET,
+    NOTION_SHARED_CLIENT_ID,
+    NOTION_SHARED_CLIENT_SECRET,
+    SLACK_SHARED_CLIENT_ID,
+    SLACK_SHARED_CLIENT_SECRET,
+    TELEGRAM_SHARED_BOT_TOKEN,
+    TELEGRAM_SHARED_BOT_USERNAME,
+    TELEGRAM_API_ID,
+    TELEGRAM_API_HASH,
     get_api_key,
     get_base_url,
 )
+from craftos_integrations import (
+    configure as _configure_integrations,
+    initialize_manager,
+)
 
 from app.internal_action_interface import InternalActionInterface
-from app.llm import LLMInterface, LLMCallType
+from app.llm import LLMInterface
 from agent_core.core.impl.llm.errors import classify_llm_error, LLMConsecutiveFailureError
 from app.vlm_interface import VLMInterface
 from app.database_interface import DatabaseInterface
 from app.logger import logger
 from agent_core import (
     MemoryManager,
-    MemoryPointer,
     MemoryFileWatcher,
     create_memory_processing_task,
     WorkflowLockManager,
@@ -73,7 +86,7 @@ from app.event_stream import EventStreamManager
 from app.gui.gui_module import GUIModule
 from app.gui.handler import GUIHandler
 from app.scheduler import SchedulerManager
-from app.proactive import initialize_proactive_manager, get_proactive_manager
+from app.proactive import initialize_proactive_manager
 from app.ui_layer.settings.memory_settings import (
     is_memory_enabled,
     _parse_memory_items,
@@ -88,7 +101,6 @@ from agent_core import (
     EventStreamManagerRegistry,
     StateManagerRegistry,
     ContextEngineRegistry,
-    ActionExecutorRegistry,
     ActionManagerRegistry,
     TaskManagerRegistry,
     MemoryRegistry,
@@ -3059,12 +3071,6 @@ class AgentBase:
                     name="skills_config.json"
                 )
 
-            # Register external_comms_config.json
-            external_comms_config_path = PROJECT_ROOT / "app" / "config" / "external_comms_config.json"
-            if external_comms_config_path.exists():
-                # We'll register this after external_comms is initialized
-                self._external_comms_config_path = external_comms_config_path
-
             # Start the config watcher
             config_watcher.start(event_loop)
             logger.info("[CONFIG_WATCHER] Config hot-reload initialized")
@@ -3079,13 +3085,46 @@ class AgentBase:
     # =====================================
 
     async def _initialize_external_libraries(self) -> None:
-        """Import all platform modules so their @register_client decorators fire."""
+        """Configure craftos_integrations and start the external-comms manager.
+
+        Wires host config (project_root, OAuth env vars, agent name, OPENAI_API_KEY)
+        and boots the listener manager. ``initialize_manager()`` calls
+        ``autoload_integrations()`` internally during startup, so every integration's
+        @register_client / @register_handler decorators fire as a side-effect.
+        """
         try:
-            from app.external_comms.manager import _import_all_platforms
-            _import_all_platforms()
-            logger.info("[EXT LIBS] External platform modules loaded")
-        except Exception as e:
-            logger.warning(f"[EXT LIBS] Failed to load platform modules: {e}")
+            from app.onboarding import onboarding_manager
+            agent_name = onboarding_manager.state.agent_name or "CraftBot"
+        except Exception:
+            agent_name = "CraftBot"
+        _configure_integrations(
+            project_root=Path(PROJECT_ROOT),
+            oauth={
+                # Google Workspace (Gmail / Calendar / Drive)
+                "GOOGLE_CLIENT_ID":            GOOGLE_CLIENT_ID,
+                "GOOGLE_CLIENT_SECRET":        GOOGLE_CLIENT_SECRET,
+                # Outlook (Microsoft Graph)
+                "OUTLOOK_CLIENT_ID":           OUTLOOK_CLIENT_ID,
+                # LinkedIn
+                "LINKEDIN_CLIENT_ID":          LINKEDIN_CLIENT_ID,
+                "LINKEDIN_CLIENT_SECRET":      LINKEDIN_CLIENT_SECRET,
+                # Notion (only used by the `invite` OAuth path; raw-token login needs nothing)
+                "NOTION_SHARED_CLIENT_ID":     NOTION_SHARED_CLIENT_ID,
+                "NOTION_SHARED_CLIENT_SECRET": NOTION_SHARED_CLIENT_SECRET,
+                # Slack (only used by the `invite` OAuth path)
+                "SLACK_SHARED_CLIENT_ID":      SLACK_SHARED_CLIENT_ID,
+                "SLACK_SHARED_CLIENT_SECRET":  SLACK_SHARED_CLIENT_SECRET,
+                # Telegram bot (shared-bot `invite` flow)
+                "TELEGRAM_SHARED_BOT_TOKEN":    TELEGRAM_SHARED_BOT_TOKEN,
+                "TELEGRAM_SHARED_BOT_USERNAME": TELEGRAM_SHARED_BOT_USERNAME,
+                # Telegram user (MTProto)
+                "TELEGRAM_API_ID":             TELEGRAM_API_ID,
+                "TELEGRAM_API_HASH":           TELEGRAM_API_HASH,
+            },
+            extras={"agent_name": agent_name, "openai_api_key": os.environ.get("OPENAI_API_KEY", "")},
+        )
+        self._external_comms = await initialize_manager(on_message=self._handle_external_event)
+        logger.info("[EXT LIBS] External integrations configured + manager started")
 
     # =====================================
     # Lifecycle
@@ -3126,17 +3165,17 @@ class AgentBase:
                 print(f"[{step}/{total}] {message}...")
 
         # Startup progress messages
-        print_startup_step(3, 8, "Initializing agent")
+        print_startup_step(3, 7, "Initializing agent")
 
         # Initialize settings manager and config watcher for hot-reload
         await self._initialize_config_watcher()
 
         # Initialize MCP client and register tools
-        print_startup_step(4, 8, "Connecting to MCP servers")
+        print_startup_step(4, 7, "Connecting to MCP servers")
         await self._initialize_mcp()
 
         # Initialize skills system
-        print_startup_step(5, 8, "Loading skills")
+        print_startup_step(5, 7, "Loading skills")
         await self._initialize_skills()
 
         # Start usage reporter background flush
@@ -3144,8 +3183,8 @@ class AgentBase:
         self._usage_reporter = get_usage_reporter()
         self._usage_reporter.start_background_flush()
 
-        # Initialize external app libraries
-        print_startup_step(6, 8, "Loading libraries")
+        # Configure integrations + start external comms manager
+        print_startup_step(6, 7, "Initializing integrations")
         await self._initialize_external_libraries()
 
         # Process unprocessed events into memory at startup (if enabled)
@@ -3153,8 +3192,7 @@ class AgentBase:
             await self._process_memory_at_startup()
 
         # Initialize and start the scheduler (handles memory processing and other periodic tasks)
-        print_startup_step(7, 8, "Starting scheduler")
-        from app.config import PROJECT_ROOT
+        print_startup_step(7, 7, "Starting scheduler")
         scheduler_config_path = PROJECT_ROOT / "app" / "config" / "scheduler_config.json"
         await self.scheduler.initialize(
             config_path=scheduler_config_path,
@@ -3171,21 +3209,6 @@ class AgentBase:
 
         # Resume triggers for tasks restored from previous session
         await self._schedule_restored_task_triggers()
-
-        # Initialize external communications (WhatsApp, Telegram)
-        print_startup_step(8, 8, "Starting communications")
-        from app.external_comms import ExternalCommsManager
-        from app.external_comms.manager import initialize_manager
-        self._external_comms = initialize_manager(self)
-        await self._external_comms.start()
-
-        # Register external_comms config for hot-reload (after manager is initialized)
-        if hasattr(self, "_external_comms_config_path") and self._external_comms_config_path:
-            config_watcher.register(
-                self._external_comms_config_path,
-                self._external_comms.reload,
-                name="external_comms_config.json"
-            )
 
         # Startup complete (only print in CLI mode, browser mode handles this in run.py)
         if not browser_ui:

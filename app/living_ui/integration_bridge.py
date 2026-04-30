@@ -62,7 +62,7 @@ class IntegrationBridge:
         if not project_id:
             return web.json_response({"error": "Unauthorized"}, status=401)
 
-        from app.external_comms.registry import get_registered_platforms, get_client
+        from craftos_integrations import get_registered_platforms, get_client
 
         integrations = []
         for platform_id in get_registered_platforms():
@@ -247,7 +247,7 @@ class IntegrationBridge:
         Returns:
             Dict of auth headers, or None if credentials unavailable.
         """
-        from app.external_comms.registry import get_client
+        from craftos_integrations import get_client
 
         client = get_client(platform_id)
         if not client or not client.has_credentials():

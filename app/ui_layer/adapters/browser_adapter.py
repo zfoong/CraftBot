@@ -4437,8 +4437,8 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
     async def _handle_jira_get_settings(self) -> None:
         """Get current Jira watch tag and labels."""
         try:
-            from app.external_comms.credentials import has_credential, load_credential
-            from app.external_comms.platforms.jira import JiraCredential
+            from craftos_integrations import has_credential, load_credential
+            from craftos_integrations.integrations.jira import JiraCredential
             if not has_credential("jira.json"):
                 await self._broadcast({"type": "jira_settings", "data": {"success": False, "error": "Not connected"}})
                 return
@@ -4457,7 +4457,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
     async def _handle_jira_update_settings(self, watch_tag=None, watch_labels=None) -> None:
         """Update Jira watch tag and/or labels."""
         try:
-            from app.external_comms.platforms.jira import JiraClient
+            from craftos_integrations.integrations.jira import JiraClient
             client = JiraClient()
             if not client.has_credentials():
                 await self._broadcast({"type": "jira_settings_result", "data": {"success": False, "error": "Not connected"}})
@@ -4489,8 +4489,8 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
     async def _handle_github_get_settings(self) -> None:
         """Get current GitHub watch tag and repos."""
         try:
-            from app.external_comms.credentials import has_credential, load_credential
-            from app.external_comms.platforms.github import GitHubCredential
+            from craftos_integrations import has_credential, load_credential
+            from craftos_integrations.integrations.github import GitHubCredential
             if not has_credential("github.json"):
                 await self._broadcast({"type": "github_settings", "data": {"success": False, "error": "Not connected"}})
                 return
@@ -4509,7 +4509,7 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
     async def _handle_github_update_settings(self, watch_tag=None, watch_repos=None) -> None:
         """Update GitHub watch tag and/or repos."""
         try:
-            from app.external_comms.platforms.github import GitHubClient
+            from craftos_integrations.integrations.github import GitHubClient
             client = GitHubClient()
             if not client.has_credentials():
                 await self._broadcast({"type": "github_settings_result", "data": {"success": False, "error": "Not connected"}})
