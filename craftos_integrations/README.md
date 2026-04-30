@@ -11,6 +11,8 @@ The package owns:
 - **A common-ops facade** — `send_message(integration, …)`, `is_connected(…)`, `list_integrations()`, etc.
 - **A standard envelope + REST helpers** — every method returns `{ok, result}` or `{error, details}`; `helpers.request`/`arequest` wrap httpx and emit that shape.
 
+The `integrations/` subfolder is **optional**: if a host ships the framework with no bundled integrations (or a consumer deletes the folder), the package still imports, `initialize_manager()` still boots, and every facade call returns a graceful `{"error": "Unknown integration: ..."}` instead of crashing. Drop in only the integrations you want.
+
 The package owns **no UI opinions**. The host wires its own settings page / slash commands / listener callback.
 
 ---

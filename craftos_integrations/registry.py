@@ -108,14 +108,31 @@ def autoload_integrations(force: bool = False) -> None:
 
     Triggers @register_client and @register_handler decorators on import.
     Idempotent unless force=True.
+
+    The ``integrations`` subpackage is **optional**: if a host has deleted
+    the folder (or the package is being used framework-only), the autoloader
+    logs a single info line and returns. The registry stays empty and every
+    ``get_client``/``get_handler`` call returns ``None`` — callers handle
+    that gracefully via ``{"error": "Unknown integration ..."}`` envelopes.
     """
     global _autoloaded
     if _autoloaded and not force:
         return
 
-    from . import integrations as pkg
+    try:
+        from . import integrations as pkg
+    except ImportError:
+        logger.info("[REGISTRY] No integrations/ subpackage found — registry stays empty.")
+        _autoloaded = True
+        return
 
-    for _, modname, _ in pkgutil.iter_modules(pkg.__path__):
+    pkg_path = getattr(pkg, "__path__", None)
+    if not pkg_path:
+        logger.info("[REGISTRY] integrations/ subpackage has no __path__ — registry stays empty.")
+        _autoloaded = True
+        return
+
+    for _, modname, _ in pkgutil.iter_modules(pkg_path):
         if modname.startswith("_"):
             continue
         full = f"{pkg.__name__}.{modname}"
