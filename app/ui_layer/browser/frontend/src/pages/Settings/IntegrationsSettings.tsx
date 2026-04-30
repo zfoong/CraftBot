@@ -286,7 +286,7 @@ export function IntegrationsSettings() {
     setConnectError('')
     setShowConnectModal(true)
 
-    if (integration.auth_type === 'interactive' && integration.id === 'whatsapp') {
+    if (integration.auth_type === 'interactive' && integration.id === 'whatsapp_web') {
       handleStartWhatsAppQR()
     }
   }
@@ -669,8 +669,31 @@ export function IntegrationsSettings() {
                 </div>
               )}
 
-              {/* Interactive integrations (WhatsApp) */}
-              {selectedIntegration.auth_type === 'interactive' && (
+              {/* Interactive integrations: generic dispatcher for non-WhatsApp */}
+              {selectedIntegration.auth_type === 'interactive' && selectedIntegration.id !== 'whatsapp_web' && (
+                <div className={styles.connectForm}>
+                  <p className={styles.connectDesc}>
+                    {selectedIntegration.description}
+                  </p>
+                  <Button
+                    variant="primary"
+                    onClick={handleConnectInteractive}
+                    disabled={isConnecting}
+                  >
+                    {isConnecting ? (
+                      <><Loader2 size={16} className={styles.spinning} /> Connecting...</>
+                    ) : (
+                      <>Connect {selectedIntegration.name}</>
+                    )}
+                  </Button>
+                  {connectError && (
+                    <div className={styles.connectError}>{connectError}</div>
+                  )}
+                </div>
+              )}
+
+              {/* WhatsApp Web QR-specific interactive flow */}
+              {selectedIntegration.auth_type === 'interactive' && selectedIntegration.id === 'whatsapp_web' && (
                 <div className={styles.connectForm}>
                   {whatsappStatus === 'loading' && (
                     <div className={styles.whatsappLoading}>

@@ -23,7 +23,7 @@ from .. import (
     save_credential,
 )
 from ..config import ConfigStore
-from ..helpers import arequest
+from ..helpers import arequest, request as http_request
 from ..logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,6 +31,15 @@ logger = get_logger(__name__)
 TELEGRAM_API_BASE = "https://api.telegram.org"
 POLL_TIMEOUT = 30
 RETRY_DELAY = 5
+
+
+def _shape_telegram(result: Dict[str, Any]) -> Dict[str, Any]:
+    if "error" in result:
+        return result
+    data = result["result"]
+    if not data.get("ok"):
+        return {"error": data.get("description", "Unknown error"), "details": data}
+    return data
 
 
 async def _telegram_acall(url: str, *, json: Optional[Dict[str, Any]] = None,
@@ -43,12 +52,18 @@ async def _telegram_acall(url: str, *, json: Optional[Dict[str, Any]] = None,
     method = "POST" if json is not None else "GET"
     result = await arequest(method, url, json=json, params=params,
                             timeout=timeout, expected=(200,))
-    if "error" in result:
-        return result
-    data = result["result"]
-    if not data.get("ok"):
-        return {"error": data.get("description", "Unknown error"), "details": data}
-    return data
+    return _shape_telegram(result)
+
+
+def _telegram_call_sync(url: str, *, json: Optional[Dict[str, Any]] = None,
+                        params: Optional[Dict[str, Any]] = None,
+                        timeout: float = 10.0) -> Dict[str, Any]:
+    """Sync variant — for use from login flows where async-context detection
+    can be fragile. Wrap in ``asyncio.to_thread`` from coroutines."""
+    method = "POST" if json is not None else "GET"
+    result = http_request(method, url, json=json, params=params,
+                          timeout=timeout, expected=(200,))
+    return _shape_telegram(result)
 
 
 @dataclass
@@ -93,7 +108,9 @@ class TelegramBotHandler(IntegrationHandler):
                 "Alternatively, use /telegram_bot login <bot_token> with your own bot from @BotFather."
             )
 
-        data = await _telegram_acall(f"{TELEGRAM_API_BASE}/bot{shared_token}/getMe")
+        data = await asyncio.to_thread(
+            _telegram_call_sync, f"{TELEGRAM_API_BASE}/bot{shared_token}/getMe",
+        )
         if "error" in data:
             return False, f"Shared bot token invalid: {data['error']}"
         info = data["result"]
@@ -117,7 +134,9 @@ class TelegramBotHandler(IntegrationHandler):
             return False, "Usage: /telegram_bot login <bot_token>\nGet from @BotFather on Telegram."
         bot_token = args[0]
 
-        data = await _telegram_acall(f"{TELEGRAM_API_BASE}/bot{bot_token}/getMe")
+        data = await asyncio.to_thread(
+            _telegram_call_sync, f"{TELEGRAM_API_BASE}/bot{bot_token}/getMe",
+        )
         if "error" in data:
             return False, f"Invalid bot token: {data['error']}"
         info = data["result"]
