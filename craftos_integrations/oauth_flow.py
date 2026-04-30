@@ -33,7 +33,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse
 
-import aiohttp
+import httpx
 
 from .config import ConfigStore
 from .logger import get_logger
@@ -225,7 +225,7 @@ async def run_localhost_callback(
 ) -> Tuple[Optional[str], Optional[str]]:
     """Default OAuth runner. Returns (code, error)."""
     cancel_event = threading.Event()
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def run_flow():
         return _run_oauth_flow_sync(
@@ -351,7 +351,12 @@ class OAuthFlow:
         params.update(self.extra_auth_params)
         return f"{self.auth_url}?{urlencode(params)}", ctx
 
-    async def _exchange_token(self, code: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
+    def _exchange_token_sync(self, code: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        """Sync token exchange — runs in a worker thread via ``asyncio.to_thread``.
+
+        Intentionally synchronous to side-step async-context detection issues
+        that can occur after the OAuth callback executor returns control.
+        """
         client_id = ctx["client_id"]
         client_secret = self._client_secret()
 
@@ -372,31 +377,39 @@ class OAuthFlow:
             if client_secret:
                 token_data["client_secret"] = client_secret
 
-        async with aiohttp.ClientSession() as session:
+        try:
             if self.token_request_json:
                 headers.setdefault("Content-Type", "application/json")
-                async with session.post(self.token_url, json=token_data, headers=headers) as r:
-                    body = await r.text()
-                    if r.status != 200:
-                        return {"error": f"Token exchange failed: {body}"}
-                    return await r.json(content_type=None)
+                r = httpx.post(self.token_url, json=token_data, headers=headers, timeout=30.0)
             else:
-                async with session.post(self.token_url, data=token_data, headers=headers) as r:
-                    body = await r.text()
-                    if r.status != 200:
-                        return {"error": f"Token exchange failed: {body}"}
-                    return await r.json(content_type=None)
+                r = httpx.post(self.token_url, data=token_data, headers=headers, timeout=30.0)
+        except Exception as e:
+            return {"error": f"Token exchange request failed: {e}"}
 
-    async def _fetch_userinfo(self, access_token: str) -> Dict[str, Any]:
+        if r.status_code != 200:
+            return {"error": f"Token exchange failed: {r.text}"}
+        try:
+            return r.json()
+        except Exception as e:
+            return {"error": f"Token exchange returned non-JSON: {e}"}
+
+    def _fetch_userinfo_sync(self, access_token: str) -> Dict[str, Any]:
+        """Sync userinfo fetch — runs in a worker thread."""
         if not self.userinfo_url:
             return {}
         headers = {"Authorization": f"Bearer {access_token}"}
         headers.update(self.userinfo_extra_headers)
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.userinfo_url, headers=headers) as r:
-                if r.status != 200:
-                    return {}
-                return await r.json(content_type=None)
+        try:
+            r = httpx.get(self.userinfo_url, headers=headers, timeout=30.0)
+        except Exception as e:
+            logger.warning(f"[OAUTH] userinfo fetch failed: {e}")
+            return {}
+        if r.status_code != 200:
+            return {}
+        try:
+            return r.json()
+        except Exception:
+            return {}
 
     async def run(self) -> Dict[str, Any]:
         """Run the full OAuth flow.
@@ -406,27 +419,34 @@ class OAuthFlow:
             On failure: {error: "..."}
         """
         try:
-            url, ctx = self._build_auth_url()
-        except RuntimeError as e:
-            return {"error": str(e)}
+            try:
+                url, ctx = self._build_auth_url()
+            except RuntimeError as e:
+                return {"error": str(e)}
 
-        code, error = await get_oauth_runner(url, use_https=self.use_https)
-        if error:
-            return {"error": error}
-        if not code:
-            return {"error": "OAuth did not return a code"}
+            code, error = await get_oauth_runner(url, use_https=self.use_https)
+            if error:
+                return {"error": error}
+            if not code:
+                return {"error": "OAuth did not return a code"}
 
-        tokens = await self._exchange_token(code, ctx)
-        if "error" in tokens and not tokens.get("access_token"):
-            return tokens
+            tokens = await asyncio.to_thread(self._exchange_token_sync, code, ctx)
+            if "error" in tokens and not tokens.get("access_token"):
+                return tokens
 
-        access_token = tokens.get("access_token", "")
-        userinfo = await self._fetch_userinfo(access_token) if access_token else {}
+            access_token = tokens.get("access_token", "")
+            userinfo = (
+                await asyncio.to_thread(self._fetch_userinfo_sync, access_token)
+                if access_token else {}
+            )
 
-        return {
-            "access_token": access_token,
-            "refresh_token": tokens.get("refresh_token", ""),
-            "expires_in": tokens.get("expires_in", 0),
-            "userinfo": userinfo,
-            "raw": tokens,
-        }
+            return {
+                "access_token": access_token,
+                "refresh_token": tokens.get("refresh_token", ""),
+                "expires_in": tokens.get("expires_in", 0),
+                "userinfo": userinfo,
+                "raw": tokens,
+            }
+        except Exception as e:
+            logger.exception(f"[OAUTH] flow crashed: {e}")
+            return {"error": f"OAuth flow error: {e}"}
