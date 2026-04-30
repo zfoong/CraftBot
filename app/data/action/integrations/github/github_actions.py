@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client, with_client
 from app.utils import csv_list
 
 
@@ -19,6 +18,7 @@ from app.utils import csv_list
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def list_github_issues(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "github",
         lambda c: c.list_issues(
@@ -40,6 +40,7 @@ async def list_github_issues(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_github_issue(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "github",
         lambda c: c.get_issue(input_data["repo"], input_data["number"]),
@@ -61,6 +62,7 @@ async def get_github_issue(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def create_github_issue(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     labels = csv_list(input_data.get("labels", ""), default=None)
     assignees = csv_list(input_data.get("assignees", ""), default=None)
     return await with_client(
@@ -87,6 +89,7 @@ async def create_github_issue(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def close_github_issue(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "github",
         lambda c: c.close_issue(input_data["repo"], input_data["number"]),
@@ -110,6 +113,7 @@ async def close_github_issue(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def add_github_comment(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "github",
         lambda c: c.create_comment(input_data["repo"], input_data["number"], input_data["body"]),
@@ -133,6 +137,7 @@ async def add_github_comment(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def add_github_labels(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     labels = csv_list(input_data["labels"])
     if not labels:
         return {"status": "error", "message": "No labels provided."}
@@ -158,6 +163,7 @@ async def add_github_labels(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def list_github_prs(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "github",
         lambda c: c.list_pull_requests(
@@ -182,6 +188,7 @@ async def list_github_prs(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def list_github_repos(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("github", "list_repos", per_page=input_data.get("per_page", 30))
 
 
@@ -196,6 +203,7 @@ async def list_github_repos(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def search_github_issues(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "github",
         lambda c: c.search_issues(input_data["query"], per_page=input_data.get("per_page", 20)),

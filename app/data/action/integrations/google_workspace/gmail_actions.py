@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client_sync
 
 
 @action(
@@ -15,6 +14,7 @@ from app.data.action.integrations._helpers import run_client_sync
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_gmail(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "send_email",
         unwrap_envelope=True, success_message="Email sent.", fail_message="Failed to send email.",
@@ -35,6 +35,7 @@ def send_gmail(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_gmail(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "list_emails",
         unwrap_envelope=True, fail_message="Failed to list emails.",
@@ -53,6 +54,7 @@ def list_gmail(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_gmail(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "get_email",
         unwrap_envelope=True, fail_message="Failed to get email.",
@@ -72,6 +74,7 @@ def get_gmail(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def read_top_emails(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "read_top_emails",
         unwrap_envelope=True, fail_message="Failed to read emails.",
@@ -94,6 +97,7 @@ def read_top_emails(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_google_workspace_email(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "send_email",
         unwrap_envelope=True, success_message="Email sent.", fail_message="Failed to send email.",
@@ -117,6 +121,7 @@ def send_google_workspace_email(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def read_recent_google_workspace_emails(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "read_top_emails",
         unwrap_envelope=True, fail_message="Failed to read emails.",

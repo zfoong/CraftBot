@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client, run_client_sync
 
 
 @action(
@@ -14,6 +13,7 @@ from app.data.action.integrations._helpers import run_client, run_client_sync
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_slack_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "slack", "send_message",
         recipient=input_data["channel"],
@@ -32,6 +32,7 @@ async def send_slack_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "channels": {"type": "array"}},
 )
 def list_slack_channels(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("slack", "list_channels", limit=input_data.get("limit", 100))
 
 
@@ -46,6 +47,7 @@ def list_slack_channels(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "messages": {"type": "array"}},
 )
 def get_slack_channel_history(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "slack", "get_channel_history",
         channel=input_data["channel"], limit=input_data.get("limit", 50),
@@ -62,6 +64,7 @@ def get_slack_channel_history(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "users": {"type": "array"}},
 )
 def list_slack_users(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("slack", "list_users", limit=input_data.get("limit", 100))
 
 
@@ -76,6 +79,7 @@ def list_slack_users(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def search_slack_messages(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "slack", "search_messages",
         query=input_data["query"], count=input_data.get("count", 20),
@@ -95,6 +99,7 @@ def search_slack_messages(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def upload_slack_file(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     channels = input_data["channels"]
     if isinstance(channels, str):
         channels = [channels]
@@ -117,6 +122,7 @@ def upload_slack_file(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_slack_user_info(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("slack", "get_user_info", user_id=input_data["slack_user_id"])
 
 
@@ -130,6 +136,7 @@ def get_slack_user_info(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_slack_channel_info(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("slack", "get_channel_info", channel=input_data["channel"])
 
 
@@ -144,6 +151,7 @@ def get_slack_channel_info(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_slack_channel(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "slack", "create_channel",
         name=input_data["name"], is_private=input_data.get("is_private", False),
@@ -161,6 +169,7 @@ def create_slack_channel(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def invite_to_slack_channel(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "slack", "invite_to_channel",
         channel=input_data["channel"], users=input_data["users"],
@@ -177,4 +186,5 @@ def invite_to_slack_channel(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def open_slack_dm(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("slack", "open_dm", users=input_data["users"])

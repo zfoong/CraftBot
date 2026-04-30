@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client_sync
 
 
 @action(
@@ -13,6 +12,7 @@ from app.data.action.integrations._helpers import run_client_sync
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_google_meet(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "create_meet_event",
         unwrap_envelope=True, fail_message="Failed to create event.",
@@ -33,6 +33,7 @@ def create_google_meet(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def check_calendar_availability(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "check_availability",
         unwrap_envelope=True, fail_message="Failed to check availability.",
@@ -57,6 +58,7 @@ def check_calendar_availability(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def check_availability_and_schedule(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     """Two client calls + branching ("busy" early-exit) + custom result shape."""
     import uuid
     from datetime import datetime

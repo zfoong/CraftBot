@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import record_outgoing_message, run_client
 
 
 # =====================================================================
@@ -21,6 +20,7 @@ from app.data.action.integrations._helpers import record_outgoing_message, run_c
     },
 )
 async def send_telegram_bot_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import record_outgoing_message, run_client
     record_outgoing_message("Telegram", input_data["chat_id"], input_data["text"])
     return await run_client(
         "telegram_bot", "send_message",
@@ -42,6 +42,7 @@ async def send_telegram_bot_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_telegram_photo(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_bot", "send_photo",
         chat_id=input_data["chat_id"],
@@ -64,6 +65,7 @@ async def send_telegram_photo(input_data: dict) -> dict:
     },
 )
 async def get_telegram_updates(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_bot", "get_updates",
         offset=input_data.get("offset"),
@@ -81,6 +83,7 @@ async def get_telegram_updates(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_telegram_chat(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("telegram_bot", "get_chat", chat_id=input_data["chat_id"])
 
 
@@ -94,6 +97,7 @@ async def get_telegram_chat(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def search_telegram_contact(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("telegram_bot", "search_contact", name=input_data["name"])
 
 
@@ -109,6 +113,7 @@ async def search_telegram_contact(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_telegram_document(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_bot", "send_document",
         chat_id=input_data["chat_id"],
@@ -129,6 +134,7 @@ async def send_telegram_document(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def forward_telegram_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_bot", "forward_message",
         chat_id=input_data["chat_id"],
@@ -145,6 +151,7 @@ async def forward_telegram_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_telegram_bot_info(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("telegram_bot", "get_me")
 
 
@@ -158,6 +165,7 @@ async def get_telegram_bot_info(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_telegram_chat_members_count(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_bot", "get_chat_members_count", chat_id=input_data["chat_id"],
     )
@@ -177,6 +185,7 @@ async def get_telegram_chat_members_count(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_telegram_chats(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_user", "get_dialogs", limit=input_data.get("limit", 50),
     )
@@ -193,6 +202,7 @@ async def get_telegram_chats(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def read_telegram_messages(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_user", "get_messages",
         chat_id=input_data["chat_id"],
@@ -211,6 +221,7 @@ async def read_telegram_messages(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_telegram_user_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import record_outgoing_message, run_client
     record_outgoing_message("Telegram", input_data["chat_id"], input_data["text"])
     return await run_client(
         "telegram_user", "send_message",
@@ -230,6 +241,7 @@ async def send_telegram_user_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_telegram_user_file(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_user", "send_file",
         chat_id=input_data["chat_id"],
@@ -247,6 +259,7 @@ async def send_telegram_user_file(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def search_telegram_user_contacts(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "telegram_user", "search_contacts", query=input_data["query"],
     )
@@ -260,4 +273,5 @@ async def search_telegram_user_contacts(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_telegram_user_account_info(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("telegram_user", "get_me")

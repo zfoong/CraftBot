@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client_sync
 
 
 @action(
@@ -15,6 +14,7 @@ from app.data.action.integrations._helpers import run_client_sync
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_outlook_email(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "outlook", "send_email",
         unwrap_envelope=True, success_message="Email sent.", fail_message="Failed to send email.",
@@ -36,6 +36,7 @@ def send_outlook_email(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_outlook_emails(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "outlook", "list_emails",
         unwrap_envelope=True, fail_message="Failed to list emails.",
@@ -54,6 +55,7 @@ def list_outlook_emails(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_outlook_email(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "outlook", "get_email",
         unwrap_envelope=True, fail_message="Failed to get email.",
@@ -72,6 +74,7 @@ def get_outlook_email(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def read_top_outlook_emails(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "outlook", "read_top_emails",
         unwrap_envelope=True, fail_message="Failed to read emails.",
@@ -90,6 +93,7 @@ def read_top_outlook_emails(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def mark_outlook_email_read(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "outlook", "mark_as_read",
         unwrap_envelope=True, success_message="Email marked as read.", fail_message="Failed to mark email.",
@@ -105,6 +109,7 @@ def mark_outlook_email_read(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_outlook_folders(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "outlook", "list_folders",
         unwrap_envelope=True, fail_message="Failed to list folders.",

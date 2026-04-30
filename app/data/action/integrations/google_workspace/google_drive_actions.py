@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client_sync
 
 
 @action(
@@ -12,6 +11,7 @@ from app.data.action.integrations._helpers import run_client_sync
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_drive_files(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "list_drive_files",
         unwrap_envelope=True, fail_message="Failed to list files.",
@@ -30,6 +30,7 @@ def list_drive_files(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_drive_folder(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "create_drive_folder",
         unwrap_envelope=True, fail_message="Failed to create folder.",
@@ -50,6 +51,7 @@ def create_drive_folder(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def move_drive_file(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "move_drive_file",
         unwrap_envelope=True, fail_message="Failed to move file.",
@@ -71,6 +73,7 @@ def move_drive_file(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def find_drive_folder_by_name(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "google_workspace", "find_drive_folder_by_name",
         unwrap_envelope=True, fail_message="Failed to find folder.",
@@ -90,6 +93,7 @@ def find_drive_folder_by_name(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def resolve_drive_folder_path(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     """Walks the path one segment at a time — custom 'not_found' shape."""
     parts = [p for p in input_data["path"].split("/") if p]
     if parts and parts[0].lower() == "root":

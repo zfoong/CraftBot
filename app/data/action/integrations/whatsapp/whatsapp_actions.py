@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import record_outgoing_message, run_client
 
 
 @action(
@@ -13,6 +12,7 @@ from app.data.action.integrations._helpers import record_outgoing_message, run_c
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_whatsapp_web_text_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import record_outgoing_message, run_client
     # Record to conversation history BEFORE sending (ensures correct ordering)
     record_outgoing_message("WhatsApp", input_data["to"], input_data["message"])
     return await run_client(
@@ -34,6 +34,7 @@ async def send_whatsapp_web_text_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_whatsapp_web_media_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "whatsapp_web", "send_media",
         recipient=input_data["to"],
@@ -53,6 +54,7 @@ async def send_whatsapp_web_media_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_whatsapp_chat_history(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "whatsapp_web", "get_chat_messages",
         phone_number=input_data["phone_number"],
@@ -68,6 +70,7 @@ async def get_whatsapp_chat_history(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_whatsapp_unread_chats(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("whatsapp_web", "get_unread_chats")
 
 
@@ -81,6 +84,7 @@ async def get_whatsapp_unread_chats(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def search_whatsapp_contact(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("whatsapp_web", "search_contact", name=input_data["name"])
 
 
@@ -92,4 +96,5 @@ async def search_whatsapp_contact(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_whatsapp_web_session_status(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("whatsapp_web", "get_session_status")

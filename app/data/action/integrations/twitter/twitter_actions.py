@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client, with_client
 
 
 @action(
@@ -14,6 +13,7 @@ from app.data.action.integrations._helpers import run_client, with_client
     parallelizable=False,
 )
 async def post_tweet(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "twitter", "post_tweet",
         text=input_data["text"],
@@ -33,6 +33,7 @@ async def post_tweet(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def reply_to_tweet(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "twitter",
         lambda c: c.reply_to_tweet(input_data["tweet_id"], input_data["text"]),
@@ -50,6 +51,7 @@ async def reply_to_tweet(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def delete_tweet(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("twitter", "delete_tweet", tweet_id=input_data["tweet_id"])
 
 
@@ -64,6 +66,7 @@ async def delete_tweet(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def search_tweets(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "twitter",
         lambda c: c.search_tweets(input_data["query"], max_results=input_data.get("max_results", 10)),
@@ -81,6 +84,7 @@ async def search_tweets(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_twitter_timeline(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "twitter", "get_user_timeline",
         user_id=input_data.get("user_id") or None,
@@ -99,6 +103,7 @@ async def get_twitter_timeline(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def like_tweet(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("twitter", "like_tweet", tweet_id=input_data["tweet_id"])
 
 
@@ -113,6 +118,7 @@ async def like_tweet(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def retweet(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("twitter", "retweet", tweet_id=input_data["tweet_id"])
 
 
@@ -126,6 +132,7 @@ async def retweet(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_twitter_user(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("twitter", "get_user_by_username", username=input_data["username"])
 
 
@@ -137,6 +144,7 @@ async def get_twitter_user(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_twitter_me(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("twitter", "get_me")
 
 

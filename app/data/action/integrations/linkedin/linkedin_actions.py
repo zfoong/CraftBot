@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client_sync, with_client
 
 
 def _person_urn(client) -> str:
@@ -20,6 +19,7 @@ def _person_urn(client) -> str:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_profile(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_user_profile")
 
 
@@ -38,6 +38,7 @@ def get_linkedin_profile(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def create_linkedin_post(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.create_text_post(
@@ -56,6 +57,7 @@ async def create_linkedin_post(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def delete_linkedin_post(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "delete_post", post_urn=input_data["post_urn"])
 
 
@@ -67,6 +69,7 @@ def delete_linkedin_post(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_post(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_post", post_urn=input_data["post_urn"])
 
 
@@ -78,6 +81,7 @@ def get_linkedin_post(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_my_linkedin_posts(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.get_posts_by_author(_person_urn(c), count=input_data.get("count", 50)),
@@ -92,6 +96,7 @@ async def get_my_linkedin_posts(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_organization_posts(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "linkedin", "get_posts_by_author", author_urn=input_data["organization_urn"],
     )
@@ -108,6 +113,7 @@ def get_linkedin_organization_posts(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def reshare_linkedin_post(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.reshare_post(
@@ -130,6 +136,7 @@ async def reshare_linkedin_post(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def like_linkedin_post(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.like_post(_person_urn(c), input_data["post_urn"]),
@@ -144,6 +151,7 @@ async def like_linkedin_post(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def unlike_linkedin_post(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.unlike_post(_person_urn(c), input_data["post_urn"]),
@@ -158,6 +166,7 @@ async def unlike_linkedin_post(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_post_likes(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_post_reactions", post_urn=input_data["post_urn"])
 
 
@@ -172,6 +181,7 @@ def get_linkedin_post_likes(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def comment_on_linkedin_post(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.comment_on_post(_person_urn(c), input_data["post_urn"], input_data["text"]),
@@ -186,6 +196,7 @@ async def comment_on_linkedin_post(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_post_comments(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_post_comments", post_urn=input_data["post_urn"])
 
 
@@ -200,6 +211,7 @@ def get_linkedin_post_comments(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def delete_linkedin_comment(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.delete_comment(_person_urn(c), input_data["post_urn"], input_data["comment_urn"]),
@@ -220,6 +232,7 @@ async def delete_linkedin_comment(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_connections(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_connections", count=input_data.get("count", 50))
 
 
@@ -235,6 +248,7 @@ def get_linkedin_connections(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def send_linkedin_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.send_message_to_recipients(
@@ -257,6 +271,7 @@ async def send_linkedin_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_linkedin_connection_request(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "linkedin", "send_connection_request",
         invitee_profile_urn=input_data["invitee_profile_urn"],
@@ -272,6 +287,7 @@ def send_linkedin_connection_request(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_sent_invitations(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_sent_invitations", count=input_data.get("count", 50))
 
 
@@ -283,6 +299,7 @@ def get_linkedin_sent_invitations(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_received_invitations(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_received_invitations", count=input_data.get("count", 50))
 
 
@@ -297,6 +314,7 @@ def get_linkedin_received_invitations(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def respond_to_linkedin_invitation(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "linkedin", "respond_to_invitation",
         invitation_urn=input_data["invitation_urn"],
@@ -312,6 +330,7 @@ def respond_to_linkedin_invitation(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_conversations(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_conversations", count=input_data.get("count", 20))
 
 
@@ -331,6 +350,7 @@ def get_linkedin_conversations(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def search_linkedin_jobs(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "linkedin", "search_jobs",
         keywords=input_data["keywords"],
@@ -347,6 +367,7 @@ def search_linkedin_jobs(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_job_details(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_job_details", job_id=input_data["job_id"])
 
 
@@ -358,6 +379,7 @@ def get_linkedin_job_details(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def search_linkedin_companies(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "search_companies", keywords=input_data["keywords"])
 
 
@@ -369,6 +391,7 @@ def search_linkedin_companies(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def lookup_linkedin_company(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_company_by_vanity_name", vanity_name=input_data["vanity_name"])
 
 
@@ -380,6 +403,7 @@ def lookup_linkedin_company(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_person(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_person", person_id=input_data["person_id"])
 
 
@@ -395,6 +419,7 @@ def get_linkedin_person(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_organizations(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_my_organizations")
 
 
@@ -406,6 +431,7 @@ def get_linkedin_organizations(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_organization_info(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_organization", organization_id=input_data["organization_id"])
 
 
@@ -417,6 +443,7 @@ def get_linkedin_organization_info(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_organization_analytics(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "linkedin", "get_organization_analytics",
         organization_urn=input_data["organization_urn"],
@@ -431,6 +458,7 @@ def get_linkedin_organization_analytics(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_linkedin_post_analytics(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("linkedin", "get_post_analytics", share_urns=[input_data["post_urn"]])
 
 
@@ -442,6 +470,7 @@ def get_linkedin_post_analytics(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def follow_linkedin_organization(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.follow_organization(_person_urn(c), input_data["organization_urn"]),
@@ -456,6 +485,7 @@ async def follow_linkedin_organization(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def unfollow_linkedin_organization(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "linkedin",
         lambda c: c.unfollow_organization(_person_urn(c), input_data["organization_urn"]),

@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client, with_client
 from app.utils import csv_list
 
 
@@ -22,6 +21,7 @@ _NO_CRED_MSG = "No Jira credential. Use /jira login first."
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def search_jira_issues(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     fields_list = csv_list(input_data.get("fields", ""), default=None)
     return await run_client(
         "jira", "search_issues",
@@ -42,6 +42,7 @@ async def search_jira_issues(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_jira_issue(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     fields_list = csv_list(input_data.get("fields", ""), default=None)
     return await with_client(
         "jira",
@@ -66,6 +67,7 @@ async def get_jira_issue(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def create_jira_issue(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     labels = csv_list(input_data.get("labels", ""), default=None)
     return await run_client(
         "jira", "create_issue",
@@ -93,6 +95,7 @@ async def create_jira_issue(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def update_jira_issue(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     fields_update = {}
     if input_data.get("summary"):
         fields_update["summary"] = input_data["summary"]
@@ -124,6 +127,7 @@ async def update_jira_issue(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def add_jira_comment(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "jira",
         lambda c: c.add_comment(input_data["issue_key"], input_data["body"]),
@@ -141,6 +145,7 @@ async def add_jira_comment(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_jira_comments(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "jira",
         lambda c: c.get_issue_comments(
@@ -163,6 +168,7 @@ async def get_jira_comments(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def get_jira_transitions(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("jira", "get_transitions", issue_key=input_data["issue_key"])
 
 
@@ -179,6 +185,7 @@ async def get_jira_transitions(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def transition_jira_issue(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "jira",
         lambda c: c.transition_issue(
@@ -205,6 +212,7 @@ async def transition_jira_issue(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def assign_jira_issue(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "jira",
         lambda c: c.assign_issue(
@@ -230,6 +238,7 @@ async def assign_jira_issue(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def add_jira_labels(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     labels = csv_list(input_data["labels"])
     if not labels:
         return {"status": "error", "message": "No labels provided."}
@@ -251,6 +260,7 @@ async def add_jira_labels(input_data: dict) -> dict:
     parallelizable=False,
 )
 async def remove_jira_labels(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     labels = csv_list(input_data["labels"])
     if not labels:
         return {"status": "error", "message": "No labels provided."}
@@ -274,6 +284,7 @@ async def remove_jira_labels(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def list_jira_projects(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "jira", "get_projects", max_results=input_data.get("max_results", 50),
     )
@@ -290,6 +301,7 @@ async def list_jira_projects(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def search_jira_users(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import with_client
     return await with_client(
         "jira",
         lambda c: c.search_users(input_data["query"], max_results=input_data.get("max_results", 10)),

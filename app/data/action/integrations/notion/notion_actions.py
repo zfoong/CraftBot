@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client_sync
 
 
 @action(
@@ -13,6 +12,7 @@ from app.data.action.integrations._helpers import run_client_sync
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def search_notion(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "notion", "search",
         query=input_data["query"], filter_type=input_data.get("filter_type"),
@@ -29,6 +29,7 @@ def search_notion(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_notion_page(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("notion", "get_page", page_id=input_data["page_id"])
 
 
@@ -45,6 +46,7 @@ def get_notion_page(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def create_notion_page(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "notion", "create_page",
         parent_id=input_data["parent_id"],
@@ -66,6 +68,7 @@ def create_notion_page(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def query_notion_database(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "notion", "query_database",
         database_id=input_data["database_id"],
@@ -85,6 +88,7 @@ def query_notion_database(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def update_notion_page(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "notion", "update_page",
         page_id=input_data["page_id"], properties=input_data["properties"],
@@ -101,6 +105,7 @@ def update_notion_page(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "database": {"type": "object"}},
 )
 def get_notion_database_schema(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("notion", "get_database", database_id=input_data["database_id"])
 
 
@@ -114,6 +119,7 @@ def get_notion_database_schema(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}, "content": {"type": "array"}},
 )
 def get_notion_page_content(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("notion", "get_block_children", block_id=input_data["page_id"])
 
 
@@ -128,6 +134,7 @@ def get_notion_page_content(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def append_notion_page_content(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "notion", "append_block_children",
         block_id=input_data["page_id"], children=input_data["children"],

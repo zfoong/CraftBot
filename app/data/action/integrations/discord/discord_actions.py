@@ -1,5 +1,4 @@
 from agent_core import action
-from app.data.action.integrations._helpers import run_client, run_client_sync
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -17,6 +16,7 @@ from app.data.action.integrations._helpers import run_client, run_client_sync
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_discord_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "discord", "bot_send_message",
         channel_id=input_data["channel_id"], content=input_data["content"],
@@ -34,6 +34,7 @@ def send_discord_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_messages(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "discord", "get_messages",
         channel_id=input_data["channel_id"], limit=input_data.get("limit", 50),
@@ -50,6 +51,7 @@ def get_discord_messages(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_discord_guilds(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("discord", "get_bot_guilds", limit=input_data.get("limit", 100))
 
 
@@ -63,6 +65,7 @@ def list_discord_guilds(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_channels(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("discord", "get_guild_channels", guild_id=input_data["guild_id"])
 
 
@@ -77,6 +80,7 @@ def get_discord_channels(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_discord_dm(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "discord", "send_dm",
         recipient_id=input_data["recipient_id"], content=input_data["content"],
@@ -94,6 +98,7 @@ def send_discord_dm(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def list_discord_guild_members(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "discord", "list_guild_members",
         guild_id=input_data["guild_id"], limit=input_data.get("limit", 100),
@@ -112,6 +117,7 @@ def list_discord_guild_members(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def add_discord_reaction(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "discord", "add_reaction",
         channel_id=input_data["channel_id"],
@@ -135,6 +141,7 @@ def add_discord_reaction(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_discord_user_message(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "discord", "user_send_message",
         channel_id=input_data["channel_id"], content=input_data["content"],
@@ -149,6 +156,7 @@ def send_discord_user_message(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_user_guilds(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("discord", "user_get_guilds")
 
 
@@ -160,6 +168,7 @@ def get_discord_user_guilds(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_user_dm_channels(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("discord", "user_get_dm_channels")
 
 
@@ -174,6 +183,7 @@ def get_discord_user_dm_channels(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def send_discord_user_dm(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync(
         "discord", "user_send_dm",
         recipient_id=input_data["recipient_id"], content=input_data["content"],
@@ -195,6 +205,7 @@ def send_discord_user_dm(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def join_discord_voice_channel(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "discord", "join_voice",
         guild_id=input_data["guild_id"], channel_id=input_data["channel_id"],
@@ -209,6 +220,7 @@ async def join_discord_voice_channel(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def leave_discord_voice_channel(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client("discord", "leave_voice", guild_id=input_data["guild_id"])
 
 
@@ -223,6 +235,7 @@ async def leave_discord_voice_channel(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 async def speak_discord_voice_tts(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client
     return await run_client(
         "discord", "speak_tts",
         guild_id=input_data["guild_id"], text=input_data["text"],
@@ -237,4 +250,5 @@ async def speak_discord_voice_tts(input_data: dict) -> dict:
     output_schema={"status": {"type": "string", "example": "success"}},
 )
 def get_discord_voice_status(input_data: dict) -> dict:
+    from app.data.action.integrations._helpers import run_client_sync
     return run_client_sync("discord", "get_voice_status", guild_id=input_data["guild_id"])
