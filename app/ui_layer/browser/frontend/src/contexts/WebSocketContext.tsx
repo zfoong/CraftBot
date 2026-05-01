@@ -1043,10 +1043,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [sendOrQueue])
 
   const sendCommand = useCallback((command: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'command', command }))
-    }
-  }, [])
+    sendOrQueue(JSON.stringify({ type: 'command', command }))
+  }, [sendOrQueue])
 
   const clearMessages = useCallback(() => {
     setState(prev => ({ ...prev, messages: [] }))

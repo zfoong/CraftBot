@@ -1,10 +1,44 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { ChevronRight, XCircle, ArrowLeft, Reply } from 'lucide-react'
+import { ChevronRight, XCircle, ArrowLeft, Reply, Plus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useWebSocket } from '../../contexts/WebSocketContext'
-import { StatusIndicator, Badge, Button, IconButton } from '../../components/ui'
+import { StatusIndicator, Badge, Button, IconButton, SkillCreatorModal } from '../../components/ui'
 import type { ActionItem } from '../../types'
+import { useSkillCreator } from './useSkillCreator'
 import styles from './TasksPage.module.css'
+
+// Tasks belonging to these internal workflows must NOT show the
+// "Create Skill" button — they are themselves part of the skill /
+// memory / proactive infrastructure. The signal arrives via either
+// `workflowId` (memory_processing, skill_creation, skill_improvement)
+// or `selectedSkills` (soft onboarding, heartbeats, planners — these
+// don't set workflowId, only selectedSkills).
+//
+// KEEP IN SYNC with _INTERNAL_WORKFLOW_IDS / _INTERNAL_SKILL_NAMES in
+// app/ui_layer/adapters/browser_adapter.py
+const INTERNAL_WORKFLOW_IDS = new Set<string>([
+  'skill_creation',
+  'skill_improvement',
+  'memory_processing',
+])
+const INTERNAL_SKILL_NAMES = new Set<string>([
+  'craftbot-skill-creator',
+  'craftbot-skill-improve',
+  'memory-processor',
+  'heartbeat-processor',
+  'user-profile-interview',
+  'day-planner',
+  'week-planner',
+  'month-planner',
+])
+
+function isInternalWorkflowTask(item: ActionItem): boolean {
+  if (item.workflowId && INTERNAL_WORKFLOW_IDS.has(item.workflowId)) return true
+  for (const s of item.selectedSkills ?? []) {
+    if (INTERNAL_SKILL_NAMES.has(s)) return true
+  }
+  return false
+}
 
 // Expandable value component for long text
 const MAX_VALUE_LENGTH = 80
@@ -276,6 +310,7 @@ export function TasksPage() {
   const navigate = useNavigate()
   const [selectedItem, setSelectedItem] = useState<ActionItem | null>(null)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
+  const skillCreator = useSkillCreator()
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
@@ -510,6 +545,15 @@ export function TasksPage() {
                     >
                       {cancellingTaskId === selectedItem.id ? 'Cancelling...' : 'Cancel Task'}
                     </Button>
+                  ) : selectedItem.status === 'completed' && !isInternalWorkflowTask(selectedItem) ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Plus size={14} />}
+                      onClick={() => skillCreator.open(selectedItem)}
+                    >
+                      Create Skill
+                    </Button>
                   ) : (selectedItem.status === 'error' || selectedItem.status === 'cancelled') && (
                     <Badge variant="error">Aborted</Badge>
                   )}
@@ -581,6 +625,16 @@ export function TasksPage() {
           </div>
         )}
       </div>
+
+      <SkillCreatorModal
+        isOpen={skillCreator.isOpen}
+        sourceSkills={skillCreator.sourceSkills}
+        status={skillCreator.status}
+        serverError={skillCreator.serverError}
+        successInfo={skillCreator.successInfo}
+        onClose={skillCreator.close}
+        onSubmit={skillCreator.submit}
+      />
     </div>
   )
 }
