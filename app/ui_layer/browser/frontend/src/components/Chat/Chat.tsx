@@ -60,6 +60,7 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
     actions,
     connected,
     sendMessage,
+    sendCommand,
     sendOptionClick,
     openFile,
     openFolder,
@@ -313,12 +314,24 @@ export function Chat({ livingUIId, placeholder, emptyMessage }: ChatProps) {
         setIsListening(false)
       }
 
-      sendMessage(
-        input.trim(),
-        pendingAttachments.length > 0 ? pendingAttachments : undefined,
-        replyContext,
-        livingUIId
-      )
+      const trimmed = input.trim()
+      // Slash commands route through the dedicated command channel so no
+      // optimistic user bubble is inserted — the backend's CommandExecutor
+      // responds with system/error messages rather than echoing user input.
+      // Attachments + slash command falls through to chat (commands don't
+      // accept attachments), which preserves the existing behavior for that
+      // edge case.
+      const isSlashCommand = trimmed.startsWith('/') && pendingAttachments.length === 0
+      if (isSlashCommand) {
+        sendCommand(trimmed)
+      } else {
+        sendMessage(
+          trimmed,
+          pendingAttachments.length > 0 ? pendingAttachments : undefined,
+          replyContext,
+          livingUIId
+        )
+      }
       if (!connected) {
         showToast('info', 'Reconnecting — your message will send when the connection is restored.')
       }

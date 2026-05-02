@@ -2,9 +2,10 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import type {
   ChatMessage, ActionItem, AgentStatus, InitialState, WSMessage, DashboardMetrics,
   TaskCancelResponse, FilteredDashboardMetrics, MetricsTimePeriod, OnboardingStep,
-  OnboardingStepResponse, OnboardingSubmitResponse, OnboardingCompleteResponse, 
-  LocalLLMState, LocalLLMCheckResponse, LocalLLMTestResponse, LocalLLMInstallResponse, 
+  OnboardingStepResponse, OnboardingSubmitResponse, OnboardingCompleteResponse,
+  LocalLLMState, LocalLLMCheckResponse, LocalLLMTestResponse, LocalLLMInstallResponse,
   LocalLLMProgressResponse, LocalLLMPullProgressResponse, SuggestedModel,
+  SkillMeta,
   // Living UI types
   LivingUIProject, LivingUICreateRequest, LivingUIStatusUpdate, LivingUIStateUpdate,
   LivingUITodo, LivingUITodosUpdate,
@@ -83,6 +84,7 @@ interface WebSocketState {
   livingUITodos: Record<string, LivingUITodo[]>
   activeLivingUIId: string | null
   livingUIStates: Record<string, LivingUIStateUpdate['state']>
+  skillMeta: SkillMeta
 }
 
 interface WebSocketContextType extends WebSocketState {
@@ -195,6 +197,11 @@ const defaultState: WebSocketState = {
   livingUITodos: {},
   activeLivingUIId: null,
   livingUIStates: {},
+  skillMeta: {
+    internalWorkflowIds: [],
+    internalSkillNames: [],
+    reservedSkillNames: [],
+  },
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined)
@@ -351,6 +358,19 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             || false,
           hasMoreMessages: initMessages.length >= 50,
           hasMoreActions: initActions.filter((a: ActionItem) => a.itemType === 'task').length >= 15,
+        }))
+        break
+      }
+
+      case 'skill_meta': {
+        const data = msg.data as unknown as SkillMeta
+        setState(prev => ({
+          ...prev,
+          skillMeta: {
+            internalWorkflowIds: data.internalWorkflowIds || [],
+            internalSkillNames: data.internalSkillNames || [],
+            reservedSkillNames: data.reservedSkillNames || [],
+          },
         }))
         break
       }
@@ -1043,10 +1063,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [sendOrQueue])
 
   const sendCommand = useCallback((command: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'command', command }))
-    }
-  }, [])
+    sendOrQueue(JSON.stringify({ type: 'command', command }))
+  }, [sendOrQueue])
 
   const clearMessages = useCallback(() => {
     setState(prev => ({ ...prev, messages: [] }))

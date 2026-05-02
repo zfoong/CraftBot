@@ -3047,10 +3047,24 @@ class AgentBase:
                 from app.skill import skill_manager
 
                 async def _reload_skills_and_sync():
-                    """Reload skills and sync skill slash commands."""
+                    """Reload skills, sync slash commands, and broadcast the
+                    refreshed skill list so the Settings page UI updates
+                    without a manual reload."""
                     result = await skill_manager.reload()
                     if self.ui_controller:
                         self.ui_controller.sync_skill_commands()
+                        # Broadcast the refreshed list to the active adapter
+                        # (e.g. browser) so any open Settings page sees the
+                        # new / re-enabled skill immediately.
+                        adapter = getattr(self.ui_controller, "_adapter", None)
+                        broadcast_handler = getattr(adapter, "_handle_skill_list", None)
+                        if broadcast_handler is not None:
+                            try:
+                                await broadcast_handler()
+                            except Exception as e:
+                                logger.debug(
+                                    f"[SKILLS] Failed to broadcast skill list update: {e}"
+                                )
                     return result
 
                 config_watcher.register(
