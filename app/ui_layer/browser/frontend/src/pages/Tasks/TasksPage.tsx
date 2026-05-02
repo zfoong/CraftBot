@@ -7,35 +7,14 @@ import type { ActionItem } from '../../types'
 import { useSkillCreator } from './useSkillCreator'
 import styles from './TasksPage.module.css'
 
-// Tasks belonging to these internal workflows must NOT show the
-// "Create Skill" button — they are themselves part of the skill /
-// memory / proactive infrastructure. The signal arrives via either
-// `workflowId` (memory_processing, skill_creation, skill_improvement)
-// or `selectedSkills` (soft onboarding, heartbeats, planners — these
-// don't set workflowId, only selectedSkills).
-//
-// KEEP IN SYNC with _INTERNAL_WORKFLOW_IDS / _INTERNAL_SKILL_NAMES in
-// app/ui_layer/adapters/browser_adapter.py
-const INTERNAL_WORKFLOW_IDS = new Set<string>([
-  'skill_creation',
-  'skill_improvement',
-  'memory_processing',
-])
-const INTERNAL_SKILL_NAMES = new Set<string>([
-  'craftbot-skill-creator',
-  'craftbot-skill-improve',
-  'memory-processor',
-  'heartbeat-processor',
-  'user-profile-interview',
-  'day-planner',
-  'week-planner',
-  'month-planner',
-])
-
-function isInternalWorkflowTask(item: ActionItem): boolean {
-  if (item.workflowId && INTERNAL_WORKFLOW_IDS.has(item.workflowId)) return true
+function isInternalWorkflowTask(
+  item: ActionItem,
+  internalWorkflowIds: Set<string>,
+  internalSkillNames: Set<string>,
+): boolean {
+  if (item.workflowId && internalWorkflowIds.has(item.workflowId)) return true
   for (const s of item.selectedSkills ?? []) {
-    if (INTERNAL_SKILL_NAMES.has(s)) return true
+    if (internalSkillNames.has(s)) return true
   }
   return false
 }
@@ -306,7 +285,10 @@ const MIN_PANEL_WIDTH = 200
 const MAX_PANEL_WIDTH = 600
 
 export function TasksPage() {
-  const { actions, messages, cancelTask, cancellingTaskId, setReplyTarget, loadOlderActions, hasMoreActions, loadingOlderActions } = useWebSocket()
+  const { actions, messages, cancelTask, cancellingTaskId, setReplyTarget, loadOlderActions, hasMoreActions, loadingOlderActions, skillMeta } = useWebSocket()
+  const internalWorkflowIds = useMemo(() => new Set(skillMeta.internalWorkflowIds), [skillMeta.internalWorkflowIds])
+  const internalSkillNames = useMemo(() => new Set(skillMeta.internalSkillNames), [skillMeta.internalSkillNames])
+  const reservedSkillNames = useMemo(() => new Set(skillMeta.reservedSkillNames), [skillMeta.reservedSkillNames])
   const navigate = useNavigate()
   const [selectedItem, setSelectedItem] = useState<ActionItem | null>(null)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
@@ -545,7 +527,7 @@ export function TasksPage() {
                     >
                       {cancellingTaskId === selectedItem.id ? 'Cancelling...' : 'Cancel Task'}
                     </Button>
-                  ) : selectedItem.status === 'completed' && !isInternalWorkflowTask(selectedItem) ? (
+                  ) : selectedItem.status === 'completed' && !isInternalWorkflowTask(selectedItem, internalWorkflowIds, internalSkillNames) ? (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -629,6 +611,7 @@ export function TasksPage() {
       <SkillCreatorModal
         isOpen={skillCreator.isOpen}
         sourceSkills={skillCreator.sourceSkills}
+        reservedNames={reservedSkillNames}
         status={skillCreator.status}
         serverError={skillCreator.serverError}
         successInfo={skillCreator.successInfo}

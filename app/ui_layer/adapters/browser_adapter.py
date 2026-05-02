@@ -1178,6 +1178,10 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
                 "type": "init",
                 "data": initial_state,
             })
+            await ws.send_json({
+                "type": "skill_meta",
+                "data": self._get_skill_meta(),
+            })
         except (ConnectionResetError, ClientConnectionResetError, RuntimeError) as e:
             # Gracefully handle connection closing
             self._ws_clients.discard(ws)
@@ -2967,26 +2971,33 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
     # Skill creation from a completed task
     # ─────────────────────────────────────────────────────────────────────
 
-    # Tasks belonging to these workflow_ids must NEVER be eligible as
-    # source tasks — they ARE the skill / memory infrastructure.
-    # Some internal workflows set workflow_id, some don't (only set
-    # selected_skills) — see _INTERNAL_SKILL_NAMES below for the rest.
+    # `workflow_id` is functional infrastructure, NOT a "this task is
+    # internal" tag. It is set only on workflows that need:
+    #   1. WorkflowLockManager serialization (memory_processing — only
+    #      one memory pass at a time; the lock is auto-released in
+    #      TaskManager._end_task by keying off task.workflow_id).
+    #   2. Post-completion side effects (skill_creation / skill_improvement
+    #      trigger SkillManager.reload() and auto-enable the new skill in
+    #      TaskManager._end_task).
+    # Tasks tagged with one of these are internal by definition (they ARE
+    # the skill / memory infrastructure) and must never be eligible as
+    # source tasks for the "Create Skill" flow. Heartbeats, planners, and
+    # the onboarding interview don't need either of those two services, so
+    # they don't set workflow_id — _INTERNAL_SKILL_NAMES covers them.
     _INTERNAL_WORKFLOW_IDS = frozenset({
         "skill_creation",
         "skill_improvement",
         "memory_processing",
     })
 
-    # Skills that mark a task as a CraftBot internal workflow regardless
-    # of whether `workflow_id` was set. This is the union of every skill
-    # in the repo with `user-invocable: false`. A task whose
-    # `selected_skills` intersects this set is a system-spawned workflow
-    # (memory processing, soft onboarding, proactive heartbeats / planners,
-    # the skill creator/improver itself), and the "Create Skill" button
-    # must not appear on it.
-    #
-    # KEEP IN SYNC with INTERNAL_SKILL_NAMES in
-    # app/ui_layer/browser/frontend/src/pages/Tasks/TasksPage.tsx
+    # Detection of internal tasks via `selected_skills` — needed because
+    # most internal workflows (heartbeats, planners, soft onboarding) only
+    # set selected_skills, not workflow_id. This is the union of every
+    # skill in the repo with `user-invocable: false`. A task whose
+    # selected_skills intersects this set is system-spawned and the
+    # "Create Skill" button must not appear on it.
+    # Used together with _INTERNAL_WORKFLOW_IDS via OR — see the frontend
+    # `isInternalWorkflowTask` for the combined check.
     _INTERNAL_SKILL_NAMES = frozenset({
         "craftbot-skill-creator",
         "craftbot-skill-improve",
@@ -2998,10 +3009,17 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
         "month-planner",
     })
 
-    # Names that may not be created or overwritten by the user-facing flow.
-    # Subset of internal skill names — anything user-invocable:false is
-    # off-limits, plus we explicitly disallow re-creating the skill-creator
-    # / skill-improver workflow skills themselves.
+    # Names the user may not type into the SkillCreatorModal (validated in
+    # _handle_create_skill_from_task). Kept separate from
+    # _INTERNAL_SKILL_NAMES because the two answer different questions:
+    #   _INTERNAL_SKILL_NAMES → "is this *task* a system task?" (hides the
+    #     Create Skill button on its detail panel)
+    #   _RESERVED_SKILL_NAMES → "is this *name* one the user can claim?"
+    #     (modal input validation)
+    # The contents happen to coincide today, but a future user-invocable
+    # skill that we still don't want overwritten would belong only here,
+    # and an internal skill we'd let users replace would belong only in
+    # _INTERNAL_SKILL_NAMES — keeping them split avoids a re-split later.
     _RESERVED_SKILL_NAMES = frozenset({
         "craftbot-skill-creator",
         "craftbot-skill-improve",
@@ -3014,6 +3032,13 @@ A quick Q&A will now begin to understand your objectives to serve you better:"""
     })
 
     _SKILL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
+
+    def _get_skill_meta(self) -> Dict[str, Any]:
+        return {
+            "internalWorkflowIds": sorted(self._INTERNAL_WORKFLOW_IDS),
+            "internalSkillNames": sorted(self._INTERNAL_SKILL_NAMES),
+            "reservedSkillNames": sorted(self._RESERVED_SKILL_NAMES),
+        }
 
     async def _handle_create_skill_from_task(self, data: Dict[str, Any]) -> None:
         """

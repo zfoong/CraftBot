@@ -19,6 +19,7 @@ export interface SkillCreatorSuccessInfo {
 export interface SkillCreatorModalProps {
   isOpen: boolean
   sourceSkills: string[]
+  reservedNames: Set<string>
   status: 'idle' | 'submitting' | 'success' | 'error'
   serverError: string | null
   successInfo: SkillCreatorSuccessInfo | null
@@ -27,13 +28,6 @@ export interface SkillCreatorModalProps {
 }
 
 const NAME_PATTERN = /^[a-z][a-z0-9-]{1,63}$/
-const RESERVED_NAMES = new Set<string>([
-  'craftbot-skill-creator',
-  'craftbot-skill-improve',
-  'memory-processor',
-  'user-profile-interview',
-  'heartbeat-processor',
-])
 
 type Choice = { kind: 'create' } | { kind: 'improve'; skill: string }
 
@@ -44,6 +38,7 @@ function choiceKey(c: Choice): string {
 export function SkillCreatorModal({
   isOpen,
   sourceSkills,
+  reservedNames,
   status,
   serverError,
   successInfo,
@@ -86,11 +81,11 @@ export function SkillCreatorModal({
     if (!NAME_PATTERN.test(trimmed)) {
       return 'Use lowercase letters, digits, and hyphens. Must start with a letter, 2–64 chars.'
     }
-    if (RESERVED_NAMES.has(trimmed)) {
+    if (reservedNames.has(trimmed)) {
       return 'This name is reserved. Pick another.'
     }
     return null
-  }, [isCreateMode, skillName])
+  }, [isCreateMode, skillName, reservedNames])
 
   const canSubmit = !submitting && !isSuccess && (
     isCreateMode
